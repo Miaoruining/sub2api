@@ -1826,6 +1826,9 @@ func sleepGeminiBackoff(attempt int) {
 
 var (
 	sensitiveQueryParamRegex = regexp.MustCompile(`(?i)([?&](?:key|client_secret|access_token|refresh_token)=)[^&"\s]+`)
+	sensitiveProjectRegex    = regexp.MustCompile(`(?i)(["']?project(?:_id)?["']?\s*[:=]\s*["']?)[^,\s}"']+`)
+	sensitiveProxyRegex      = regexp.MustCompile(`(?i)(["']?proxy(?:_url)?["']?\s*[:=]\s*)[^,\s}"']+`)
+	sensitiveAccountRegex    = regexp.MustCompile(`(?i)(["']?account(?:_name)?["']?\s*[:=]\s*["']?)[^,\s}"']+`)
 	retryInRegex             = regexp.MustCompile(`Please retry in ([0-9.]+)s`)
 )
 
@@ -1833,7 +1836,22 @@ func sanitizeUpstreamErrorMessage(msg string) string {
 	if msg == "" {
 		return msg
 	}
-	return sensitiveQueryParamRegex.ReplaceAllString(msg, `$1***`)
+	msg = sensitiveQueryParamRegex.ReplaceAllString(msg, `$1***`)
+	msg = sensitiveProjectRegex.ReplaceAllString(msg, `$1***`)
+	msg = sensitiveProxyRegex.ReplaceAllString(msg, `$1***`)
+	return sensitiveAccountRegex.ReplaceAllString(msg, `$1***`)
+}
+
+// NormalizeAnthropicErrorType limits public errors to Anthropic's documented
+// error type vocabulary. Internal routing types such as upstream_error never
+// cross the customer boundary.
+func NormalizeAnthropicErrorType(errorType string) string {
+	switch strings.TrimSpace(errorType) {
+	case "authentication_error", "permission_error", "invalid_request_error", "not_found_error", "rate_limit_error", "api_error", "overloaded_error":
+		return strings.TrimSpace(errorType)
+	default:
+		return "api_error"
+	}
 }
 
 func (s *GeminiMessagesCompatService) writeGeminiMappedError(c *gin.Context, account *Account, upstreamStatus int, upstreamRequestID string, body []byte) error {
@@ -1873,6 +1891,7 @@ func (s *GeminiMessagesCompatService) writeGeminiMappedError(c *gin.Context, acc
 		"upstream_error",
 		"Upstream request failed",
 	); matched {
+		errType = NormalizeAnthropicErrorType(errType)
 		c.JSON(status, gin.H{
 			"type":  "error",
 			"error": gin.H{"type": errType, "message": errMsg},
@@ -1993,6 +2012,7 @@ func (s *GeminiMessagesCompatService) writeGeminiMappedError(c *gin.Context, acc
 		}
 	}
 
+	errType = NormalizeAnthropicErrorType(errType)
 	c.JSON(statusCode, gin.H{
 		"type":  "error",
 		"error": gin.H{"type": errType, "message": errMsg},
@@ -2068,7 +2088,7 @@ func mapGeminiStatusToClaudeErrorType(status string) string {
 	case "INTERNAL":
 		return "api_error"
 	case "DEADLINE_EXCEEDED":
-		return "timeout_error"
+		return "api_error"
 	default:
 		return ""
 	}
@@ -2416,6 +2436,7 @@ func generateAnthropicMsgID() string {
 
 func (s *GeminiMessagesCompatService) writeClaudeError(c *gin.Context, status int, errType, message string) error {
 	MarkResponseCommitted(c)
+	errType = NormalizeAnthropicErrorType(errType)
 	c.JSON(status, gin.H{
 		"type":  "error",
 		"error": gin.H{"type": errType, "message": message},

@@ -164,15 +164,17 @@ func TestGatewayHandleStreamingAwareError_ResponsesStreamingEmitsResponseFailed(
 	assert.Equal(t, "upstream gone", errObj["message"])
 }
 
-// Gateway handler: /v1/messages preserves the legacy data:{type:error,...} format
-// (Anthropic spec accepts a type:"error" stream event).
-func TestGatewayHandleStreamingAwareError_MessagesStreamingKeepsLegacy(t *testing.T) {
+// Gateway handler: /v1/messages emits an explicit Anthropic error event and
+// normalizes internal upstream_error to the public api_error type.
+func TestGatewayHandleStreamingAwareError_MessagesStreamingUsesAnthropicErrorEvent(t *testing.T) {
 	c, w := newGinContextForEndpoint(t, EndpointMessages)
 	h := &GatewayHandler{}
 	h.handleStreamingAwareError(c, http.StatusBadGateway, "upstream_error", "boom", true)
 
 	body := w.Body.String()
-	assert.True(t, strings.HasPrefix(body, `data: {"type":"error"`), "got: %q", body)
+	assert.True(t, strings.HasPrefix(body, "event: error\n"), "got: %q", body)
+	assert.Contains(t, body, `"type":"api_error"`)
+	assert.NotContains(t, body, `"type":"upstream_error"`)
 }
 
 // 项目里 /responses 注册在多组路由：/v1/responses（gateway）、裸 /responses（top-level）、

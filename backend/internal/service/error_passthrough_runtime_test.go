@@ -220,7 +220,7 @@ func TestGeminiWriteGeminiMappedError_AppliesRuleFor422(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
 	errField, ok := payload["error"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "upstream_error", errField["type"])
+	assert.Equal(t, "api_error", errField["type"])
 	assert.Equal(t, "Gemini上游失败", errField["message"])
 }
 

@@ -1956,11 +1956,12 @@ func (h *GatewayHandler) handleStreamingAwareError(c *gin.Context, status int, e
 				return
 			}
 		}
+		errType = service.NormalizeAnthropicErrorType(errType)
 		// Stream already started, send error as SSE event then close
 		flusher, ok := c.Writer.(http.Flusher)
 		if ok {
 			// SSE 错误事件固定 schema，使用 Quote 直拼可避免额外 Marshal 分配。
-			errorEvent := `data: {"type":"error","error":{"type":` + strconv.Quote(errType) + `,"message":` + strconv.Quote(message) + `}}` + "\n\n"
+			errorEvent := "event: error\n" + `data: {"type":"error","error":{"type":` + strconv.Quote(errType) + `,"message":` + strconv.Quote(message) + `}}` + "\n\n"
 			if _, err := fmt.Fprint(c.Writer, errorEvent); err != nil {
 				_ = c.Error(err)
 			}
@@ -2062,6 +2063,7 @@ func (h *GatewayHandler) checkClaudeCodeVersion(c *gin.Context) bool {
 
 // errorResponse 返回Claude API格式的错误响应
 func (h *GatewayHandler) errorResponse(c *gin.Context, status int, errType, message string) {
+	errType = service.NormalizeAnthropicErrorType(errType)
 	c.JSON(status, gin.H{
 		"type": "error",
 		"error": gin.H{

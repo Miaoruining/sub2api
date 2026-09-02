@@ -32,12 +32,12 @@ func TestGatewayEnsureForwardErrorResponse_WritesFallbackWhenNotWritten(t *testi
 	assert.Equal(t, "error", parsed["type"])
 	errorObj, ok := parsed["error"].(map[string]any)
 	require.True(t, ok)
-	assert.Equal(t, "upstream_error", errorObj["type"])
+	assert.Equal(t, "api_error", errorObj["type"])
 	assert.Equal(t, "Upstream request failed", errorObj["message"])
 }
 
 // Writer 已写后 ensureForwardErrorResponse 必须把错误以 SSE 形式追加，
-// 而不是 silent EOF。非 /responses 路径走 legacy data:{"type":"error"} 分支。
+// 而不是 silent EOF。非 /responses 路径走 Anthropic event:error 分支。
 func TestGatewayEnsureForwardErrorResponse_AppendsSSEAfterWritten(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -51,6 +51,7 @@ func TestGatewayEnsureForwardErrorResponse_AppendsSSEAfterWritten(t *testing.T) 
 	require.True(t, wrote)
 	require.Equal(t, http.StatusTeapot, w.Code)
 	assert.Contains(t, w.Body.String(), "already written")
+	assert.Contains(t, w.Body.String(), "event: error\n")
 	assert.Contains(t, w.Body.String(), `data: {"type":"error"`)
 }
 

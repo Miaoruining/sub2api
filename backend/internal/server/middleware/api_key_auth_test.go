@@ -50,6 +50,37 @@ func TestAPIKeyAuthRejectsOversizedCredentialsBeforeLookup(t *testing.T) {
 	require.Zero(t, calls.Load())
 }
 
+func TestAPIKeyAuth_AnthropicMessagesPathsUseAnthropicError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := &config.Config{RunMode: config.RunModeSimple}
+	repo := &stubApiKeyRepo{getByKey: func(context.Context, string) (*service.APIKey, error) {
+		return nil, service.ErrAPIKeyNotFound
+	}}
+	apiKeyService := service.NewAPIKeyService(repo, nil, nil, nil, nil, nil, cfg)
+
+	for _, path := range []string{"/v1/messages", "/v1/messages/count_tokens", "/messages", "/messages/count_tokens"} {
+		t.Run(path, func(t *testing.T) {
+			router := gin.New()
+			router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg)))
+			router.POST(path, func(c *gin.Context) { c.Status(http.StatusNoContent) })
+
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, path, nil)
+			router.ServeHTTP(recorder, request)
+
+			require.Equal(t, http.StatusUnauthorized, recorder.Code)
+			var response map[string]any
+			require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+			require.Equal(t, "error", response["type"])
+			errorObject, ok := response["error"].(map[string]any)
+			require.True(t, ok)
+			require.Equal(t, "authentication_error", errorObject["type"])
+			_, hasLegacyCode := response["code"]
+			require.False(t, hasLegacyCode)
+		})
+	}
+}
+
 func TestSimpleModeBypassesQuotaCheck(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

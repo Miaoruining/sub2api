@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/googleapi"
@@ -74,8 +75,41 @@ func NewErrorResponse(code, message string) ErrorResponse {
 	}
 }
 
-// AbortWithError 中断请求并返回JSON错误
+func isAnthropicMessagesPath(path string) bool {
+	switch strings.TrimRight(path, "/") {
+	case "/v1/messages", "/v1/messages/count_tokens", "/messages", "/messages/count_tokens":
+		return true
+	default:
+		return false
+	}
+}
+
+func anthropicErrorTypeForCode(code string) string {
+	switch code {
+	case "API_KEY_REQUIRED", "INVALID_API_KEY", "API_KEY_DISABLED", "USER_NOT_FOUND", "USER_INACTIVE":
+		return "authentication_error"
+	case "ACCESS_DENIED", "API_KEY_EXPIRED", "SUBSCRIPTION_NOT_FOUND":
+		return "permission_error"
+	case "USAGE_LIMIT_EXCEEDED", "INVALID_AUTH_RATE_LIMITED":
+		return "rate_limit_error"
+	default:
+		return "api_error"
+	}
+}
+
+// AbortWithError 中断请求并返回与入口协议匹配的 JSON 错误。
 func AbortWithError(c *gin.Context, statusCode int, code, message string) {
+	if c != nil && c.Request != nil && isAnthropicMessagesPath(c.Request.URL.Path) {
+		c.JSON(statusCode, gin.H{
+			"type": "error",
+			"error": gin.H{
+				"type":    anthropicErrorTypeForCode(code),
+				"message": message,
+			},
+		})
+		c.Abort()
+		return
+	}
 	c.JSON(statusCode, NewErrorResponse(code, message))
 	c.Abort()
 }

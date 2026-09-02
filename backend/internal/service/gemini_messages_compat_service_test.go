@@ -784,6 +784,34 @@ func TestGeminiMessagesCompatService_StreamFiltersThoughtParts(t *testing.T) {
 	require.Contains(t, rec.Body.String(), "answer")
 }
 
+func TestSanitizeUpstreamErrorMessage_RemovesProjectAndProxyDetails(t *testing.T) {
+	message := `request failed project_id=customer-secret proxy=http://user:pass@10.0.0.8:8080?key=top-secret`
+
+	sanitized := sanitizeUpstreamErrorMessage(message)
+
+	require.NotContains(t, sanitized, "customer-secret")
+	require.NotContains(t, sanitized, "user:pass")
+	require.NotContains(t, sanitized, "10.0.0.8")
+	require.NotContains(t, sanitized, "top-secret")
+}
+
+func TestGeminiMappedError_NormalizesTimeoutToAnthropicAPIError(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	svc := &GeminiMessagesCompatService{cfg: &config.Config{}}
+	account := &Account{ID: 1, Name: "internal-account", Platform: PlatformGemini}
+
+	err := svc.writeGeminiMappedError(
+		c, account, http.StatusGatewayTimeout, "request-1",
+		[]byte(`{"error":{"status":"DEADLINE_EXCEEDED","message":"project_id=customer-secret"}}`),
+	)
+
+	require.Error(t, err)
+	require.Equal(t, "api_error", gjson.Get(recorder.Body.String(), "error.type").String())
+	require.NotContains(t, recorder.Body.String(), "customer-secret")
+}
+
 func TestGeminiMessagesCompatServiceForward_NormalizesWebSearchToolForAIStudio(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
