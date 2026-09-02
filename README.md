@@ -740,6 +740,12 @@ Long-running OpenAI/Grok image generation and editing can be submitted through `
 
 ---
 
+## Gemini Anthropic Messages Compatibility
+
+Gemini groups can expose selected Claude-compatible aliases through `/v1/messages` and `/v1/messages/count_tokens` for Claude Code and Anthropic SDK clients. See the [Gemini Anthropic compatibility guide](docs/gemini-anthropic-compat.md) for client configuration, administrator setup, limitations, billing semantics, and rollback instructions.
+
+---
+
 ## Grok / xAI Support
 
 Sub2API supports both Grok subscription accounts through xAI OAuth and standard xAI API-key accounts. Both account types forward OpenAI-compatible Responses traffic to xAI.

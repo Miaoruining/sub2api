@@ -243,15 +243,16 @@ func (s *GeminiMessagesCompatService) countGeminiTokens(
 			message = http.StatusText(response.StatusCode)
 		}
 		errorType := "api_error"
-		if response.StatusCode == http.StatusBadRequest {
+		switch response.StatusCode {
+		case http.StatusBadRequest:
 			errorType = "invalid_request_error"
-		} else if response.StatusCode == http.StatusUnauthorized {
+		case http.StatusUnauthorized:
 			errorType = "authentication_error"
-		} else if response.StatusCode == http.StatusForbidden {
+		case http.StatusForbidden:
 			errorType = "permission_error"
-		} else if response.StatusCode == http.StatusNotFound {
+		case http.StatusNotFound:
 			errorType = "not_found_error"
-		} else if response.StatusCode == http.StatusTooManyRequests {
+		case http.StatusTooManyRequests:
 			errorType = "rate_limit_error"
 		}
 		return nil, newGeminiTokenCountError(response.StatusCode, errorType, message)
