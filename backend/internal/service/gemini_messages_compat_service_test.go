@@ -1108,6 +1108,25 @@ func TestExtractGeminiUsage(t *testing.T) {
 	}
 }
 
+func TestExtractGeminiUsage_CacheReadIsExcludedFromOrdinaryInput(t *testing.T) {
+	usage := extractGeminiUsage([]byte(`{"usageMetadata":{"promptTokenCount":1000,"cachedContentTokenCount":250,"candidatesTokenCount":100,"thoughtsTokenCount":20}}`))
+
+	require.NotNil(t, usage)
+	require.Equal(t, 750, usage.InputTokens)
+	require.Equal(t, 250, usage.CacheReadInputTokens)
+	require.Equal(t, 120, usage.OutputTokens)
+}
+
+func TestConvertGeminiToClaudeMessage_ExposesRealCacheReadUsage(t *testing.T) {
+	raw := []byte(`{"usageMetadata":{"promptTokenCount":1000,"cachedContentTokenCount":250,"candidatesTokenCount":100}}`)
+	resp, _ := convertGeminiToClaudeMessage(map[string]any{}, "claude-sonnet-4-6", raw, false)
+	encoded, err := json.Marshal(resp)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(750), gjson.GetBytes(encoded, "usage.input_tokens").Int())
+	require.Equal(t, int64(250), gjson.GetBytes(encoded, "usage.cache_read_input_tokens").Int())
+}
+
 // ---------------------------------------------------------------------------
 // Task 8.2 — estimateGeminiCountTokens 测试
 // ---------------------------------------------------------------------------
@@ -1318,6 +1337,27 @@ func TestGeminiMessagesHandleStreamingResponse_ClosesToolBlockBeforeText(t *test
 	require.True(t, textStarted, "expected a text content block to be emitted after the tool call")
 	require.True(t, toolClosedBeforeText, "tool_use block must be closed before the text block starts")
 	require.Equal(t, -1, open, "stream ended with a content block still open")
+}
+
+func TestGeminiMessagesHandleStreamingResponse_ExposesRealCacheReadUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstreamBody := `data: {"candidates":[{"content":{"parts":[{"text":"done"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10,"cachedContentTokenCount":2,"candidatesTokenCount":3,"thoughtsTokenCount":1}}` + "\n\n"
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(upstreamBody)),
+	}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+
+	result, err := (&GeminiMessagesCompatService{}).handleStreamingResponse(c, resp, time.Now(), "claude-sonnet-4-6")
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 8, result.usage.InputTokens)
+	require.Equal(t, 2, result.usage.CacheReadInputTokens)
+	require.Equal(t, 4, result.usage.OutputTokens)
+	require.Contains(t, rec.Body.String(), `"cache_read_input_tokens":2`)
 }
 
 type anthropicContentBlockEvent struct {

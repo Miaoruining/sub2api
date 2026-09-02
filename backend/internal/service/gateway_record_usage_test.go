@@ -695,6 +695,61 @@ func TestGatewayServiceRecordUsage_ReasoningEffortNil(t *testing.T) {
 	require.Nil(t, usageRepo.lastLog.ReasoningEffort)
 }
 
+func TestRecordUsage_GeminiAliasBillsActualModelAndRecordsBoth(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingService, resolver := newTokenCostTestEnv(t, PlatformGemini, []ChannelModelPricing{
+		{
+			Platform: PlatformGemini, Models: []string{"gemini-2.5-pro"}, BillingMode: BillingModeToken,
+			InputPrice: testPtrFloat64(1e-6), OutputPrice: testPtrFloat64(2e-6), CacheReadPrice: testPtrFloat64(0.5e-6),
+		},
+		{
+			Platform: PlatformGemini, Models: []string{"claude-sonnet-4-6"}, BillingMode: BillingModeToken,
+			InputPrice: testPtrFloat64(100e-6), OutputPrice: testPtrFloat64(200e-6), CacheReadPrice: testPtrFloat64(50e-6),
+		},
+	}, geminiCatalogStub())
+	svc := newGatewayRecordUsageServiceForTest(
+		usageRepo,
+		&openAIRecordUsageUserRepoStub{},
+		&openAIRecordUsageSubRepoStub{},
+	)
+	svc.billingService = billingService
+	svc.resolver = resolver
+	groupID := int64(100)
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID:     "gemini_alias_usage",
+			Model:         "claude-sonnet-4-6",
+			UpstreamModel: "gemini-2.5-pro",
+			Usage: ClaudeUsage{
+				InputTokens:          800,
+				CacheReadInputTokens: 200,
+				OutputTokens:         100,
+			},
+		},
+		APIKey: &APIKey{
+			ID:      501,
+			Quota:   100,
+			GroupID: &groupID,
+			Group:   &Group{ID: groupID, Platform: PlatformGemini, RateMultiplier: 1},
+		},
+		User:    &User{ID: 601},
+		Account: &Account{ID: 701, Platform: PlatformGemini},
+		ChannelUsageFields: ChannelUsageFields{
+			OriginalModel:      "claude-sonnet-4-6",
+			BillingModelSource: BillingModelSourceUpstream,
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, "claude-sonnet-4-6", usageRepo.lastLog.Model)
+	require.Equal(t, "claude-sonnet-4-6", usageRepo.lastLog.RequestedModel)
+	require.NotNil(t, usageRepo.lastLog.UpstreamModel)
+	require.Equal(t, "gemini-2.5-pro", *usageRepo.lastLog.UpstreamModel)
+	require.InDelta(t, 0.0011, usageRepo.lastLog.ActualCost, 1e-12)
+}
+
 // newGatewayRecordUsageServiceWithResolverForTest mirrors production wiring for
 // token billing: a pricing resolver plus a grouped API key select the unified
 // billing path, which is the only one that honours the service tier.

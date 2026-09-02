@@ -2389,6 +2389,9 @@ func (s *GeminiMessagesCompatService) handleStreamingResponse(c *gin.Context, re
 	if usage.InputTokens > 0 {
 		usageObj["input_tokens"] = usage.InputTokens
 	}
+	if usage.CacheReadInputTokens > 0 {
+		usageObj["cache_read_input_tokens"] = usage.CacheReadInputTokens
+	}
 	writeSSE(c.Writer, "message_delta", map[string]any{
 		"type": "message_delta",
 		"delta": map[string]any{
@@ -2989,6 +2992,14 @@ func convertGeminiToClaudeMessage(geminiResp map[string]any, originalModel strin
 		stopReason = "tool_use"
 	}
 
+	usageObject := map[string]any{
+		"input_tokens":  usage.InputTokens,
+		"output_tokens": usage.OutputTokens,
+	}
+	if usage.CacheReadInputTokens > 0 {
+		usageObject["cache_read_input_tokens"] = usage.CacheReadInputTokens
+	}
+
 	resp := map[string]any{
 		"id":            generateAnthropicMsgID(),
 		"type":          "message",
@@ -2997,10 +3008,7 @@ func convertGeminiToClaudeMessage(geminiResp map[string]any, originalModel strin
 		"content":       contentBlocks,
 		"stop_reason":   stopReason,
 		"stop_sequence": nil,
-		"usage": map[string]any{
-			"input_tokens":  usage.InputTokens,
-			"output_tokens": usage.OutputTokens,
-		},
+		"usage":         usageObject,
 	}
 
 	return resp, usage

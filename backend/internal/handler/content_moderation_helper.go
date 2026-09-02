@@ -38,6 +38,16 @@ func clientRequestedUsageFields(c *gin.Context, mapping service.ChannelMappingRe
 	return mapping.ToUsageFields(clientRequestedModel(c, fallbackModel), upstreamModel)
 }
 
+// geminiMessagesUsageFields keeps the Claude-compatible public model in usage
+// logs while billing the concrete Gemini model that handled the request.
+func geminiMessagesUsageFields(c *gin.Context, mapping service.ChannelMappingResult, fallbackModel, upstreamModel string) service.ChannelUsageFields {
+	fields := clientRequestedUsageFields(c, mapping, fallbackModel, upstreamModel)
+	if strings.TrimSpace(upstreamModel) != "" {
+		fields.BillingModelSource = service.BillingModelSourceUpstream
+	}
+	return fields
+}
+
 func runContentModeration(c *gin.Context, reqLog *zap.Logger, svc *service.ContentModerationService, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol string, model string, body []byte) *service.ContentModerationDecision {
 	if svc == nil || c == nil || c.Request == nil {
 		return nil

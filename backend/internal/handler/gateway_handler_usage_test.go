@@ -49,3 +49,21 @@ func TestUsageUnrestrictedIncludesWeeklyWindowStart(t *testing.T) {
 	require.NotNil(t, response.Subscription.WeeklyWindowStart)
 	require.True(t, weeklyWindowStart.Equal(*response.Subscription.WeeklyWindowStart))
 }
+
+func TestGeminiMessagesUsageFields_BillsUpstreamAndPreservesPublicAlias(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("POST", "/v1/messages", nil)
+
+	fields := geminiMessagesUsageFields(
+		c,
+		service.ChannelMappingResult{},
+		"claude-sonnet-4-6",
+		"gemini-2.5-pro",
+	)
+
+	require.Equal(t, "claude-sonnet-4-6", fields.OriginalModel)
+	require.Equal(t, "claude-sonnet-4-6", fields.ChannelMappedModel)
+	require.Equal(t, service.BillingModelSourceUpstream, fields.BillingModelSource)
+	require.Equal(t, "claude-sonnet-4-6→gemini-2.5-pro", fields.ModelMappingChain)
+}
