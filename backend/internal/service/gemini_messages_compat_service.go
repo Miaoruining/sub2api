@@ -2174,6 +2174,9 @@ func (s *GeminiMessagesCompatService) handleStreamingResponse(c *gin.Context, re
 
 		parts := extractGeminiParts(geminiResp)
 		for _, part := range parts {
+			if thought, _ := part["thought"].(bool); thought {
+				continue
+			}
 			if text, ok := part["text"].(string); ok && text != "" {
 				// Close an open tool_use block before starting text, mirroring
 				// the functionCall branch (which closes open text blocks) and
@@ -2884,6 +2887,9 @@ func convertGeminiToClaudeMessage(geminiResp map[string]any, originalModel strin
 						if !ok {
 							continue
 						}
+						if thought, _ := pm["thought"].(bool); thought {
+							continue
+						}
 						if text, ok := pm["text"].(string); ok && text != "" {
 							contentBlocks = append(contentBlocks, map[string]any{
 								"type": "text",
@@ -3263,8 +3269,16 @@ func convertClaudeMessagesToGeminiGenerateContent(body []byte) ([]byte, error) {
 	}
 	out["contents"] = contents
 
-	if tools := convertClaudeToolsToGeminiTools(req["tools"]); tools != nil {
+	tools := convertClaudeToolsToGeminiTools(req["tools"])
+	if tools != nil {
 		out["tools"] = tools
+	}
+	toolConfig, err := convertClaudeToolConfig(req, countGeminiCallableTools(tools))
+	if err != nil {
+		return nil, err
+	}
+	if toolConfig != nil {
+		out["toolConfig"] = toolConfig
 	}
 
 	generationConfig := convertClaudeGenerationConfig(req)
@@ -3397,11 +3411,15 @@ func convertClaudeMessagesToGeminiContents(messages any, toolUseIDToName map[str
 					if name == "" {
 						name = "tool"
 					}
+					contentText, err := extractClaudeContentText(bm["content"])
+					if err != nil {
+						return nil, err
+					}
 					parts = append(parts, map[string]any{
 						"functionResponse": map[string]any{
 							"name": name,
 							"response": map[string]any{
-								"content": extractClaudeContentText(bm["content"]),
+								"content": contentText,
 							},
 						},
 					})
@@ -3420,11 +3438,11 @@ func convertClaudeMessagesToGeminiContents(messages any, toolUseIDToName map[str
 							}
 						}
 					}
+				case "thinking", "redacted_thinking":
+					// Anthropic thinking history is intentionally not converted into visible Gemini text.
+					continue
 				default:
-					// best-effort: preserve unknown blocks as text
-					if b, err := json.Marshal(bm); err == nil {
-						parts = append(parts, map[string]any{"text": string(b)})
-					}
+					return nil, fmt.Errorf("unsupported content block type %q", bt)
 				}
 			}
 		default:
@@ -3439,28 +3457,79 @@ func convertClaudeMessagesToGeminiContents(messages any, toolUseIDToName map[str
 	return out, nil
 }
 
-func extractClaudeContentText(v any) string {
+func extractClaudeContentText(v any) (string, error) {
 	switch t := v.(type) {
 	case string:
-		return t
+		return t, nil
 	case []any:
 		var sb strings.Builder
 		for _, part := range t {
 			pm, ok := part.(map[string]any)
 			if !ok {
-				continue
+				return "", errors.New("tool_result.content blocks must be objects")
 			}
-			if pm["type"] == "text" {
-				if text, ok := pm["text"].(string); ok {
-					_, _ = sb.WriteString(text)
-				}
+			blockType, _ := pm["type"].(string)
+			if blockType != "text" {
+				return "", fmt.Errorf("unsupported tool_result content block type %q", blockType)
 			}
+			text, ok := pm["text"].(string)
+			if !ok {
+				return "", errors.New("tool_result text block requires text")
+			}
+			_, _ = sb.WriteString(text)
 		}
-		return sb.String()
+		return sb.String(), nil
+	case nil:
+		return "", nil
 	default:
-		b, _ := json.Marshal(t)
-		return string(b)
+		return "", errors.New("tool_result.content must be a string or text blocks")
 	}
+}
+
+func countGeminiCallableTools(tools []any) int {
+	count := 0
+	for _, rawTool := range tools {
+		tool, ok := rawTool.(map[string]any)
+		if !ok {
+			continue
+		}
+		declarations, _ := tool["functionDeclarations"].([]any)
+		count += len(declarations)
+	}
+	return count
+}
+
+func convertClaudeToolConfig(req map[string]any, callableToolCount int) (map[string]any, error) {
+	choice, ok := req["tool_choice"].(map[string]any)
+	if !ok || choice == nil {
+		return nil, nil
+	}
+	choiceType, _ := choice["type"].(string)
+	choiceType = strings.ToLower(strings.TrimSpace(choiceType))
+	if disabled, _ := choice["disable_parallel_tool_use"].(bool); disabled && callableToolCount > 1 {
+		return nil, errors.New("disable_parallel_tool_use=true is not supported with multiple Gemini function tools")
+	}
+
+	config := make(map[string]any)
+	switch choiceType {
+	case "", "auto":
+		config["mode"] = "AUTO"
+	case "any":
+		config["mode"] = "ANY"
+	case "tool":
+		name, _ := choice["name"].(string)
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return nil, errors.New("tool_choice.name is required when type is tool")
+		}
+		config["mode"] = "ANY"
+		config["allowedFunctionNames"] = []string{name}
+	case "none":
+		config["mode"] = "NONE"
+	default:
+		return nil, fmt.Errorf("unsupported tool_choice type %q", choiceType)
+	}
+	return map[string]any{"functionCallingConfig": config}, nil
 }
 
 func convertClaudeToolsToGeminiTools(tools any) []any {

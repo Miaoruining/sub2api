@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 type geminiCompatHTTPUpstreamStub struct {
@@ -701,6 +702,86 @@ func TestGeminiAliasResolutionFeedsActualModelIntoAccountSelection(t *testing.T)
 
 	require.NotNil(t, selected)
 	require.Equal(t, int64(2), selected.ID)
+}
+
+func TestConvertClaudeMessagesToGeminiGenerateContent_ToolChoice(t *testing.T) {
+	tests := []struct {
+		name        string
+		choice      string
+		wantMode    string
+		wantAllowed string
+	}{
+		{name: "auto", choice: `{"type":"auto"}`, wantMode: "AUTO"},
+		{name: "any", choice: `{"type":"any"}`, wantMode: "ANY"},
+		{name: "tool", choice: `{"type":"tool","name":"lookup"}`, wantMode: "ANY", wantAllowed: "lookup"},
+		{name: "none", choice: `{"type":"none"}`, wantMode: "NONE"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := []byte(fmt.Sprintf(`{"model":"claude-sonnet-4-6","max_tokens":32,"messages":[{"role":"user","content":"hi"}],"tools":[{"name":"lookup","input_schema":{"type":"object"}}],"tool_choice":%s}`, tt.choice))
+			got, err := convertClaudeMessagesToGeminiGenerateContent(body)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantMode, gjson.GetBytes(got, "toolConfig.functionCallingConfig.mode").String())
+			if tt.wantAllowed != "" {
+				require.Equal(t, tt.wantAllowed, gjson.GetBytes(got, "toolConfig.functionCallingConfig.allowedFunctionNames.0").String())
+			}
+		})
+	}
+}
+
+func TestConvertClaudeMessagesToGeminiGenerateContent_RejectsSemanticUnknownBlock(t *testing.T) {
+	_, err := convertClaudeMessagesToGeminiGenerateContent([]byte(`{"messages":[{"role":"user","content":[{"type":"document","source":{"type":"base64","data":"AA=="}}]}]}`))
+	require.ErrorContains(t, err, `unsupported content block type "document"`)
+}
+
+func TestConvertClaudeMessagesToGeminiGenerateContent_RejectsDisabledParallelTools(t *testing.T) {
+	_, err := convertClaudeMessagesToGeminiGenerateContent([]byte(`{"messages":[{"role":"user","content":"hi"}],"tools":[{"name":"a"},{"name":"b"}],"tool_choice":{"type":"auto","disable_parallel_tool_use":true}}`))
+	require.ErrorContains(t, err, "disable_parallel_tool_use")
+}
+
+func TestConvertGeminiToClaudeMessage_FiltersThoughtParts(t *testing.T) {
+	resp := map[string]any{"candidates": []any{map[string]any{"content": map[string]any{"parts": []any{
+		map[string]any{"text": "hidden chain", "thought": true},
+		map[string]any{"text": "visible answer"},
+	}}}}}
+
+	got, _ := convertGeminiToClaudeMessage(resp, "claude-sonnet-4-6", nil, false)
+	encoded, err := json.Marshal(got)
+
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "hidden chain")
+	require.Contains(t, string(encoded), "visible answer")
+}
+
+func TestGeminiMessagesCompatService_StreamFiltersThoughtParts(t *testing.T) {
+	stream := "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"secret\",\"thought\":true},{\"text\":\"answer\"}]},\"finishReason\":\"STOP\"}]}\n\n"
+	httpStub := &geminiCompatHTTPUpstreamStub{response: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(stream)),
+	}}
+	svc := &GeminiMessagesCompatService{httpUpstream: httpStub, cfg: &config.Config{}}
+	account := &Account{
+		ID:       1,
+		Platform: PlatformGemini,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "test-key",
+		},
+	}
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	_, err := svc.ForwardAnthropic(
+		context.Background(), c, account,
+		[]byte(`{"model":"claude-sonnet-4-6","stream":true,"max_tokens":32,"messages":[{"role":"user","content":"hi"}]}`),
+		"claude-sonnet-4-6", "gemini-2.5-pro",
+	)
+
+	require.NoError(t, err)
+	require.NotContains(t, rec.Body.String(), "secret")
+	require.Contains(t, rec.Body.String(), "answer")
 }
 
 func TestGeminiMessagesCompatServiceForward_NormalizesWebSearchToolForAIStudio(t *testing.T) {
