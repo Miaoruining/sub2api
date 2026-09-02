@@ -4,14 +4,16 @@ import {
   createDefaultMessagesDispatchFormState,
   messagesDispatchConfigToFormState,
   messagesDispatchFormStateToConfig,
+  messagesDispatchPreview,
   resetMessagesDispatchFormState,
   supportsMessagesDispatchPlatform,
 } from "../groupsMessagesDispatch";
 
 describe("groupsMessagesDispatch", () => {
-  it("supports OpenAI and composite groups", () => {
+  it("supports OpenAI, composite, and Gemini groups", () => {
     expect(supportsMessagesDispatchPlatform("openai")).toBe(true);
     expect(supportsMessagesDispatchPlatform("composite")).toBe(true);
+    expect(supportsMessagesDispatchPlatform("gemini")).toBe(true);
     expect(supportsMessagesDispatchPlatform("anthropic")).toBe(false);
   });
 
@@ -23,6 +25,50 @@ describe("groupsMessagesDispatch", () => {
       haiku_mapped_model: "gpt-5.4-mini",
       exact_model_mappings: [],
     });
+  });
+
+  it("uses Gemini targets for Gemini groups", () => {
+    expect(createDefaultMessagesDispatchFormState("gemini")).toEqual({
+      allow_messages_dispatch: false,
+      opus_mapped_model: "gemini-2.5-pro",
+      sonnet_mapped_model: "gemini-2.5-pro",
+      haiku_mapped_model: "gemini-2.5-flash",
+      exact_model_mappings: [],
+    });
+  });
+
+  it("builds a dense public-to-upstream mapping preview", () => {
+    const state = createDefaultMessagesDispatchFormState("gemini");
+    state.exact_model_mappings = [
+      {
+        claude_model: "claude-sonnet-4-5-20250929",
+        target_model: "gemini-2.5-pro",
+      },
+      { claude_model: " ", target_model: "gemini-2.5-flash" },
+    ];
+
+    expect(messagesDispatchPreview(state)).toEqual([
+      {
+        claude_model: "claude-opus-4-6",
+        target_model: "gemini-2.5-pro",
+        source: "family",
+      },
+      {
+        claude_model: "claude-sonnet-4-6",
+        target_model: "gemini-2.5-pro",
+        source: "family",
+      },
+      {
+        claude_model: "claude-haiku-4-5",
+        target_model: "gemini-2.5-flash",
+        source: "family",
+      },
+      {
+        claude_model: "claude-sonnet-4-5-20250929",
+        target_model: "gemini-2.5-pro",
+        source: "exact",
+      },
+    ]);
   });
 
   it("sanitizes exact model mapping rows when converting to config", () => {

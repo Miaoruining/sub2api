@@ -1614,7 +1614,7 @@
           </p>
         </div>
 
-        <!-- OpenAI Messages 调度配置（OpenAI 与 Composite 平台） -->
+        <!-- Anthropic Messages 兼容调度配置 -->
         <div
           v-if="supportsMessagesDispatchPlatform(createForm.platform)"
           class="border-t border-gray-200 dark:border-dark-400 pt-4 mt-4"
@@ -1631,14 +1631,18 @@
             <button
               type="button"
               @click="
-                createForm.allow_messages_dispatch =
-                  !createForm.allow_messages_dispatch
+                createForm.platform !== 'gemini' &&
+                (createForm.allow_messages_dispatch =
+                  !createForm.allow_messages_dispatch)
               "
+              :disabled="createForm.platform === 'gemini'"
               class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
               :class="
-                createForm.allow_messages_dispatch
-                  ? 'bg-primary-500'
-                  : 'bg-gray-300 dark:bg-dark-600'
+                createForm.platform === 'gemini'
+                  ? 'cursor-not-allowed bg-gray-200 opacity-60 dark:bg-dark-600'
+                  : createForm.allow_messages_dispatch
+                    ? 'bg-primary-500'
+                    : 'bg-gray-300 dark:bg-dark-600'
               "
             >
               <span
@@ -1652,7 +1656,13 @@
             </button>
           </div>
           <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-            {{ t("admin.groups.openaiMessages.allowDispatchHint") }}
+            {{
+              t(
+                createForm.platform === "gemini"
+                  ? "admin.groups.openaiMessages.geminiCreateHint"
+                  : "admin.groups.openaiMessages.allowDispatchHint",
+              )
+            }}
           </p>
 
           <div
@@ -1812,9 +1822,7 @@
                             v-model="row.target_model"
                             type="text"
                             :placeholder="
-                              t(
-                                'admin.groups.openaiMessages.targetModelPlaceholder',
-                              )
+                              t('admin.groups.openaiMessages.targetModelPlaceholder')
                             "
                             class="input bg-gray-50 focus:bg-white dark:bg-dark-800 dark:focus:bg-dark-900"
                           />
@@ -3342,7 +3350,7 @@
           </p>
         </div>
 
-        <!-- OpenAI Messages 调度配置（OpenAI 与 Composite 平台） -->
+        <!-- Anthropic Messages 兼容调度配置 -->
         <div
           v-if="supportsMessagesDispatchPlatform(editForm.platform)"
           class="border-t border-gray-200 dark:border-dark-400 pt-4 mt-4"
@@ -3382,10 +3390,18 @@
           <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
             {{ t("admin.groups.openaiMessages.allowDispatchHint") }}
           </p>
+          <div
+            v-if="editForm.platform === 'gemini'"
+            class="mt-2 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300"
+          >
+            <Icon name="infoCircle" size="sm" class="mt-0.5 shrink-0" />
+            <span>{{ t("admin.groups.openaiMessages.geminiProviderWarning") }}</span>
+          </div>
 
           <div
             v-if="
-              editForm.platform === 'openai' && editForm.allow_messages_dispatch
+              ['openai', 'gemini'].includes(editForm.platform) &&
+              editForm.allow_messages_dispatch
             "
             class="mt-3"
           >
@@ -3418,7 +3434,11 @@
                       v-model="editForm.opus_mapped_model"
                       type="text"
                       :placeholder="
-                        t('admin.groups.openaiMessages.opusModelPlaceholder')
+                        t(
+                          editForm.platform === 'gemini'
+                            ? 'admin.groups.openaiMessages.geminiTargetModelPlaceholder'
+                            : 'admin.groups.openaiMessages.opusModelPlaceholder',
+                        )
                       "
                       class="input"
                     />
@@ -3431,7 +3451,11 @@
                       v-model="editForm.sonnet_mapped_model"
                       type="text"
                       :placeholder="
-                        t('admin.groups.openaiMessages.sonnetModelPlaceholder')
+                        t(
+                          editForm.platform === 'gemini'
+                            ? 'admin.groups.openaiMessages.geminiTargetModelPlaceholder'
+                            : 'admin.groups.openaiMessages.sonnetModelPlaceholder',
+                        )
                       "
                       class="input"
                     />
@@ -3444,11 +3468,70 @@
                       v-model="editForm.haiku_mapped_model"
                       type="text"
                       :placeholder="
-                        t('admin.groups.openaiMessages.haikuModelPlaceholder')
+                        t(
+                          editForm.platform === 'gemini'
+                            ? 'admin.groups.openaiMessages.geminiTargetModelPlaceholder'
+                            : 'admin.groups.openaiMessages.haikuModelPlaceholder',
+                        )
                       "
                       class="input"
                     />
                   </div>
+                </div>
+              </div>
+            </div>
+
+            <div
+              v-if="editForm.platform === 'gemini'"
+              class="mt-3 overflow-hidden rounded-xl border border-violet-200 bg-violet-50/40 dark:border-violet-900/50 dark:bg-violet-950/20"
+            >
+              <div
+                class="flex items-center justify-between gap-3 border-b border-violet-100 px-3 py-2 dark:border-violet-900/40"
+              >
+                <div>
+                  <p class="text-xs font-semibold text-violet-900 dark:text-violet-100">
+                    {{ t("admin.groups.openaiMessages.mappingPreviewTitle") }}
+                  </p>
+                  <p class="mt-0.5 text-[11px] text-violet-600 dark:text-violet-300/80">
+                    {{ t("admin.groups.openaiMessages.mappingPreviewHint") }}
+                  </p>
+                </div>
+                <span
+                  class="shrink-0 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 dark:bg-violet-900/60 dark:text-violet-200"
+                >
+                  {{ messagesDispatchPreview(editForm).length }}
+                  {{ t("admin.groups.openaiMessages.routes") }}
+                </span>
+              </div>
+              <div class="divide-y divide-violet-100 dark:divide-violet-900/40">
+                <div
+                  v-for="row in messagesDispatchPreview(editForm)"
+                  :key="`${row.source}:${row.claude_model}`"
+                  class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto] items-center gap-2 px-3 py-2"
+                >
+                  <code class="truncate text-[11px] font-medium text-gray-800 dark:text-gray-100">
+                    {{ row.claude_model }}
+                  </code>
+                  <Icon name="arrowRight" size="sm" class="text-violet-400" />
+                  <code class="truncate text-[11px] font-medium text-violet-700 dark:text-violet-200">
+                    {{ row.target_model }}
+                  </code>
+                  <span
+                    class="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                    :class="
+                      row.source === 'exact'
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200'
+                        : 'bg-gray-100 text-gray-600 dark:bg-dark-600 dark:text-gray-300'
+                    "
+                  >
+                    {{
+                      t(
+                        row.source === "exact"
+                          ? "admin.groups.openaiMessages.exactRule"
+                          : "admin.groups.openaiMessages.familyRule",
+                      )
+                    }}
+                  </span>
                 </div>
               </div>
             </div>
@@ -3540,7 +3623,9 @@
                             type="text"
                             :placeholder="
                               t(
-                                'admin.groups.openaiMessages.targetModelPlaceholder',
+                                editForm.platform === 'gemini'
+                                  ? 'admin.groups.openaiMessages.geminiTargetModelPlaceholder'
+                                  : 'admin.groups.openaiMessages.targetModelPlaceholder',
                               )
                             "
                             class="input bg-gray-50 focus:bg-white dark:bg-dark-800 dark:focus:bg-dark-900"
@@ -4472,6 +4557,7 @@ import {
   createDefaultMessagesDispatchFormState,
   messagesDispatchConfigToFormState,
   messagesDispatchFormStateToConfig,
+  messagesDispatchPreview,
   resetMessagesDispatchFormState,
   supportsMessagesDispatchPlatform,
   type MessagesDispatchMappingRow,
@@ -5084,7 +5170,7 @@ const createForm = reactive({
   claude_code_only: false,
   fallback_group_id: null as number | null,
   fallback_group_id_on_invalid_request: null as number | null,
-  // OpenAI Messages 调度配置（仅 openai 平台使用）
+  // Anthropic Messages 兼容调度配置（OpenAI/Gemini）
   allow_messages_dispatch: false,
   allow_live: false,
   opus_mapped_model: createMessagesDispatchDefaults.opus_mapped_model,
@@ -5445,7 +5531,7 @@ const editForm = reactive({
   claude_code_only: false,
   fallback_group_id: null as number | null,
   fallback_group_id_on_invalid_request: null as number | null,
-  // OpenAI Messages 调度配置（仅 openai 平台使用）
+  // Anthropic Messages 兼容调度配置（OpenAI/Gemini）
   allow_messages_dispatch: false,
   allow_live: false,
   default_mapped_model: '',
@@ -6007,7 +6093,7 @@ const handleCreateGroup = async () => {
         createForm.supported_model_scopes,
       ),
       messages_dispatch_model_config:
-        createForm.platform === "openai"
+        ["openai", "gemini"].includes(createForm.platform)
           ? messagesDispatchFormStateToConfig({
               allow_messages_dispatch: createForm.allow_messages_dispatch,
               opus_mapped_model: createForm.opus_mapped_model,
@@ -6152,6 +6238,7 @@ const handleEdit = async (group: AdminGroup) => {
     group.fallback_group_id_on_invalid_request;
   const messagesDispatchFormState = messagesDispatchConfigToFormState(
     group.messages_dispatch_model_config,
+    group.platform,
   );
   editForm.allow_messages_dispatch =
     group.allow_messages_dispatch ||
@@ -6280,7 +6367,7 @@ const handleUpdateGroup = async () => {
         editForm.supported_model_scopes,
       ),
       messages_dispatch_model_config:
-        editForm.platform === "openai"
+        ["openai", "gemini"].includes(editForm.platform)
           ? messagesDispatchFormStateToConfig({
               allow_messages_dispatch: editForm.allow_messages_dispatch,
               opus_mapped_model: editForm.opus_mapped_model,
@@ -6658,9 +6745,10 @@ watch(
     if (!["anthropic", "antigravity"].includes(newVal)) {
       createForm.fallback_group_id_on_invalid_request = null;
     }
-    if (!supportsMessagesDispatchPlatform(newVal)) {
-      resetMessagesDispatchFormState(createForm);
-    }
+    resetMessagesDispatchFormState(
+      createForm,
+      supportsMessagesDispatchPlatform(newVal) ? newVal : "openai",
+    );
     if (!supportsLivePlatform(newVal)) {
       createForm.allow_live = false;
     }
@@ -6708,9 +6796,21 @@ watch(
     if (!["anthropic", "antigravity"].includes(newVal)) {
       editForm.fallback_group_id_on_invalid_request = null;
     }
-    if (!supportsMessagesDispatchPlatform(newVal)) {
-      resetMessagesDispatchFormState(editForm);
-    }
+    const dispatchState =
+      editingGroup.value && newVal === editingGroup.value.platform
+        ? messagesDispatchConfigToFormState(
+            editingGroup.value.messages_dispatch_model_config,
+            newVal,
+          )
+        : createDefaultMessagesDispatchFormState(newVal);
+    editForm.allow_messages_dispatch =
+      editingGroup.value && newVal === editingGroup.value.platform
+        ? Boolean(editingGroup.value.allow_messages_dispatch)
+        : false;
+    editForm.opus_mapped_model = dispatchState.opus_mapped_model;
+    editForm.sonnet_mapped_model = dispatchState.sonnet_mapped_model;
+    editForm.haiku_mapped_model = dispatchState.haiku_mapped_model;
+    editForm.exact_model_mappings = dispatchState.exact_model_mappings;
     if (!supportsLivePlatform(newVal)) {
       editForm.allow_live = false;
     }
@@ -6753,22 +6853,6 @@ watch(
     resetDisabledBatchImagePricing(editForm);
   },
 );
-
-watch(
-  () => editForm.platform,
-  (newVal) => {
-    if (!['anthropic', 'antigravity'].includes(newVal)) {
-      editForm.fallback_group_id_on_invalid_request = null
-    }
-    if (!supportsMessagesDispatchPlatform(newVal)) {
-      editForm.allow_messages_dispatch = false
-      editForm.default_mapped_model = ''
-    }
-    if (!supportsLivePlatform(newVal)) {
-      editForm.allow_live = false
-    }
-  }
-)
 
 // 点击外部关闭账号搜索下拉框
 const handleClickOutside = (event: MouseEvent) => {

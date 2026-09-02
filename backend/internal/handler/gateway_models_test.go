@@ -454,6 +454,100 @@ func TestGatewayModels_GeminiGroupFiltersMappedModelsByPlatform(t *testing.T) {
 	require.Equal(t, []string{"gemini-2.5-flash"}, modelIDsForTest(got.Data))
 }
 
+func TestGatewayModels_GeminiMessagesDispatchAdvertisesAvailableClaudeAliases(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	groupID := int64(211)
+	h := newGatewayModelsHandlerForTest(
+		&gatewayModelsAccountRepoStub{
+			byGroup: map[int64][]service.Account{
+				groupID: {
+					{
+						ID:       1,
+						Platform: service.PlatformGemini,
+						Credentials: map[string]any{
+							"model_mapping": map[string]any{
+								"gemini-2.5-flash": "gemini-2.5-flash",
+								"gemini-2.5-pro":   "gemini-2.5-pro",
+							},
+						},
+					},
+				},
+			},
+		},
+	)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		Group: &service.Group{
+			ID:                    groupID,
+			Platform:              service.PlatformGemini,
+			AllowMessagesDispatch: true,
+			MessagesDispatchModelConfig: service.OpenAIMessagesDispatchModelConfig{
+				OpusMappedModel:   "gemini-2.5-pro",
+				SonnetMappedModel: "gemini-2.5-pro",
+				HaikuMappedModel:  "gemini-2.5-flash",
+				ExactModelMappings: map[string]string{
+					"claude-sonnet-4-5-20250929": "gemini-2.5-pro",
+					"claude-custom-*":            "gemini-2.5-flash",
+				},
+			},
+		},
+	})
+
+	h.Models(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got gatewayModelsResponseForTest
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	ids := modelIDsForTest(got.Data)
+	require.Contains(t, ids, "claude-opus-4-6")
+	require.Contains(t, ids, "claude-sonnet-4-6")
+	require.Contains(t, ids, "claude-haiku-4-5")
+	require.Contains(t, ids, "claude-sonnet-4-5-20250929")
+	require.NotContains(t, ids, "claude-custom-*")
+}
+
+func TestGatewayModels_GeminiMessagesDispatchDisabledHidesClaudeAliases(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	groupID := int64(212)
+	h := newGatewayModelsHandlerForTest(&gatewayModelsAccountRepoStub{
+		byGroup: map[int64][]service.Account{
+			groupID: {{
+				ID:       1,
+				Platform: service.PlatformGemini,
+				Credentials: map[string]any{
+					"model_mapping": map[string]any{"gemini-2.5-pro": "gemini-2.5-pro"},
+				},
+			}},
+		},
+	})
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		Group: &service.Group{
+			ID:                    groupID,
+			Platform:              service.PlatformGemini,
+			AllowMessagesDispatch: false,
+			MessagesDispatchModelConfig: service.OpenAIMessagesDispatchModelConfig{
+				SonnetMappedModel: "gemini-2.5-pro",
+			},
+		},
+	})
+
+	h.Models(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var got gatewayModelsResponseForTest
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, []string{"gemini-2.5-pro"}, modelIDsForTest(got.Data))
+}
+
 // Scenario: a Composite group with only Anthropic accounts must not inherit Antigravity Gemini defaults.
 func TestGatewayCodexModels_CompositeAnthropicDoesNotAdvertiseAntigravityDefaults(t *testing.T) {
 	gin.SetMode(gin.TestMode)

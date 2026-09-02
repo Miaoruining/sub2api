@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -1125,6 +1126,16 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 
 	// Get available models from account configurations for the selected group platform.
 	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)
+	if platform == service.PlatformGemini && apiKey != nil && apiKey.Group != nil {
+		actualModels := availableModels
+		if len(actualModels) == 0 {
+			actualModels = defaultModelIDsForPlatform(service.PlatformGemini)
+		}
+		aliases := geminiMessagesDispatchPublicModels(apiKey.Group, actualModels)
+		if len(aliases) > 0 {
+			availableModels = mergeModelIDs(actualModels, aliases)
+		}
+	}
 	if apiKey != nil && apiKey.Group != nil && apiKey.Group.CustomModelsListEnabled() {
 		fallbackModels := defaultModelIDsForPlatform(platform)
 		availableModels = filterModelsByCustomList(customModelsListSource(platform, availableModels, fallbackModels), fallbackModels, apiKey.Group.ModelsListConfig.Models)
@@ -1266,6 +1277,54 @@ func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *
 		}
 	}
 	return models
+}
+
+func geminiMessagesDispatchPublicModels(group *service.Group, availableModels []string) []string {
+	if group == nil || group.Platform != service.PlatformGemini || !group.AllowMessagesDispatch {
+		return nil
+	}
+
+	available := make(map[string]struct{}, len(availableModels))
+	for _, model := range availableModels {
+		model = strings.TrimSpace(model)
+		if model != "" {
+			available[model] = struct{}{}
+		}
+	}
+
+	candidates := []string{
+		"claude-opus-4-6",
+		"claude-sonnet-4-6",
+		"claude-haiku-4-5",
+	}
+	exactMappings := make([]string, 0, len(group.MessagesDispatchModelConfig.ExactModelMappings))
+	for publicModel := range group.MessagesDispatchModelConfig.ExactModelMappings {
+		publicModel = strings.TrimSpace(publicModel)
+		if publicModel == "" || strings.Contains(publicModel, "*") {
+			continue
+		}
+		exactMappings = append(exactMappings, publicModel)
+	}
+	sort.Strings(exactMappings)
+	candidates = append(candidates, exactMappings...)
+
+	aliases := make([]string, 0, len(candidates))
+	seen := make(map[string]struct{}, len(candidates))
+	for _, publicModel := range candidates {
+		if _, ok := seen[publicModel]; ok {
+			continue
+		}
+		resolution, err := service.ResolveGeminiAnthropicModel(group, publicModel)
+		if err != nil {
+			continue
+		}
+		if _, ok := available[resolution.TargetModel]; !ok {
+			continue
+		}
+		seen[publicModel] = struct{}{}
+		aliases = append(aliases, publicModel)
+	}
+	return aliases
 }
 
 func writeModelsList(c *gin.Context, platform string, modelIDs []string) {

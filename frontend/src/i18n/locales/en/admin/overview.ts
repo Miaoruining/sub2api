@@ -1119,9 +1119,16 @@ export default {
         noFallback: 'No Fallback (Reject)'
       },
       openaiMessages: {
-        title: 'OpenAI Messages Dispatch',
+        title: 'Anthropic Messages Compatibility',
         allowDispatch: 'Allow /v1/messages dispatch',
-        allowDispatchHint: 'When enabled, API keys in this OpenAI group can dispatch requests through /v1/messages endpoint',
+        allowDispatchHint: 'When enabled, API keys in this group can use Anthropic /v1/messages and /v1/messages/count_tokens.',
+        geminiCreateHint: 'Create the Gemini group first, bind a schedulable account, then enable compatibility while editing the group.',
+        geminiProviderWarning: 'Clients use Claude model names and the Anthropic format, but the actual provider is Google Gemini, not Anthropic Claude.',
+        mappingPreviewTitle: 'Public model mapping preview',
+        mappingPreviewHint: 'The model marketplace only shows Claude aliases whose actual Gemini target is currently available.',
+        routes: 'routes',
+        familyRule: 'Family',
+        exactRule: 'Exact',
         familyMappingTitle: 'Family Default Mapping',
         familyMappingHint: 'Requests that match the Opus, Sonnet, or Haiku families will prefer the target model configured here.',
         opusModel: 'Opus Target Model',
@@ -1138,6 +1145,7 @@ export default {
         claudeModelPlaceholder: 'e.g., claude-sonnet-4-5-20250929',
         targetModel: 'Target Model',
         targetModelPlaceholder: 'e.g., gpt-5.4',
+        geminiTargetModelPlaceholder: 'e.g., gemini-2.5-pro',
         removeExactMapping: 'Remove Exact Mapping'
       },
       openaiLive: {

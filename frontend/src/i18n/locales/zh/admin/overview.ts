@@ -1117,9 +1117,16 @@ export default {
         noFallback: '不降级（直接拒绝）'
       },
       openaiMessages: {
-        title: 'OpenAI Messages 调度配置',
+        title: 'Anthropic Messages 兼容',
         allowDispatch: '允许 /v1/messages 调度',
-        allowDispatchHint: '启用后，此 OpenAI 分组的 API Key 可以通过 /v1/messages 端点调度请求',
+        allowDispatchHint: '启用后，此分组的 API Key 可以通过 Anthropic /v1/messages 与 /v1/messages/count_tokens 访问。',
+        geminiCreateHint: '请先创建 Gemini 分组，绑定一个可调度账号后，再在编辑页开启兼容模式。',
+        geminiProviderWarning: '客户使用 Claude 模型名和 Anthropic 格式，但实际提供者是 Google Gemini，不是 Anthropic Claude。',
+        mappingPreviewTitle: '对外模型映射预览',
+        mappingPreviewHint: '模型广场将仅展示实际 Gemini 目标当前可用的 Claude 别名。',
+        routes: '条路由',
+        familyRule: '系列',
+        exactRule: '精确',
         familyMappingTitle: '系列默认映射',
         familyMappingHint: '当请求命中 Opus、Sonnet、Haiku 系列时，会优先使用这里配置的目标模型。',
         opusModel: 'Opus 映射模型',
@@ -1136,6 +1143,7 @@ export default {
         claudeModelPlaceholder: '例如: claude-sonnet-4-5-20250929',
         targetModel: '目标模型',
         targetModelPlaceholder: '例如: gpt-5.4',
+        geminiTargetModelPlaceholder: '例如: gemini-2.5-pro',
         removeExactMapping: '删除精确映射'
       },
       openaiLive: {
