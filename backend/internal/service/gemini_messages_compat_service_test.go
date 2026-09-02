@@ -606,6 +606,103 @@ func TestGeminiMessagesCompatServiceForward_PreservesRequestedModelAndMappedUpst
 	require.Contains(t, httpStub.lastReq.URL.String(), "/models/claude-sonnet-4-20250514:")
 }
 
+func TestGeminiMessagesCompatService_ForwardAnthropic_MapsOAuthAndKeepsPublicModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	httpStub := &geminiCompatHTTPUpstreamStub{response: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader(
+			"data: {\"response\":{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hello\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":2,\"candidatesTokenCount\":1}}}\n\n" +
+				"data: [DONE]\n\n",
+		)),
+	}}
+	svc := &GeminiMessagesCompatService{
+		tokenProvider: &GeminiTokenProvider{},
+		httpUpstream:  httpStub,
+		cfg:           &config.Config{},
+	}
+	account := &Account{
+		ID:          1,
+		Platform:    PlatformGemini,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token": "ya29.test",
+			"project_id":   "project-1",
+			"model_mapping": map[string]any{
+				"gemini-2.5-pro": "gemini-2.5-pro-custom",
+			},
+		},
+	}
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	result, err := svc.ForwardAnthropic(
+		context.Background(), c, account,
+		[]byte(`{"model":"claude-sonnet-4-6","max_tokens":64,"messages":[{"role":"user","content":"hi"}]}`),
+		"claude-sonnet-4-6", "gemini-2.5-pro",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "claude-sonnet-4-6", result.Model)
+	require.Equal(t, "gemini-2.5-pro-custom", result.UpstreamModel)
+	require.Equal(t, "claude-sonnet-4-6", jsonStringField(t, recorder.Body.Bytes(), "model"))
+
+	sent, readErr := io.ReadAll(httpStub.lastReq.Body)
+	require.NoError(t, readErr)
+	var wrapped map[string]any
+	require.NoError(t, json.Unmarshal(sent, &wrapped))
+	require.Equal(t, "gemini-2.5-pro-custom", wrapped["model"])
+}
+
+func jsonStringField(t *testing.T, body []byte, field string) string {
+	t.Helper()
+	var object map[string]any
+	require.NoError(t, json.Unmarshal(body, &object))
+	value, _ := object[field].(string)
+	return value
+}
+
+func TestGeminiAliasResolutionFeedsActualModelIntoAccountSelection(t *testing.T) {
+	group := &Group{
+		Platform:                    PlatformGemini,
+		AllowMessagesDispatch:       true,
+		MessagesDispatchModelConfig: defaultGeminiMessagesDispatchModelConfig(),
+	}
+	resolution, err := ResolveGeminiAnthropicModel(group, "claude-sonnet-4-6")
+	require.NoError(t, err)
+
+	accounts := []Account{
+		{
+			ID:          1,
+			Platform:    PlatformGemini,
+			Status:      StatusActive,
+			Schedulable: true,
+			Credentials: map[string]any{"model_mapping": map[string]any{
+				"claude-sonnet-4-6": "gemini-2.0-flash",
+			}},
+		},
+		{
+			ID:          2,
+			Platform:    PlatformGemini,
+			Status:      StatusActive,
+			Schedulable: true,
+			Credentials: map[string]any{"model_mapping": map[string]any{
+				"gemini-2.5-pro": "gemini-2.5-pro",
+			}},
+		},
+	}
+
+	selected := (&GeminiMessagesCompatService{}).selectBestGeminiAccount(
+		context.Background(), accounts, resolution.TargetModel, nil, PlatformGemini, false,
+	)
+
+	require.NotNil(t, selected)
+	require.Equal(t, int64(2), selected.ID)
+}
+
 func TestGeminiMessagesCompatServiceForward_NormalizesWebSearchToolForAIStudio(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

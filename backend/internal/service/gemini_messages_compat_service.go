@@ -581,6 +581,24 @@ func (s *GeminiMessagesCompatService) SelectAccountForAIStudioEndpoints(ctx cont
 }
 
 func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (*ForwardResult, error) {
+	var req struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		return nil, fmt.Errorf("parse request: %w", err)
+	}
+	model := strings.TrimSpace(req.Model)
+	return s.ForwardAnthropic(ctx, c, account, body, model, model)
+}
+
+func (s *GeminiMessagesCompatService) ForwardAnthropic(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	body []byte,
+	publicModel string,
+	dispatchModel string,
+) (*ForwardResult, error) {
 	beginUpstreamResponseModelObservation(c)
 	beginGeminiImageOutputObservation(c)
 	startTime := time.Now()
@@ -592,15 +610,14 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 	if err := json.Unmarshal(body, &req); err != nil {
 		return nil, fmt.Errorf("parse request: %w", err)
 	}
-	if strings.TrimSpace(req.Model) == "" {
+	publicModel = strings.TrimSpace(publicModel)
+	dispatchModel = strings.TrimSpace(dispatchModel)
+	if publicModel == "" || dispatchModel == "" {
 		return nil, fmt.Errorf("missing model")
 	}
 
-	originalModel := req.Model
-	mappedModel := req.Model
-	if account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount {
-		mappedModel = account.GetMappedModel(req.Model)
-	}
+	originalModel := publicModel
+	mappedModel := account.GetMappedModel(dispatchModel)
 
 	geminiReq, err := convertClaudeMessagesToGeminiGenerateContent(body)
 	if err != nil {
