@@ -54,7 +54,7 @@ func TestAPIKeyAuthInvalidAbuseReturns429BeforeRepository(t *testing.T) {
 	r.ServeHTTP(w, httpRequest(t, "/v1/messages", "", "another-random-key"))
 	require.Equal(t, http.StatusTooManyRequests, w.Code)
 	require.Equal(t, "60", w.Header().Get("Retry-After"))
-	require.Contains(t, w.Body.String(), "INVALID_AUTH_RATE_LIMITED")
+	require.JSONEq(t, `{"type":"error","error":{"type":"rate_limit_error","message":"Too many invalid authentication attempts; retry later"}}`, w.Body.String())
 	require.Equal(t, IngressRejectInvalidAuthRateLimited, reason)
 	require.Equal(t, 1, repoCalls, "rate-limited request must not reach the repository")
 }
