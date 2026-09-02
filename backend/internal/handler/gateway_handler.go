@@ -2184,6 +2184,111 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 	}
 }
 
+// GeminiCountTokens handles Anthropic-compatible token counting for Gemini groups.
+// It validates authentication, billing eligibility and model availability, but does
+// not acquire generation concurrency or record billable usage.
+func (h *GatewayHandler) GeminiCountTokens(c *gin.Context) {
+	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
+	if !ok {
+		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Invalid API key")
+		return
+	}
+	if _, ok = middleware2.GetAuthSubjectFromContext(c); !ok {
+		h.errorResponse(c, http.StatusInternalServerError, "api_error", "User context not found")
+		return
+	}
+
+	reqLog := requestLogger(
+		c,
+		"handler.gateway.gemini_count_tokens",
+		zap.Int64("api_key_id", apiKey.ID),
+		zap.Any("group_id", apiKey.GroupID),
+	)
+	defer h.maybeLogCompatibilityFallbackMetrics(reqLog)
+
+	body, err := readLenientJSONRequestBodyWithPrealloc(c.Request, h.cfg)
+	if err != nil {
+		if maxErr, ok := extractMaxBytesError(err); ok {
+			h.errorResponse(c, http.StatusRequestEntityTooLarge, "invalid_request_error", buildBodyTooLargeMessage(maxErr.Limit))
+			return
+		}
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to read request body")
+		return
+	}
+	if len(body) == 0 {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Request body is empty")
+		return
+	}
+
+	setOpsRequestContext(c, "", false)
+	bodyRef := service.NewRequestBodyRef(body)
+	parsedReq, err := service.ParseGatewayRequest(bodyRef, domain.PlatformAnthropic)
+	if err != nil {
+		logRequestBodyParseFailure(reqLog, body, err)
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "Failed to parse request body")
+		return
+	}
+	body = parsedReq.Body.Bytes()
+	SetClaudeCodeClientContext(c, body, parsedReq)
+	if parsedReq.Model == "" {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
+		return
+	}
+
+	publicModel, dispatchModel, resolveErr := resolveGatewayMessagesDispatchModels(
+		apiKey.Group,
+		service.PlatformGemini,
+		parsedReq.Model,
+	)
+	if resolveErr != nil {
+		h.errorResponse(c, http.StatusNotFound, "not_found_error", "Requested model is not available in this Gemini group")
+		return
+	}
+	setOpsRequestContext(c, publicModel, false)
+	service.SetOpsUpstreamModel(c, dispatchModel)
+	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(false, false)))
+	_, _ = h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, dispatchModel)
+
+	subscription, _ := middleware2.GetSubscriptionFromContext(c)
+	if err := h.billingCacheService.CheckBillingEligibility(
+		c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription,
+		service.QuotaPlatform(c.Request.Context(), apiKey),
+	); err != nil {
+		status, code, message, retryAfter := billingErrorDetails(err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		h.errorResponse(c, status, code, message)
+		return
+	}
+
+	parsedReq.SessionContext = &service.SessionContext{
+		ClientIP:  ip.GetClientIP(c),
+		UserAgent: c.GetHeader("User-Agent"),
+		APIKeyID:  apiKey.ID,
+	}
+	sessionHash := h.gatewayService.GenerateSessionHash(parsedReq)
+	account, err := h.gatewayService.SelectAccountForModel(c.Request.Context(), apiKey.GroupID, sessionHash, dispatchModel)
+	if err != nil {
+		reqLog.Warn("gateway.gemini_count_tokens_select_account_failed", zap.Error(err))
+		classification := classifyNoAccountErrorFromGin(
+			c, h.gatewayService, apiKey, dispatchModel, publicModel, service.PlatformGemini,
+		)
+		if !classification.ModelNotFound {
+			markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
+		}
+		h.errorResponse(c, classification.Status, classification.ErrType, classification.Message)
+		return
+	}
+	setOpsSelectedAccount(c, account.ID, account.Platform)
+
+	if _, err := h.geminiCompatService.CountAnthropicTokens(
+		c.Request.Context(), c, account, publicModel, dispatchModel, body,
+	); err != nil {
+		reqLog.Error("gateway.gemini_count_tokens_forward_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+	}
+}
+
 // InterceptType 表示请求拦截类型
 type InterceptType int
 

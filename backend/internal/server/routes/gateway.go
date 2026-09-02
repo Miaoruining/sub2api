@@ -21,6 +21,26 @@ import (
 	"github.com/tidwall/sjson"
 )
 
+const (
+	countTokensGatewayAnthropic = "anthropic"
+	countTokensGatewayOpenAI    = "openai"
+	countTokensGatewayGrok      = "grok"
+	countTokensGatewayGemini    = "gemini"
+)
+
+func countTokensGatewayKind(platform string) string {
+	switch platform {
+	case service.PlatformOpenAI, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek:
+		return countTokensGatewayOpenAI
+	case service.PlatformGrok:
+		return countTokensGatewayGrok
+	case service.PlatformGemini:
+		return countTokensGatewayGemini
+	default:
+		return countTokensGatewayAnthropic
+	}
+}
+
 // RegisterGatewayRoutes 注册 API 网关路由（Claude/OpenAI/Gemini 兼容）
 func RegisterGatewayRoutes(
 	r *gin.Engine,
@@ -56,11 +76,13 @@ func RegisterGatewayRoutes(
 		}
 	}
 	countTokensHandler := func(c *gin.Context) {
-		switch getGroupPlatform(c) {
-		case service.PlatformOpenAI, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek:
+		switch countTokensGatewayKind(getGroupPlatform(c)) {
+		case countTokensGatewayOpenAI:
 			h.OpenAIGateway.CountTokens(c)
-		case service.PlatformGrok:
+		case countTokensGatewayGrok:
 			h.OpenAIGateway.GrokCountTokens(c)
+		case countTokensGatewayGemini:
+			h.Gateway.GeminiCountTokens(c)
 		default:
 			h.Gateway.CountTokens(c)
 		}

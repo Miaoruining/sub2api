@@ -58,6 +58,13 @@ func newGatewayRoutesTestRouterWithConfig(cfg *config.Config, platform ...string
 	return router
 }
 
+func TestCountTokensGatewayKind(t *testing.T) {
+	require.Equal(t, countTokensGatewayGemini, countTokensGatewayKind(service.PlatformGemini))
+	require.Equal(t, countTokensGatewayOpenAI, countTokensGatewayKind(service.PlatformOpenAI))
+	require.Equal(t, countTokensGatewayGrok, countTokensGatewayKind(service.PlatformGrok))
+	require.Equal(t, countTokensGatewayAnthropic, countTokensGatewayKind(service.PlatformAnthropic))
+}
+
 func TestGatewayRoutesOpenAIResponsesCompactPathIsRegistered(t *testing.T) {
 	router := newGatewayRoutesTestRouter()
 

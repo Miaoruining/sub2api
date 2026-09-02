@@ -1168,6 +1168,28 @@ func (s *GeminiMessagesCompatService) ForwardNative(ctx context.Context, c *gin.
 	default:
 		return nil, s.writeGoogleError(c, http.StatusNotFound, "Unsupported action: "+action)
 	}
+	if action == "countTokens" {
+		count, countErr := s.countGeminiTokens(ctx, c, account, originalModel, body)
+		if countErr != nil {
+			var typedErr *geminiTokenCountError
+			if errors.As(countErr, &typedErr) {
+				return nil, s.writeGoogleError(c, typedErr.StatusCode, typedErr.Message)
+			}
+			return nil, s.writeGoogleError(c, http.StatusBadGateway, sanitizeUpstreamErrorMessage(countErr.Error()))
+		}
+		if count.Estimated {
+			c.Header(modelPortTokenCountEstimatedHeader, "true")
+		}
+		c.JSON(http.StatusOK, map[string]any{"totalTokens": count.Total})
+		return &ForwardResult{
+			RequestID:     count.RequestID,
+			Usage:         ClaudeUsage{},
+			Model:         originalModel,
+			UpstreamModel: count.Model,
+			Stream:        false,
+			Duration:      time.Since(startTime),
+		}, nil
+	}
 
 	// Some Gemini upstreams validate tool call parts strictly; ensure any `functionCall` part includes a
 	// `thoughtSignature` to avoid frequent INVALID_ARGUMENT 400s.
@@ -2603,10 +2625,25 @@ func estimateGeminiCountTokens(reqBody []byte) int {
 			if t := strings.TrimSpace(part.Get("text").String()); t != "" {
 				total += estimateTokensForText(t)
 			}
+			if functionCall := part.Get("functionCall"); functionCall.Exists() {
+				total += estimateTokensForText(functionCall.Raw)
+			}
+			if functionResponse := part.Get("functionResponse"); functionResponse.Exists() {
+				total += estimateTokensForText(functionResponse.Raw)
+			}
 			return true
 		})
 		return true
 	})
+
+	// Function declarations and tool selection are part of the model input and
+	// must be represented in local fallback estimates.
+	if tools := gjson.GetBytes(reqBody, "tools"); tools.Exists() {
+		total += estimateTokensForText(tools.Raw)
+	}
+	if toolConfig := gjson.GetBytes(reqBody, "toolConfig"); toolConfig.Exists() {
+		total += estimateTokensForText(toolConfig.Raw)
+	}
 
 	if total < 0 {
 		return 0
