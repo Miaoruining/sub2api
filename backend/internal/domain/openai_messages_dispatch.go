@@ -1,7 +1,9 @@
 package domain
 
 // OpenAIMessagesDispatchModelConfig controls how Anthropic /v1/messages
-// requests are mapped onto OpenAI/Codex models.
+// requests are mapped onto an OpenAI/Codex or Gemini group's upstream models.
+//
+// The persisted JSON field name is intentionally kept for backward compatibility.
 type OpenAIMessagesDispatchModelConfig struct {
 	OpusMappedModel    string            `json:"opus_mapped_model,omitempty"`
 	SonnetMappedModel  string            `json:"sonnet_mapped_model,omitempty"`

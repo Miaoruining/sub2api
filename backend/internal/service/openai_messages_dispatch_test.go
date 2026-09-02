@@ -91,3 +91,69 @@ func TestSanitizeGroupMessagesDispatchFields_PreservesCompositeDispatchToggle(t 
 	require.Empty(t, group.DefaultMappedModel)
 	require.Equal(t, OpenAIMessagesDispatchModelConfig{}, group.MessagesDispatchModelConfig)
 }
+
+func TestResolveGeminiAnthropicModel(t *testing.T) {
+	t.Parallel()
+
+	group := &Group{
+		Platform:              PlatformGemini,
+		AllowMessagesDispatch: true,
+		MessagesDispatchModelConfig: OpenAIMessagesDispatchModelConfig{
+			OpusMappedModel:   "gemini-2.5-pro",
+			SonnetMappedModel: "gemini-2.5-pro",
+			HaikuMappedModel:  "gemini-2.5-flash",
+			ExactModelMappings: map[string]string{
+				"claude-sonnet-*":   "gemini-2.5-flash",
+				"claude-sonnet-4-*": "gemini-2.5-pro",
+				"claude-sonnet-4-6": "gemini-2.0-flash",
+			},
+		},
+	}
+
+	exact, err := ResolveGeminiAnthropicModel(group, "claude-sonnet-4-6")
+	require.NoError(t, err)
+	require.Equal(t, "gemini-2.0-flash", exact.TargetModel)
+	require.Equal(t, "claude-sonnet-4-6", exact.MappingRule)
+
+	longest, err := ResolveGeminiAnthropicModel(group, "claude-sonnet-4-5")
+	require.NoError(t, err)
+	require.Equal(t, "gemini-2.5-pro", longest.TargetModel)
+	require.Equal(t, "claude-sonnet-4-*", longest.MappingRule)
+
+	direct, err := ResolveGeminiAnthropicModel(group, "gemini-2.5-flash")
+	require.NoError(t, err)
+	require.False(t, direct.Mapped)
+	require.Equal(t, "gemini-2.5-flash", direct.TargetModel)
+}
+
+func TestResolveGeminiAnthropicModel_DisabledAliasDoesNotAffectDirectGemini(t *testing.T) {
+	t.Parallel()
+
+	group := &Group{Platform: PlatformGemini, AllowMessagesDispatch: false}
+
+	_, err := ResolveGeminiAnthropicModel(group, "claude-sonnet-4-6")
+	require.ErrorIs(t, err, ErrMessagesDispatchModelNotFound)
+
+	direct, err := ResolveGeminiAnthropicModel(group, "gemini-2.5-pro")
+	require.NoError(t, err)
+	require.Equal(t, "gemini-2.5-pro", direct.TargetModel)
+}
+
+func TestSanitizeGroupMessagesDispatchFields_PreservesGeminiConfig(t *testing.T) {
+	t.Parallel()
+
+	group := &Group{
+		Platform:              PlatformGemini,
+		AllowMessagesDispatch: true,
+		DefaultMappedModel:    "must-be-cleared",
+		MessagesDispatchModelConfig: OpenAIMessagesDispatchModelConfig{
+			SonnetMappedModel: "gemini-2.5-pro",
+		},
+	}
+
+	sanitizeGroupMessagesDispatchFields(group)
+
+	require.True(t, group.AllowMessagesDispatch)
+	require.Empty(t, group.DefaultMappedModel)
+	require.Equal(t, "gemini-2.5-pro", group.MessagesDispatchModelConfig.SonnetMappedModel)
+}

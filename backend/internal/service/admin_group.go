@@ -19,6 +19,61 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 )
 
+func validateMessagesDispatchMappingRules(mappings map[string]string) error {
+	seen := make(map[string]struct{}, len(mappings))
+	for rawRule, rawTarget := range mappings {
+		rule := strings.TrimSpace(rawRule)
+		target := strings.TrimSpace(rawTarget)
+		if rule == "" || target == "" {
+			return infraerrors.New(http.StatusBadRequest, "INVALID_MESSAGES_DISPATCH_MAPPING", "模型映射的来源和目标不能为空")
+		}
+		if _, exists := seen[rule]; exists {
+			return infraerrors.Newf(http.StatusBadRequest, "MESSAGES_DISPATCH_MAPPING_CONFLICT", "模型映射规则 %q 归一化后冲突", rule)
+		}
+		seen[rule] = struct{}{}
+	}
+	return nil
+}
+
+func validateGeminiMessagesDispatchConfig(group *Group, accounts []Account) error {
+	if group == nil || group.Platform != PlatformGemini || !group.AllowMessagesDispatch {
+		return nil
+	}
+	if err := validateMessagesDispatchMappingRules(group.MessagesDispatchModelConfig.ExactModelMappings); err != nil {
+		return err
+	}
+
+	cfg := normalizeMessagesDispatchModelConfig(PlatformGemini, group.MessagesDispatchModelConfig)
+	targets := []string{cfg.OpusMappedModel, cfg.SonnetMappedModel, cfg.HaikuMappedModel}
+	for _, target := range cfg.ExactModelMappings {
+		targets = append(targets, strings.TrimSpace(target))
+	}
+	if len(accounts) == 0 {
+		return infraerrors.New(http.StatusBadRequest, "GEMINI_MESSAGES_DISPATCH_NO_ACCOUNT", "请先为分组绑定至少一个可调度 Gemini 账号")
+	}
+
+	for _, target := range targets {
+		if target == "" || !strings.HasPrefix(strings.ToLower(target), "gemini-") {
+			return infraerrors.Newf(http.StatusBadRequest, "INVALID_GEMINI_MESSAGES_DISPATCH_TARGET", "目标 %q 必须是 Gemini 模型", target)
+		}
+		supported := false
+		for i := range accounts {
+			account := &accounts[i]
+			if account.Platform != PlatformGemini || account.Status != StatusActive || !account.Schedulable {
+				continue
+			}
+			if account.IsModelSupported(target) {
+				supported = true
+				break
+			}
+		}
+		if !supported {
+			return infraerrors.Newf(http.StatusBadRequest, "UNSUPPORTED_GEMINI_MESSAGES_DISPATCH_TARGET", "分组内没有可调度账号支持模型 %q", target)
+		}
+	}
+	return nil
+}
+
 // Group management implementations
 func (s *adminServiceImpl) ListGroups(ctx context.Context, page, pageSize int, platform, status, search string, isExclusive *bool, sortBy, sortOrder string) ([]Group, int64, error) {
 	params := pagination.PaginationParams{Page: page, PageSize: pageSize, SortBy: sortBy, SortOrder: sortOrder}
@@ -301,6 +356,9 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	}
 
 	platform := NormalizeGroupPlatform(input.Platform)
+	if err := validateMessagesDispatchMappingRules(input.MessagesDispatchModelConfig.ExactModelMappings); err != nil {
+		return nil, err
+	}
 	modelPricing, err := normalizeGroupModelPricing(platform, input.ModelPricing)
 	if err != nil {
 		return nil, err
@@ -503,13 +561,35 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		RequireOAuthOnly:                input.RequireOAuthOnly,
 		RequirePrivacySet:               input.RequirePrivacySet,
 		DefaultMappedModel:              input.DefaultMappedModel,
-		MessagesDispatchModelConfig:     normalizeOpenAIMessagesDispatchModelConfig(input.MessagesDispatchModelConfig),
+		MessagesDispatchModelConfig:     normalizeMessagesDispatchModelConfig(platform, input.MessagesDispatchModelConfig),
 		ModelsListConfig:                normalizeGroupModelsListConfig(input.ModelsListConfig),
 		RPMLimit:                        input.RPMLimit,
 		MaxReasoningEffort:              maxReasoningEffort,
 		ReasoningEffortMappings:         reasoningEffortMappings,
 	}
 	sanitizeGroupMessagesDispatchFields(group)
+	if group.Platform == PlatformGemini && group.AllowMessagesDispatch {
+		if s.accountRepo == nil || len(accountIDsToCopy) == 0 {
+			return nil, validateGeminiMessagesDispatchConfig(group, nil)
+		}
+		accountPointers, fetchErr := s.accountRepo.GetByIDs(ctx, accountIDsToCopy)
+		if fetchErr != nil {
+			return nil, fmt.Errorf("failed to fetch copied accounts for Gemini messages dispatch validation: %w", fetchErr)
+		}
+		accounts := make([]Account, 0, len(accountPointers))
+		for _, account := range accountPointers {
+			if account == nil {
+				continue
+			}
+			if group.RequireOAuthOnly && account.Type == AccountTypeAPIKey {
+				continue
+			}
+			accounts = append(accounts, *account)
+		}
+		if validateErr := validateGeminiMessagesDispatchConfig(group, accounts); validateErr != nil {
+			return nil, validateErr
+		}
+	}
 	if group.Platform != PlatformOpenAI && group.Platform != PlatformComposite {
 		group.AllowLive = false
 	}
@@ -867,7 +947,10 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		group.DefaultMappedModel = *input.DefaultMappedModel
 	}
 	if input.MessagesDispatchModelConfig != nil {
-		group.MessagesDispatchModelConfig = normalizeOpenAIMessagesDispatchModelConfig(*input.MessagesDispatchModelConfig)
+		if validateErr := validateMessagesDispatchMappingRules(input.MessagesDispatchModelConfig.ExactModelMappings); validateErr != nil {
+			return nil, validateErr
+		}
+		group.MessagesDispatchModelConfig = normalizeMessagesDispatchModelConfig(group.Platform, *input.MessagesDispatchModelConfig)
 	}
 	if input.ModelsListConfig != nil {
 		group.ModelsListConfig = normalizeGroupModelsListConfig(*input.ModelsListConfig)
@@ -890,6 +973,18 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		group.ReasoningEffortMappings = reasoningEffortMappings
 	}
 	sanitizeGroupMessagesDispatchFields(group)
+	if group.Platform == PlatformGemini && group.AllowMessagesDispatch {
+		if s.accountRepo == nil {
+			return nil, validateGeminiMessagesDispatchConfig(group, nil)
+		}
+		accounts, listErr := s.accountRepo.ListSchedulableByGroupID(ctx, id)
+		if listErr != nil {
+			return nil, fmt.Errorf("failed to list schedulable accounts for Gemini messages dispatch validation: %w", listErr)
+		}
+		if validateErr := validateGeminiMessagesDispatchConfig(group, accounts); validateErr != nil {
+			return nil, validateErr
+		}
+	}
 	if group.Platform != PlatformOpenAI && group.Platform != PlatformComposite {
 		group.AllowLive = false
 	}

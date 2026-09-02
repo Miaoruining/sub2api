@@ -42,6 +42,26 @@ type groupRepoStubForAdmin struct {
 	listWithFiltersErr         error
 }
 
+type geminiMessagesDispatchAccountRepoStub struct {
+	accountRepoStub
+	byID        map[int64]*Account
+	schedulable []Account
+}
+
+func (s *geminiMessagesDispatchAccountRepoStub) GetByIDs(_ context.Context, ids []int64) ([]*Account, error) {
+	accounts := make([]*Account, 0, len(ids))
+	for _, id := range ids {
+		if account, ok := s.byID[id]; ok {
+			accounts = append(accounts, account)
+		}
+	}
+	return accounts, nil
+}
+
+func (s *geminiMessagesDispatchAccountRepoStub) ListSchedulableByGroupID(_ context.Context, _ int64) ([]Account, error) {
+	return append([]Account(nil), s.schedulable...), nil
+}
+
 func (s *groupRepoStubForAdmin) Create(_ context.Context, g *Group) error {
 	if s.createID > 0 {
 		g.ID = s.createID
@@ -211,6 +231,153 @@ func TestNormalizeGroupModelPricing_NormalizesEmptyTimePricing(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, pricing, 1)
 	require.Nil(t, pricing[0].TimePricing)
+}
+
+func TestValidateGeminiMessagesDispatchConfig(t *testing.T) {
+	t.Parallel()
+
+	group := &Group{
+		Platform:                    PlatformGemini,
+		AllowMessagesDispatch:       true,
+		MessagesDispatchModelConfig: defaultGeminiMessagesDispatchModelConfig(),
+	}
+	supported := []Account{{
+		Platform:    PlatformGemini,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{"model_mapping": map[string]any{
+			"gemini-2.5-pro":   "gemini-2.5-pro",
+			"gemini-2.5-flash": "gemini-2.5-flash",
+		}},
+	}}
+
+	require.NoError(t, validateGeminiMessagesDispatchConfig(group, supported))
+	require.ErrorContains(t, validateGeminiMessagesDispatchConfig(group, nil), "可调度 Gemini 账号")
+
+	group.MessagesDispatchModelConfig.HaikuMappedModel = "claude-haiku-4-5"
+	require.ErrorContains(t, validateGeminiMessagesDispatchConfig(group, supported), "Gemini 模型")
+}
+
+func TestValidateGeminiMessagesDispatchConfig_RejectsUnsupportedTarget(t *testing.T) {
+	t.Parallel()
+
+	group := &Group{
+		Platform:              PlatformGemini,
+		AllowMessagesDispatch: true,
+		MessagesDispatchModelConfig: OpenAIMessagesDispatchModelConfig{
+			OpusMappedModel:   "gemini-2.5-pro",
+			SonnetMappedModel: "gemini-2.5-pro",
+			HaikuMappedModel:  "gemini-2.5-flash",
+		},
+	}
+	accounts := []Account{{
+		Platform:    PlatformGemini,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{"model_mapping": map[string]any{
+			"gemini-2.5-pro": "gemini-2.5-pro",
+		}},
+	}}
+
+	err := validateGeminiMessagesDispatchConfig(group, accounts)
+	require.ErrorContains(t, err, "没有可调度账号支持模型")
+	require.ErrorContains(t, err, "gemini-2.5-flash")
+}
+
+func TestValidateMessagesDispatchMappingRules_RejectsNormalizedWildcardConflict(t *testing.T) {
+	t.Parallel()
+
+	err := validateMessagesDispatchMappingRules(map[string]string{
+		"claude-sonnet-*":   "gemini-2.5-pro",
+		" claude-sonnet-* ": "gemini-2.5-flash",
+	})
+
+	require.ErrorContains(t, err, "冲突")
+}
+
+func TestAdminService_CreateGeminiMessagesDispatchRequiresCopiedAccount(t *testing.T) {
+	repo := &groupRepoStubForAdmin{createID: 91}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	_, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
+		Name:                        "gemini-messages",
+		Platform:                    PlatformGemini,
+		RateMultiplier:              1,
+		AllowMessagesDispatch:       true,
+		MessagesDispatchModelConfig: defaultGeminiMessagesDispatchModelConfig(),
+		CopyAccountsFromGroupIDs:    nil,
+	})
+
+	require.ErrorContains(t, err, "可调度 Gemini 账号")
+	require.Nil(t, repo.created)
+}
+
+func TestAdminService_CreateGeminiMessagesDispatchValidatesCopiedAccounts(t *testing.T) {
+	account := &Account{
+		ID:          101,
+		Platform:    PlatformGemini,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{"model_mapping": map[string]any{
+			"gemini-2.5-pro":   "gemini-2.5-pro",
+			"gemini-2.5-flash": "gemini-2.5-flash",
+		}},
+	}
+	repo := &groupRepoStubForAdmin{
+		createID: 91,
+		getByIDByID: map[int64]*Group{
+			12: {ID: 12, Platform: PlatformGemini},
+		},
+		getAccountIDsByGroupIDsFn: func(_ []int64) ([]int64, error) { return []int64{101}, nil },
+		bindAccountsToGroupFn:     func(_ int64, _ []int64) error { return nil },
+	}
+	accountRepo := &geminiMessagesDispatchAccountRepoStub{byID: map[int64]*Account{101: account}}
+	svc := &adminServiceImpl{groupRepo: repo, accountRepo: accountRepo}
+
+	group, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
+		Name:                        "gemini-messages",
+		Platform:                    PlatformGemini,
+		RateMultiplier:              1,
+		AllowMessagesDispatch:       true,
+		MessagesDispatchModelConfig: defaultGeminiMessagesDispatchModelConfig(),
+		CopyAccountsFromGroupIDs:    []int64{12},
+	})
+
+	require.NoError(t, err)
+	require.True(t, group.AllowMessagesDispatch)
+	require.Equal(t, int64(1), group.AccountCount)
+}
+
+func TestAdminService_UpdateGeminiMessagesDispatchRejectsUnsupportedTarget(t *testing.T) {
+	existing := &Group{
+		ID:               77,
+		Name:             "gemini",
+		Platform:         PlatformGemini,
+		Status:           StatusActive,
+		RateMultiplier:   1,
+		SubscriptionType: SubscriptionTypeStandard,
+	}
+	repo := &groupRepoStubForAdmin{getByID: existing}
+	accountRepo := &geminiMessagesDispatchAccountRepoStub{schedulable: []Account{{
+		ID:          101,
+		Platform:    PlatformGemini,
+		Status:      StatusActive,
+		Schedulable: true,
+		Credentials: map[string]any{"model_mapping": map[string]any{
+			"gemini-2.5-pro": "gemini-2.5-pro",
+		}},
+	}}}
+	svc := &adminServiceImpl{groupRepo: repo, accountRepo: accountRepo}
+	enabled := true
+	config := defaultGeminiMessagesDispatchModelConfig()
+
+	_, err := svc.UpdateGroup(context.Background(), existing.ID, &UpdateGroupInput{
+		AllowMessagesDispatch:       &enabled,
+		MessagesDispatchModelConfig: &config,
+	})
+
+	require.ErrorContains(t, err, "gemini-2.5-flash")
+	require.Nil(t, repo.updated)
 }
 
 type compositeRouteRepoStubForAdmin struct {
