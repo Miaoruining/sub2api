@@ -540,6 +540,15 @@ func TestUpdateProviderInstanceRejectsProtectedConfigChangesWhilePendingOrders(t
 			wantValue:     "cert-serial-test",
 		},
 		{
+			name:          "wxpay signMode",
+			providerKey:   payment.TypeWxpay,
+			createConfig:  validWxpayProviderConfig,
+			supportedType: []string{payment.TypeWxpay},
+			updateConfig:  map[string]string{"signMode": "platform_certificate"},
+			fieldName:     "signMode",
+			wantValue:     "public_key",
+		},
+		{
 			name:          "alipay appId",
 			providerKey:   payment.TypeAlipay,
 			createConfig:  validAlipayProviderConfig,

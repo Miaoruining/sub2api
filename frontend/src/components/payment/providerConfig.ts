@@ -74,6 +74,8 @@ export const PAYMENT_MODE_REDIRECT = 'redirect'
 
 export const ALIPAY_SIGN_MODE_PUBLIC_KEY = 'public_key'
 export const ALIPAY_SIGN_MODE_CERTIFICATE = 'certificate'
+export const WXPAY_SIGN_MODE_PUBLIC_KEY = 'public_key'
+export const WXPAY_SIGN_MODE_PLATFORM_CERTIFICATE = 'platform_certificate'
 
 export const PAYMENT_CURRENCY_OPTIONS: TypeOption[] = [
   { value: 'CNY', label: 'CNY' },
@@ -188,13 +190,34 @@ export const PROVIDER_CONFIG_FIELDS: Record<string, ConfigFieldDef[]> = {
     },
   ],
   wxpay: [
+    {
+      key: 'signMode',
+      label: '',
+      sensitive: false,
+      defaultValue: WXPAY_SIGN_MODE_PUBLIC_KEY,
+      options: [
+        { value: WXPAY_SIGN_MODE_PUBLIC_KEY, label: 'admin.settings.payment.wxpaySignModePublicKey' },
+        { value: WXPAY_SIGN_MODE_PLATFORM_CERTIFICATE, label: 'admin.settings.payment.wxpaySignModePlatformCertificate' },
+      ],
+      hintKey: 'admin.settings.payment.field_wxpaySignModeHint',
+    },
     { key: 'appId', label: 'App ID', sensitive: false },
     { key: 'mchId', label: '', sensitive: false },
     { key: 'privateKey', label: '', sensitive: true },
     { key: 'apiV3Key', label: '', sensitive: true },
     { key: 'certSerial', label: '', sensitive: false },
-    { key: 'publicKey', label: '', sensitive: true },
-    { key: 'publicKeyId', label: '', sensitive: false },
+    {
+      key: 'publicKey',
+      label: '',
+      sensitive: true,
+      visibleWhen: { key: 'signMode', value: WXPAY_SIGN_MODE_PUBLIC_KEY },
+    },
+    {
+      key: 'publicKeyId',
+      label: '',
+      sensitive: false,
+      visibleWhen: { key: 'signMode', value: WXPAY_SIGN_MODE_PUBLIC_KEY },
+    },
   ],
   stripe: [
     { key: 'secretKey', label: '', sensitive: true },

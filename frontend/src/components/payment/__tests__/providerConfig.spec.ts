@@ -44,6 +44,32 @@ describe('PROVIDER_CONFIG_FIELDS.alipay', () => {
 })
 
 describe('PROVIDER_CONFIG_FIELDS.wxpay', () => {
+  it('defaults existing providers to WeChat Pay public-key mode', () => {
+    const fields = getVisibleProviderConfigFields('wxpay', {})
+    const keys = fields.map(field => field.key)
+
+    expect(findField('wxpay', 'signMode')?.defaultValue).toBe('public_key')
+    expect(keys).toContain('publicKey')
+    expect(keys).toContain('publicKeyId')
+  })
+
+  it('uses platform certificate auto-download without asking for a WeChat Pay public key', () => {
+    const fields = getVisibleProviderConfigFields('wxpay', {
+      signMode: 'platform_certificate',
+    })
+    const keys = fields.map(field => field.key)
+
+    expect(keys).not.toContain('publicKey')
+    expect(keys).not.toContain('publicKeyId')
+    expect(keys).toEqual(expect.arrayContaining([
+      'appId',
+      'mchId',
+      'privateKey',
+      'apiV3Key',
+      'certSerial',
+    ]))
+  })
+
   it('keeps admin form validation aligned with backend-required credentials', () => {
     expect(findField('wxpay', 'publicKeyId')?.optional).toBeFalsy()
     expect(findField('wxpay', 'certSerial')?.optional).toBeFalsy()

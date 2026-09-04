@@ -131,7 +131,7 @@ var providerPendingOrderProtectedConfigFields = map[string]map[string]struct{}{
 		"privatekey": {}, "publickey": {}, "alipaypublickey": {}, "appid": {},
 		"signmode": {}, "appcertpublickey": {}, "alipaycertpublickey": {}, "alipayrootcert": {},
 	},
-	payment.TypeWxpay:     {"privatekey": {}, "apiv3key": {}, "publickey": {}, "appid": {}, "mpappid": {}, "mchid": {}, "publickeyid": {}, "certserial": {}},
+	payment.TypeWxpay:     {"privatekey": {}, "apiv3key": {}, "publickey": {}, "appid": {}, "mpappid": {}, "mchid": {}, "publickeyid": {}, "certserial": {}, "signmode": {}},
 	payment.TypeStripe:    {"secretkey": {}, "webhooksecret": {}, "currency": {}},
 	payment.TypeAirwallex: {"clientid": {}, "apikey": {}, "webhooksecret": {}, "apibase": {}, "accountid": {}, "currency": {}},
 }

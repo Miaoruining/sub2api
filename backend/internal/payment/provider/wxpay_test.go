@@ -230,6 +230,16 @@ func TestNewWxpay(t *testing.T) {
 		}
 		return cfg
 	}
+	withoutKeys := func(config map[string]string, keys ...string) map[string]string {
+		cfg := make(map[string]string, len(config))
+		for k, v := range config {
+			cfg[k] = v
+		}
+		for _, key := range keys {
+			delete(cfg, key)
+		}
+		return cfg
+	}
 
 	tests := []struct {
 		name      string
@@ -241,6 +251,21 @@ func TestNewWxpay(t *testing.T) {
 			name:    "valid config succeeds",
 			config:  validConfig,
 			wantErr: false,
+		},
+		{
+			name: "platform certificate mode does not require a WeChat Pay public key",
+			config: withoutKeys(withOverride(map[string]string{
+				"signMode": "platform_certificate",
+			}), "publicKey", "publicKeyId"),
+			wantErr: false,
+		},
+		{
+			name: "unsupported sign mode is rejected",
+			config: withOverride(map[string]string{
+				"signMode": "unsupported",
+			}),
+			wantErr:   true,
+			errSubstr: "signMode",
 		},
 		{
 			name:      "missing appId",

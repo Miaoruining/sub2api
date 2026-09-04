@@ -142,13 +142,16 @@ Direct integration with WeChat Pay APIv3. Supports Native QR code payment, H5 pa
 
 | Parameter | Description | Required |
 |-----------|-------------|----------|
+| **Verification Mode** | `WeChat Pay Public Key` or `Auto-rotating Platform Certificates`; must match the merchant's credential setup | Yes |
 | **AppID** | WeChat Pay AppID | Yes |
 | **Merchant ID (MchID)** | WeChat Pay merchant ID | Yes |
 | **Merchant API Private Key** | Merchant API private key (PEM format) | Yes |
 | **APIv3 Key** | 32-byte APIv3 key | Yes |
-| **WeChat Pay Public Key** | WeChat Pay public key (PEM format) | Yes |
-| **WeChat Pay Public Key ID** | WeChat Pay public key ID | Yes |
+| **WeChat Pay Public Key** | WeChat Pay public key (PEM format) | Public-key mode |
+| **WeChat Pay Public Key ID** | WeChat Pay public key ID | Public-key mode |
 | **Certificate Serial Number** | Merchant certificate serial number | Yes |
+
+Platform-certificate mode uses the merchant ID, merchant private key, merchant certificate serial, and APIv3 key to download and periodically rotate WeChat Pay platform certificates automatically. No platform certificate upload is required.
 
 ### Stripe
 
