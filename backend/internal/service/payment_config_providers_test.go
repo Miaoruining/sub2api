@@ -220,6 +220,10 @@ func TestIsSensitiveProviderConfigField(t *testing.T) {
 		{"alipay", "privateKey", true},
 		{"alipay", "publicKey", true},
 		{"alipay", "alipayPublicKey", true},
+		{"alipay", "appCertPublicKey", true},
+		{"alipay", "alipayCertPublicKey", true},
+		{"alipay", "alipayRootCert", true},
+		{"alipay", "signMode", false},
 		{"alipay", "appId", false},
 		{"alipay", "notifyUrl", false},
 
@@ -256,6 +260,62 @@ func TestIsSensitiveProviderConfigField(t *testing.T) {
 			got := isSensitiveProviderConfigField(tc.providerKey, tc.field)
 			assert.Equal(t, tc.wantSen, got, "isSensitiveProviderConfigField(%q, %q)", tc.providerKey, tc.field)
 		})
+	}
+}
+
+func TestAlipayCertificateFieldsAreHiddenAndPreservedOnBlankEdit(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentConfigService{
+		entClient:     client,
+		encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+	}
+	secrets := map[string]string{
+		"privateKey":          "application-private-key",
+		"appCertPublicKey":    "application-public-certificate",
+		"alipayCertPublicKey": "alipay-public-certificate",
+		"alipayRootCert":      "alipay-root-certificate",
+	}
+	config := map[string]string{
+		"signMode": "certificate",
+		"appId":    "alipay-app-test",
+	}
+	for key, value := range secrets {
+		config[key] = value
+	}
+
+	instance, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
+		ProviderKey:    payment.TypeAlipay,
+		Name:           "Alipay Certificate",
+		Config:         config,
+		SupportedTypes: []string{payment.TypeAlipay},
+		Enabled:        false,
+	})
+	require.NoError(t, err)
+
+	responses, err := svc.ListProviderInstancesWithConfig(ctx)
+	require.NoError(t, err)
+	require.Len(t, responses, 1)
+	require.Equal(t, "certificate", responses[0].Config["signMode"])
+	for key := range secrets {
+		require.NotContains(t, responses[0].Config, key)
+	}
+
+	blankSecrets := make(map[string]string, len(secrets))
+	for key := range secrets {
+		blankSecrets[key] = ""
+	}
+	_, err = svc.UpdateProviderInstance(ctx, instance.ID, UpdateProviderInstanceRequest{Config: blankSecrets})
+	require.NoError(t, err)
+
+	saved, err := client.PaymentProviderInstance.Get(ctx, instance.ID)
+	require.NoError(t, err)
+	savedConfig, err := svc.decryptConfig(saved.Config)
+	require.NoError(t, err)
+	for key, value := range secrets {
+		require.Equal(t, value, savedConfig[key])
 	}
 }
 
@@ -487,6 +547,42 @@ func TestUpdateProviderInstanceRejectsProtectedConfigChangesWhilePendingOrders(t
 			updateConfig:  map[string]string{"appId": "alipay-app-updated"},
 			fieldName:     "appId",
 			wantValue:     "alipay-app-test",
+		},
+		{
+			name:          "alipay signMode",
+			providerKey:   payment.TypeAlipay,
+			createConfig:  validAlipayProviderConfig,
+			supportedType: []string{payment.TypeAlipay},
+			updateConfig:  map[string]string{"signMode": "certificate"},
+			fieldName:     "signMode",
+			wantValue:     "",
+		},
+		{
+			name:          "alipay app certificate",
+			providerKey:   payment.TypeAlipay,
+			createConfig:  validAlipayProviderConfig,
+			supportedType: []string{payment.TypeAlipay},
+			updateConfig:  map[string]string{"appCertPublicKey": "app-cert-updated"},
+			fieldName:     "appCertPublicKey",
+			wantValue:     "",
+		},
+		{
+			name:          "alipay public certificate",
+			providerKey:   payment.TypeAlipay,
+			createConfig:  validAlipayProviderConfig,
+			supportedType: []string{payment.TypeAlipay},
+			updateConfig:  map[string]string{"alipayCertPublicKey": "alipay-cert-updated"},
+			fieldName:     "alipayCertPublicKey",
+			wantValue:     "",
+		},
+		{
+			name:          "alipay root certificate",
+			providerKey:   payment.TypeAlipay,
+			createConfig:  validAlipayProviderConfig,
+			supportedType: []string{payment.TypeAlipay},
+			updateConfig:  map[string]string{"alipayRootCert": "root-cert-updated"},
+			fieldName:     "alipayRootCert",
+			wantValue:     "",
 		},
 		{
 			name:          "easypay pid",

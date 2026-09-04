@@ -12,7 +12,12 @@ export interface ConfigFieldDef {
   clearable?: boolean
   defaultValue?: string
   hintKey?: string
+  multiline?: boolean
   options?: TypeOption[]
+  visibleWhen?: {
+    key: string
+    value: string
+  }
 }
 
 export interface TypeOption {
@@ -66,6 +71,9 @@ export const PAYMENT_MODE_POPUP = 'popup'
  * literal (case-insensitive); other values fall back to the default
  * precreate→pagepay flow. */
 export const PAYMENT_MODE_REDIRECT = 'redirect'
+
+export const ALIPAY_SIGN_MODE_PUBLIC_KEY = 'public_key'
+export const ALIPAY_SIGN_MODE_CERTIFICATE = 'certificate'
 
 export const PAYMENT_CURRENCY_OPTIONS: TypeOption[] = [
   { value: 'CNY', label: 'CNY' },
@@ -133,9 +141,51 @@ export const PROVIDER_CONFIG_FIELDS: Record<string, ConfigFieldDef[]> = {
     { key: 'cidWxpay', label: '', sensitive: false, optional: true },
   ],
   alipay: [
+    {
+      key: 'signMode',
+      label: '',
+      sensitive: false,
+      defaultValue: ALIPAY_SIGN_MODE_PUBLIC_KEY,
+      options: [
+        { value: ALIPAY_SIGN_MODE_PUBLIC_KEY, label: 'admin.settings.payment.alipaySignModePublicKey' },
+        { value: ALIPAY_SIGN_MODE_CERTIFICATE, label: 'admin.settings.payment.alipaySignModeCertificate' },
+      ],
+      hintKey: 'admin.settings.payment.field_signModeHint',
+    },
     { key: 'appId', label: 'App ID', sensitive: false },
-    { key: 'privateKey', label: '', sensitive: true },
-    { key: 'publicKey', label: '', sensitive: true },
+    { key: 'privateKey', label: '', sensitive: true, multiline: true },
+    {
+      key: 'publicKey',
+      label: '',
+      sensitive: true,
+      multiline: true,
+      visibleWhen: { key: 'signMode', value: ALIPAY_SIGN_MODE_PUBLIC_KEY },
+      hintKey: 'admin.settings.payment.field_alipayPublicKeyHint',
+    },
+    {
+      key: 'appCertPublicKey',
+      label: '',
+      sensitive: true,
+      multiline: true,
+      visibleWhen: { key: 'signMode', value: ALIPAY_SIGN_MODE_CERTIFICATE },
+      hintKey: 'admin.settings.payment.field_appCertPublicKeyHint',
+    },
+    {
+      key: 'alipayCertPublicKey',
+      label: '',
+      sensitive: true,
+      multiline: true,
+      visibleWhen: { key: 'signMode', value: ALIPAY_SIGN_MODE_CERTIFICATE },
+      hintKey: 'admin.settings.payment.field_alipayCertPublicKeyHint',
+    },
+    {
+      key: 'alipayRootCert',
+      label: '',
+      sensitive: true,
+      multiline: true,
+      visibleWhen: { key: 'signMode', value: ALIPAY_SIGN_MODE_CERTIFICATE },
+      hintKey: 'admin.settings.payment.field_alipayRootCertHint',
+    },
   ],
   wxpay: [
     { key: 'appId', label: 'App ID', sensitive: false },
@@ -161,6 +211,21 @@ export const PROVIDER_CONFIG_FIELDS: Record<string, ConfigFieldDef[]> = {
     { key: 'currency', label: '', sensitive: false, defaultValue: 'CNY', hintKey: 'admin.settings.payment.field_paymentCurrencyHint', options: PAYMENT_CURRENCY_OPTIONS },
     { key: 'accountId', label: '', sensitive: false, optional: true, clearable: true, hintKey: 'admin.settings.payment.field_accountIdHint' },
   ],
+}
+
+export function getVisibleProviderConfigFields(
+  providerKey: string,
+  config: Record<string, string>,
+): ConfigFieldDef[] {
+  return (PROVIDER_CONFIG_FIELDS[providerKey] || []).filter(field => {
+    if (!field.visibleWhen) return true
+    const actual = config[field.visibleWhen.key]
+      || (PROVIDER_CONFIG_FIELDS[providerKey] || [])
+        .find(candidate => candidate.key === field.visibleWhen?.key)
+        ?.defaultValue
+      || ''
+    return actual === field.visibleWhen.value
+  })
 }
 
 // --- Helpers ---

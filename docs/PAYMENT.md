@@ -126,9 +126,15 @@ Direct integration with Alipay Open Platform. Mobile flows return an Alipay WAP/
 
 | Parameter | Description | Required |
 |-----------|-------------|----------|
+| **Signing Mode** | `Public Key` or `Certificate`; must match the App ID configuration in Alipay Open Platform | Yes |
 | **AppID** | Alipay application AppID | Yes |
 | **Private Key** | RSA2 application private key | Yes |
-| **Alipay Public Key** | Alipay public key | Yes |
+| **Alipay Public Key** | Alipay public key, not the application public key | Public-key mode |
+| **Application Public Certificate** | Complete PEM content of `appCertPublicKey_*.crt` | Certificate mode |
+| **Alipay Public Certificate** | Complete PEM content of `alipayCertPublicKey_RSA2.crt` | Certificate mode |
+| **Alipay Root Certificate** | Complete PEM content of `alipayRootCert.crt` | Certificate mode |
+
+Certificate mode calculates and submits `app_cert_sn` and `alipay_root_cert_sn` automatically. All three certificates and the application private key are treated as sensitive fields: the admin API never returns them in plaintext and audit logs redact them. Signing mode and signing material cannot be changed while orders are in progress.
 
 ### WeChat Pay (Direct)
 

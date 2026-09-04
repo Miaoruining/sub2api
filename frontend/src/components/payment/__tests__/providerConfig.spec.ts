@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
-  PAYMENT_CURRENCY_OPTIONS,
-  PROVIDER_CONFIG_FIELDS,
-  isBuiltInAlipayMethod,
+	ALIPAY_SIGN_MODE_CERTIFICATE,
+	ALIPAY_SIGN_MODE_PUBLIC_KEY,
+	PAYMENT_CURRENCY_OPTIONS,
+	PROVIDER_CONFIG_FIELDS,
+	getVisibleProviderConfigFields,
+	isBuiltInAlipayMethod,
   isBuiltInWxpayMethod,
   parseEasyPayCustomMethods,
   serializeEasyPayCustomMethods,
@@ -12,6 +15,33 @@ function findField(providerKey: string, key: string) {
   const fields = PROVIDER_CONFIG_FIELDS[providerKey] || []
   return fields.find(field => field.key === key)
 }
+
+describe('PROVIDER_CONFIG_FIELDS.alipay', () => {
+	it('defaults to ordinary public-key credentials for existing providers', () => {
+		const fields = getVisibleProviderConfigFields('alipay', {})
+		const keys = fields.map(field => field.key)
+
+		expect(findField('alipay', 'signMode')?.defaultValue).toBe(ALIPAY_SIGN_MODE_PUBLIC_KEY)
+		expect(keys).toContain('publicKey')
+		expect(keys).not.toContain('appCertPublicKey')
+		expect(keys).not.toContain('alipayCertPublicKey')
+		expect(keys).not.toContain('alipayRootCert')
+	})
+
+	it('shows all three certificate bodies instead of the ordinary Alipay public key', () => {
+		const fields = getVisibleProviderConfigFields('alipay', {
+			signMode: ALIPAY_SIGN_MODE_CERTIFICATE,
+		})
+		const keys = fields.map(field => field.key)
+
+		expect(keys).not.toContain('publicKey')
+		expect(keys).toEqual(expect.arrayContaining([
+			'appCertPublicKey',
+			'alipayCertPublicKey',
+			'alipayRootCert',
+		]))
+	})
+})
 
 describe('PROVIDER_CONFIG_FIELDS.wxpay', () => {
   it('keeps admin form validation aligned with backend-required credentials', () => {

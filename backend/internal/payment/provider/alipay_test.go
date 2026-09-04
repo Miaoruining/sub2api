@@ -4,10 +4,17 @@ package provider
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
+	"math/big"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/smartwalle/alipay/v3"
@@ -134,6 +141,121 @@ func TestNewAlipay(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNewAlipayCertificateModeRequiresAllCertificates(t *testing.T) {
+	t.Parallel()
+
+	base := map[string]string{
+		"appId":      "2021001234567890",
+		"privateKey": "application-private-key",
+		"signMode":   "certificate",
+	}
+	tests := []struct {
+		name    string
+		missing string
+	}{
+		{name: "missing application public certificate", missing: "appCertPublicKey"},
+		{name: "missing Alipay public certificate", missing: "alipayCertPublicKey"},
+		{name: "missing Alipay root certificate", missing: "alipayRootCert"},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := make(map[string]string, len(base)+2)
+			for key, value := range base {
+				cfg[key] = value
+			}
+			for _, key := range []string{"appCertPublicKey", "alipayCertPublicKey", "alipayRootCert"} {
+				if key != tc.missing {
+					cfg[key] = "certificate-pem"
+				}
+			}
+
+			_, err := NewAlipay("certificate-instance", cfg)
+			if err == nil {
+				t.Fatalf("expected missing %s to be rejected", tc.missing)
+			}
+			if !strings.Contains(err.Error(), tc.missing) {
+				t.Fatalf("error %q should contain %q", err.Error(), tc.missing)
+			}
+		})
+	}
+}
+
+func TestAlipayCertificateModeAddsCertificateSerials(t *testing.T) {
+	config := newAlipayCertificateConfig(t)
+	provider, err := NewAlipay("certificate-instance", config)
+	if err != nil {
+		t.Fatalf("NewAlipay() error = %v", err)
+	}
+
+	client, err := provider.getClient()
+	if err != nil {
+		t.Fatalf("getClient() error = %v", err)
+	}
+	values, err := client.URLValues(alipay.TradePagePay{})
+	if err != nil {
+		t.Fatalf("URLValues() error = %v", err)
+	}
+	if values.Get("app_cert_sn") == "" {
+		t.Fatal("certificate mode request is missing app_cert_sn")
+	}
+	if values.Get("alipay_root_cert_sn") == "" {
+		t.Fatal("certificate mode request is missing alipay_root_cert_sn")
+	}
+}
+
+func newAlipayCertificateConfig(t *testing.T) map[string]string {
+	t.Helper()
+
+	applicationKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate application key: %v", err)
+	}
+	alipayKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate Alipay key: %v", err)
+	}
+	rootKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate root key: %v", err)
+	}
+	privateDER, err := x509.MarshalPKCS8PrivateKey(applicationKey)
+	if err != nil {
+		t.Fatalf("marshal application private key: %v", err)
+	}
+
+	return map[string]string{
+		"appId":               "2021001234567890",
+		"privateKey":          string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: privateDER})),
+		"signMode":            "certificate",
+		"appCertPublicKey":    newSelfSignedCertificate(t, applicationKey, 101, "Application Certificate"),
+		"alipayCertPublicKey": newSelfSignedCertificate(t, alipayKey, 102, "Alipay Public Certificate"),
+		"alipayRootCert":      newSelfSignedCertificate(t, rootKey, 103, "Alipay Root Certificate"),
+	}
+}
+
+func newSelfSignedCertificate(t *testing.T, key *rsa.PrivateKey, serial int64, commonName string) string {
+	t.Helper()
+
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(serial),
+		Subject:               pkix.Name{CommonName: commonName},
+		Issuer:                pkix.Name{CommonName: commonName},
+		NotBefore:             time.Unix(1_700_000_000, 0),
+		NotAfter:              time.Unix(2_000_000_000, 0),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("create %s: %v", commonName, err)
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
 }
 
 func TestCreateTradeUsesPagePayForDesktop(t *testing.T) {

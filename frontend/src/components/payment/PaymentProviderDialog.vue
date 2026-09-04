@@ -160,7 +160,7 @@
               <span v-else class="text-red-500"> *</span>
             </label>
             <textarea
-              v-if="field.sensitive && field.key.toLowerCase().includes('key') && field.key !== 'pkey'"
+              v-if="field.sensitive && (field.multiline || field.key.toLowerCase().includes('key')) && field.key !== 'pkey'"
               v-model="config[field.key]"
               rows="3"
               class="input font-mono text-xs"
@@ -323,6 +323,7 @@ import {
   PAYMENT_MODE_POPUP,
   PAYMENT_MODE_REDIRECT,
   STRIPE_SDK_API_VERSION,
+  getVisibleProviderConfigFields,
   getAvailableTypes,
   extractBaseUrl,
   parseEasyPayCustomMethods,
@@ -469,10 +470,14 @@ const availableTypes = computed(() => {
 })
 
 const resolvedFields = computed(() => {
-  const fields = PROVIDER_CONFIG_FIELDS[form.provider_key] || []
+  const fields = getVisibleProviderConfigFields(form.provider_key, config)
   return fields.map(f => ({
     ...f,
     label: f.label || t(`admin.settings.payment.field_${f.key}`),
+    options: f.options?.map(option => ({
+      ...option,
+      label: option.label.startsWith('admin.') ? t(option.label) : option.label,
+    })),
   }))
 })
 
@@ -671,7 +676,7 @@ function handleSave() {
   // Validate required config fields — all non-optional fields must be filled.
   // In edit mode, sensitive fields may be left blank to preserve the stored
   // value (backend merges blanks by preserving the existing secret).
-  for (const f of PROVIDER_CONFIG_FIELDS[form.provider_key] || []) {
+  for (const f of resolvedFields.value) {
     if (f.optional) continue
     if (props.editing && f.sensitive) continue
     const val = (config[f.key] || '').trim()

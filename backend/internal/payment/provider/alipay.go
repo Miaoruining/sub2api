@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -18,6 +19,8 @@ const (
 	alipayProductCodePreCreate = "FACE_TO_FACE_PAYMENT"
 	alipayProductCodeWapPay    = "QUICK_WAP_WAY"
 	alipayProductCodePagePay   = "FAST_INSTANT_TRADE_PAY"
+	alipaySignModePublicKey    = "public_key"
+	alipaySignModeCertificate  = "certificate"
 )
 
 // Alipay response constants.
@@ -42,7 +45,7 @@ var (
 // Alipay implements payment.Provider and payment.CancelableProvider using the smartwalle/alipay SDK.
 type Alipay struct {
 	instanceID string
-	config     map[string]string // appId, privateKey, publicKey (or alipayPublicKey), notifyUrl, returnUrl
+	config     map[string]string // appId, privateKey, signMode, public-key/certificate credentials, notifyUrl, returnUrl
 
 	mu     sync.Mutex
 	client *alipay.Client
@@ -56,10 +59,32 @@ func NewAlipay(instanceID string, config map[string]string) (*Alipay, error) {
 			return nil, fmt.Errorf("alipay config missing required key: %s", k)
 		}
 	}
+	mode, err := resolveAlipaySignMode(config)
+	if err != nil {
+		return nil, err
+	}
+	if mode == alipaySignModeCertificate {
+		for _, k := range []string{"appCertPublicKey", "alipayCertPublicKey", "alipayRootCert"} {
+			if strings.TrimSpace(config[k]) == "" {
+				return nil, fmt.Errorf("alipay certificate mode missing required key: %s", k)
+			}
+		}
+	}
 	return &Alipay{
 		instanceID: instanceID,
 		config:     config,
 	}, nil
+}
+
+func resolveAlipaySignMode(config map[string]string) (string, error) {
+	mode := strings.ToLower(strings.TrimSpace(config["signMode"]))
+	if mode == "" {
+		return alipaySignModePublicKey, nil
+	}
+	if mode != alipaySignModePublicKey && mode != alipaySignModeCertificate {
+		return "", fmt.Errorf("alipay config has unsupported signMode: %s", mode)
+	}
+	return mode, nil
 }
 
 func (a *Alipay) getClient() (*alipay.Client, error) {
@@ -71,6 +96,17 @@ func (a *Alipay) getClient() (*alipay.Client, error) {
 	client, err := alipay.New(a.config["appId"], a.config["privateKey"], true)
 	if err != nil {
 		return nil, fmt.Errorf("alipay init client: %w", err)
+	}
+	mode, err := resolveAlipaySignMode(a.config)
+	if err != nil {
+		return nil, err
+	}
+	if mode == alipaySignModeCertificate {
+		if err := loadAlipayCertificates(client, a.config); err != nil {
+			return nil, err
+		}
+		a.client = client
+		return a.client, nil
 	}
 	pubKey := a.config["publicKey"]
 	if pubKey == "" {
@@ -84,6 +120,29 @@ func (a *Alipay) getClient() (*alipay.Client, error) {
 	}
 	a.client = client
 	return a.client, nil
+}
+
+func loadAlipayCertificates(client *alipay.Client, config map[string]string) error {
+	if err := client.LoadAppCertPublicKey(config["appCertPublicKey"]); err != nil {
+		return fmt.Errorf("alipay load appCertPublicKey: %w", err)
+	}
+	if err := client.LoadAlipayCertPublicKey(config["alipayCertPublicKey"]); err != nil {
+		return fmt.Errorf("alipay load alipayCertPublicKey: %w", err)
+	}
+	if err := client.LoadAliPayRootCert(config["alipayRootCert"]); err != nil {
+		return fmt.Errorf("alipay load alipayRootCert: %w", err)
+	}
+	values, err := client.URLValues(alipay.TradePagePay{})
+	if err != nil {
+		return fmt.Errorf("alipay validate certificate serials: %w", err)
+	}
+	if values.Get("app_cert_sn") == "" {
+		return errors.New("alipay appCertPublicKey did not produce app_cert_sn")
+	}
+	if values.Get("alipay_root_cert_sn") == "" {
+		return errors.New("alipay alipayRootCert did not produce alipay_root_cert_sn")
+	}
+	return nil
 }
 
 func (a *Alipay) Name() string        { return "Alipay" }

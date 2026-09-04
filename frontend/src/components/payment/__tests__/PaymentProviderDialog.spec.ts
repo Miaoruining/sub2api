@@ -96,6 +96,67 @@ function mountDialog(options: { editing?: ProviderInstance | null } = {}) {
 }
 
 describe('PaymentProviderDialog payment guide', () => {
+
+  it('renders certificate credentials without the ordinary Alipay public-key field', async () => {
+    const provider = providerFactory({
+      provider_key: 'alipay',
+      name: 'Alipay Certificate',
+      config: {
+        signMode: 'certificate',
+        appId: '2021001234567890',
+        notifyUrl: 'https://example.com/api/v1/payment/webhook/alipay',
+        returnUrl: 'https://example.com/payment/result',
+      },
+      supported_types: ['alipay'],
+    })
+    const wrapper = mountDialog({ editing: provider })
+
+    ;(wrapper.vm as unknown as { loadProvider: (provider: ProviderInstance) => void }).loadProvider(provider)
+    await nextTick()
+
+    const labels = wrapper.findAll('label').map(label => label.text())
+    expect(labels.some(label => label.includes('admin.settings.payment.field_appCertPublicKey'))).toBe(true)
+    expect(labels.some(label => label.includes('admin.settings.payment.field_alipayCertPublicKey'))).toBe(true)
+    expect(labels.some(label => label.includes('admin.settings.payment.field_alipayRootCert'))).toBe(true)
+    expect(labels.some(label => label.includes('admin.settings.payment.field_publicKey'))).toBe(false)
+    expect(wrapper.findAll('textarea')).toHaveLength(4)
+  })
+
+  it('submits a new certificate-mode provider without requiring an ordinary public key', async () => {
+    const provider = providerFactory({
+      provider_key: 'alipay',
+      name: 'Alipay Certificate',
+      config: {
+        signMode: 'certificate',
+        appId: '2021001234567890',
+        notifyUrl: 'https://example.com/api/v1/payment/webhook/alipay',
+        returnUrl: 'https://example.com/payment/result',
+      },
+      supported_types: ['alipay'],
+    })
+    const wrapper = mountDialog()
+
+    ;(wrapper.vm as unknown as { loadProvider: (provider: ProviderInstance) => void }).loadProvider(provider)
+    await nextTick()
+
+    const secretValues = ['application-private-key', 'app-cert', 'alipay-cert', 'root-cert']
+    const textareas = wrapper.findAll('textarea')
+    for (const [index, value] of secretValues.entries()) {
+      await textareas[index].setValue(value)
+    }
+    await wrapper.find('form').trigger('submit')
+
+    const payload = wrapper.emitted('save')?.[0]?.[0] as { config: Record<string, string> }
+    expect(payload.config).toMatchObject({
+      signMode: 'certificate',
+      privateKey: 'application-private-key',
+      appCertPublicKey: 'app-cert',
+      alipayCertPublicKey: 'alipay-cert',
+      alipayRootCert: 'root-cert',
+    })
+    expect(payload.config).not.toHaveProperty('publicKey')
+  })
+
   it('shows no payment guide for providers without a flow guide', () => {
     const wrapper = mountDialog()
 

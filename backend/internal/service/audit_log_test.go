@@ -91,6 +91,9 @@ func TestRedactAuditBody_AuthoritativeTablesSynced(t *testing.T) {
 		"config": {
 			"pkey": "easypay-merchant-fff",
 			"privateKey": "alipay-pem-ggg",
+			"appCertPublicKey": "alipay-app-cert-kkk",
+			"alipayCertPublicKey": "alipay-cert-lll",
+			"alipayRootCert": "alipay-root-cert-mmm",
 			"apiv3key": "wxpay-v3-hhh",
 			"SecretKey": "stripe-sk-iii",
 			"webhookSecret": "whsec-jjj"
@@ -103,7 +106,9 @@ func TestRedactAuditBody_AuthoritativeTablesSynced(t *testing.T) {
 	for _, secret := range []string{
 		"sk-session-aaa", "pem-body-bbb", "sa-blob-ccc",
 		"proxypass-ddd", "sk-custom-eee",
-		"easypay-merchant-fff", "alipay-pem-ggg", "wxpay-v3-hhh",
+		"easypay-merchant-fff", "alipay-pem-ggg",
+		"alipay-app-cert-kkk", "alipay-cert-lll", "alipay-root-cert-mmm",
+		"wxpay-v3-hhh",
 		"stripe-sk-iii", "whsec-jjj",
 	} {
 		if strings.Contains(out, secret) {
