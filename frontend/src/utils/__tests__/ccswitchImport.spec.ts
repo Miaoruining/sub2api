@@ -13,7 +13,7 @@ function paramsFromDeeplink(deeplink: string): URLSearchParams {
 
 describe('ccswitchImport utils', () => {
   it('defaults OpenAI CC Switch imports to the current Codex model', () => {
-    expect(OPENAI_CC_SWITCH_CODEX_MODEL).toBe('gpt-5.5')
+    expect(OPENAI_CC_SWITCH_CODEX_MODEL).toBe('gpt-5.6-sol')
   })
 
   it('defaults Grok Build imports to the current Grok model', () => {
@@ -38,9 +38,25 @@ describe('ccswitchImport utils', () => {
 
     expect(params.get('resource')).toBe('provider')
     expect(params.get('app')).toBe('codex')
-    expect(params.get('endpoint')).toBe(baseInput.baseUrl)
+    expect(params.get('endpoint')).toBe(`${baseInput.baseUrl}/v1`)
     expect(params.get('model')).toBe(OPENAI_CC_SWITCH_CODEX_MODEL)
-    expect(atob(params.get('usageScript') || '')).toBe(baseInput.usageScript)
+    expect(params.has('usageScript')).toBe(false)
+    expect(params.has('usageEnabled')).toBe(false)
+    expect(params.has('enabled')).toBe(false)
+  })
+
+  it('preserves the chosen model and encoded key, with opt-in usage querying at the site root', () => {
+    const params = paramsFromDeeplink(buildCcSwitchImportDeeplink({
+      ...baseInput, baseUrl: 'https://api.example.com/v1/', platform: 'openai', clientType: 'claude',
+      model: 'gpt-5.6-luna', providerName: 'ModelPort · GPT Plus', apiKey: 'test+&=?#', usageEnabled: true
+    }))
+    expect(params.get('endpoint')).toBe('https://api.example.com/v1')
+    expect(params.get('usageBaseUrl')).toBe('https://api.example.com')
+    expect(params.get('model')).toBe('gpt-5.6-luna')
+    expect(params.get('apiKey')).toBe('test+&=?#')
+    expect(params.get('name')).toBe('ModelPort · GPT Plus')
+    expect(atob(params.get('usageScript')!)).toBe(baseInput.usageScript)
+    expect(params.get('usageAutoInterval')).toBe('30')
   })
 
   it.each([

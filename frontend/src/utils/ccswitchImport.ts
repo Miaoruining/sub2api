@@ -1,6 +1,6 @@
 import type { GroupPlatform } from '@/types'
 
-export const OPENAI_CC_SWITCH_CODEX_MODEL = 'gpt-5.5'
+export const OPENAI_CC_SWITCH_CODEX_MODEL = 'gpt-5.6-sol'
 export const GROK_CC_SWITCH_MODEL = 'grok-4.5'
 
 export type CcSwitchClientType = 'claude' | 'gemini'
@@ -17,11 +17,13 @@ export interface CcSwitchImportDeeplinkInput {
   clientType: CcSwitchClientType
   providerName: string
   apiKey: string
-  usageScript: string
+  model?: string
+  usageEnabled?: boolean
+  usageScript?: string
 }
 
 function withV1Endpoint(baseUrl: string): string {
-  const normalizedBaseUrl = baseUrl.replace(/\/+$/, '')
+  const normalizedBaseUrl = baseUrl.trim().replace(/\/+$/, '')
   return normalizedBaseUrl.endsWith('/v1') ? normalizedBaseUrl : `${normalizedBaseUrl}/v1`
 }
 
@@ -30,16 +32,17 @@ export function resolveCcSwitchImportConfig(
   clientType: CcSwitchClientType,
   baseUrl: string
 ): CcSwitchImportConfig {
+  baseUrl = baseUrl.trim().replace(/\/+$/, '')
   switch (platform || 'anthropic') {
     case 'antigravity':
       return {
         app: clientType === 'gemini' ? 'gemini' : 'claude',
-        endpoint: `${baseUrl}/antigravity`
+        endpoint: `${baseUrl.replace(/\/v1$/, '')}/antigravity`
       }
     case 'openai':
       return {
         app: 'codex',
-        endpoint: baseUrl,
+        endpoint: withV1Endpoint(baseUrl),
         model: OPENAI_CC_SWITCH_CODEX_MODEL
       }
     case 'gemini':
@@ -69,16 +72,37 @@ export function buildCcSwitchImportDeeplink(input: CcSwitchImportDeeplinkInput):
     ['name', input.providerName],
     ['homepage', input.baseUrl],
     ['endpoint', config.endpoint],
-    ['apiKey', input.apiKey],
-    ['configFormat', 'json'],
-    ['usageEnabled', 'true'],
-    ['usageScript', btoa(input.usageScript)],
-    ['usageAutoInterval', '30']
+    ['apiKey', input.apiKey]
   ]
 
-  if (config.model) {
-    entries.splice(2, 0, ['model', config.model])
+  const model = input.model?.trim() || config.model
+  if (model) {
+    entries.push(['model', model])
+  }
+  if (input.usageEnabled && input.usageScript) {
+    const bytes = new TextEncoder().encode(input.usageScript)
+    entries.push(
+      ['usageEnabled', 'true'],
+      ['usageScript', btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join(''))],
+      ['usageBaseUrl', input.baseUrl.trim().replace(/\/+$/, '').replace(/\/v1$/, '')],
+      ['usageAutoInterval', '30']
+    )
   }
 
   return `ccswitch://v1/import?${new URLSearchParams(entries).toString()}`
 }
+
+export const CC_SWITCH_USAGE_SCRIPT = `({
+  request: {
+    url: "{{baseUrl}}/v1/usage",
+    method: "GET",
+    headers: { "Authorization": "Bearer {{apiKey}}" }
+  },
+  extractor: function(response) {
+    return {
+      isValid: response?.is_active ?? response?.isValid ?? false,
+      remaining: response?.remaining ?? response?.quota?.remaining ?? response?.balance,
+      unit: response?.unit ?? response?.quota?.unit ?? "USD"
+    };
+  }
+})`
