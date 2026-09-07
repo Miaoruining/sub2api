@@ -1477,11 +1477,10 @@ const (
 )
 
 // isThinkingBudgetConstraintError detects whether an upstream error message indicates
-// a budget_tokens constraint violation (e.g. "budget_tokens >= 1024").
-// Matches three conditions (all must be true):
-//  1. Contains "budget_tokens" or "budget tokens"
-//  2. Contains "thinking"
-//  3. Contains ">= 1024" or "greater than or equal to 1024" or ("1024" + "input should be")
+// a budget_tokens constraint violation. Different Anthropic-compatible upstreams use
+// different wording for the same two constraints:
+//   - budget_tokens must be at least 1024
+//   - budget_tokens must be less than max_tokens
 func isThinkingBudgetConstraintError(errMsg string) bool {
 	m := strings.ToLower(errMsg)
 
@@ -1491,20 +1490,66 @@ func isThinkingBudgetConstraintError(errMsg string) bool {
 		return false
 	}
 
-	// Condition 2: thinking
-	if !strings.Contains(m, "thinking") {
-		return false
-	}
-
-	// Condition 3: constraint indicator
+	// Minimum budget constraint.
 	if strings.Contains(m, ">= 1024") || strings.Contains(m, "greater than or equal to 1024") {
 		return true
 	}
 	if strings.Contains(m, "1024") && strings.Contains(m, "input should be") {
 		return true
 	}
+	if strings.Contains(m, "1024") && (strings.Contains(m, "at least") || strings.Contains(m, "minimum")) {
+		return true
+	}
+
+	// Relationship constraint. Examples seen in the wild include:
+	// "thinking budget_tokens must be less than max_tokens" and
+	// "max_tokens must be greater than thinking.budget_tokens".
+	if strings.Contains(m, "max_tokens") &&
+		(strings.Contains(m, "less than") ||
+			strings.Contains(m, "smaller than") ||
+			strings.Contains(m, "greater than") ||
+			strings.Contains(m, "larger than") ||
+			strings.Contains(m, "exceed")) {
+		return true
+	}
 
 	return false
+}
+
+// NormalizeClaudeThinkingBudget proactively fixes invalid Claude thinking
+// combinations before the request reaches an Anthropic-strict upstream. This avoids
+// spending one upstream round trip on a predictable 400 and also covers streaming
+// clients that surface the first error before a retry can be completed.
+//
+// Valid enabled budgets are preserved. Invalid or missing enabled budgets reuse the
+// conservative 32k/64k pair used by the post-error rectifier. Adaptive thinking does
+// not accept a manual budget, so a stray budget_tokens field is removed.
+func NormalizeClaudeThinkingBudget(body []byte) ([]byte, bool) {
+	thinking := gjson.GetBytes(body, "thinking")
+	if !thinking.Exists() || !thinking.IsObject() {
+		return body, false
+	}
+
+	switch thinking.Get("type").String() {
+	case "adaptive":
+		if !thinking.Get("budget_tokens").Exists() {
+			return body, false
+		}
+		modified, err := sjson.DeleteBytes(body, "thinking.budget_tokens")
+		if err != nil {
+			return body, false
+		}
+		return modified, true
+	case "enabled":
+		budget := thinking.Get("budget_tokens")
+		maxTokens := gjson.GetBytes(body, "max_tokens")
+		if budget.Exists() && budget.Int() >= 1024 && maxTokens.Exists() && maxTokens.Int() > budget.Int() {
+			return body, false
+		}
+		return RectifyThinkingBudget(body)
+	default:
+		return body, false
+	}
 }
 
 // RectifyThinkingBudget modifies the request body to fix budget_tokens constraint errors.

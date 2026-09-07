@@ -806,6 +806,13 @@ func TestSanitizeBedrockThinking(t *testing.T) {
 		assert.Equal(t, "adaptive", gjson.GetBytes(result, "thinking.type").String())
 	})
 
+	t.Run("opus 5 adaptive removes manual budget", func(t *testing.T) {
+		input := `{"thinking":{"type":"adaptive","budget_tokens":32000},"messages":[]}`
+		result := sanitizeBedrockThinking([]byte(input), "us.anthropic.claude-opus-5-v1")
+		assert.Equal(t, "adaptive", gjson.GetBytes(result, "thinking.type").String())
+		assert.False(t, gjson.GetBytes(result, "thinking.budget_tokens").Exists())
+	})
+
 	t.Run("opus 4.6 enabled without budget_tokens gets default", func(t *testing.T) {
 		input := `{"thinking":{"type":"enabled"},"messages":[]}`
 		result := sanitizeBedrockThinking([]byte(input), "us.anthropic.claude-opus-4-6-v1")
@@ -917,11 +924,11 @@ func TestSanitizeBedrockThinking_EdgeCases(t *testing.T) {
 		assert.JSONEq(t, input, string(result))
 	})
 
-	t.Run("opus 4.7 adaptive with budget_tokens preserved", func(t *testing.T) {
+	t.Run("opus 4.7 adaptive removes manual budget_tokens", func(t *testing.T) {
 		input := `{"thinking":{"type":"adaptive","budget_tokens":5000},"messages":[]}`
 		result := sanitizeBedrockThinking([]byte(input), "us.anthropic.claude-opus-4-7-v1")
 		assert.Equal(t, "adaptive", gjson.GetBytes(result, "thinking.type").String())
-		assert.Equal(t, int64(5000), gjson.GetBytes(result, "thinking.budget_tokens").Int())
+		assert.False(t, gjson.GetBytes(result, "thinking.budget_tokens").Exists())
 	})
 
 	// Forward() passes parsed.Model (standard names like "claude-opus-4-7")

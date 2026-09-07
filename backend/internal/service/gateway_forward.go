@@ -370,6 +370,21 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 			logger.LegacyPrintf("service.gateway", "Account %d: rewrote thinking.type for %s (Anthropic-SDK default 'enabled' -> vendor-specific)", account.ID, reqModel)
 		}
 	}
+	// Anthropic-strict thinking budget preflight. Claude rejects enabled thinking
+	// when budget_tokens is missing/below minimum/not less than max_tokens; adaptive
+	// requests reject a manual budget_tokens field. Normalize these deterministic
+	// client-side mistakes before the first upstream call when the rectifier is enabled.
+	// Minimal service instances used by internal callers/tests may not wire a setting
+	// service. Keep the product default (enabled) in that case.
+	budgetRectifierEnabled := s.settingService == nil || s.settingService.IsBudgetRectifierEnabled(ctx)
+	if ResolveThinkingProtocol(reqModel) == ThinkingProtocolAnthropicStrict && budgetRectifierEnabled {
+		if rewritten, applied := NormalizeClaudeThinkingBudget(body); applied {
+			if err := replaceBody(rewritten); err != nil {
+				return nil, err
+			}
+			logger.LegacyPrintf("service.gateway", "Account %d: normalized invalid thinking budget before forwarding model=%s", account.ID, reqModel)
+		}
+	}
 
 	// 重试循环
 	var resp *http.Response

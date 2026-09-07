@@ -734,6 +734,8 @@ func sanitizeBedrockThinking(body []byte, modelID string) []byte {
 	if isBedrockOpus47OrNewer(modelID) {
 		if thinkingType == "enabled" {
 			body, _ = sjson.SetBytes(body, "thinking.type", "adaptive")
+		}
+		if thinkingType == "enabled" || thinkingType == "adaptive" {
 			body, _ = sjson.DeleteBytes(body, "thinking.budget_tokens")
 		}
 		return body
