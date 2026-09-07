@@ -625,6 +625,7 @@ export default {
   // Model Plaza (public group/model pricing showcase)
   modelPlaza: {
     catalog: {
+      detailsShort: 'Details', noDescription: 'No description available.', requestUnit: 'request', cacheShort: 'Cached',
       availableOnly: 'Only models available to my auto keys (uncheck for the full visible price catalog)',
       cards: 'Card view', table: 'Group price tables', all: 'All', suppliers: 'Providers', billing: 'Billing mode', groups: 'Available groups', search: 'Search model names', reset: 'Reset filters', models: '{count} models', routes: '{count} group routes', details: 'View group prices', copy: 'Copy model name', copied: 'Copied', copyFailed: 'Copy failed. Select the model name manually.', input: 'Input', output: 'Output', cache: 'Cache read', request: 'Per request', image: 'Per image', token: 'Per token', unknown: 'Pricing not configured', priceNote: 'Standard-period price ranges include your group rates. Billing uses the selected group; expand for tiers, peak and time-based pricing.', scopeNote: 'This is a price catalog. Auto-key access also requires permission, an active plan where applicable, and a configured model list.',
     },

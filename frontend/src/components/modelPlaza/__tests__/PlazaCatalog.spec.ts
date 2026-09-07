@@ -18,7 +18,7 @@ describe('PlazaCatalog', () => {
     expect(wrapper.findAll('article')).toHaveLength(2)
     await wrapper.get('input[type=search]').setValue('gpt')
     expect(wrapper.findAll('article')).toHaveLength(1)
-    const details = wrapper.get('article').findAll('button').at(-1)!
+    const details = wrapper.get('article .details-button')
     await details.trigger('click')
     expect(wrapper.findAll('[data-test=group]')).toHaveLength(2)
     await wrapper.get('aside > button').trigger('click')

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>模型卡片视觉测试（非真实可用模型）</title>
+    <style>
+      body { margin: 0; width: 100vw; background: #fff !important; }
+      #fixture { margin: 60px 12px 12px; width: min(859px, calc(100% - 24px)); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+      #notice { position: absolute; left: 14px; top: 16px; font: 12px Arial, sans-serif; color: #71839f; }
+      @media (max-width: 767px) { #fixture { grid-template-columns: minmax(0, 1fr); } }
+    </style>
+  </head>
+  <body>
+    <p id="notice">隔离视觉测试 · 非真实可用模型</p>
+    <main id="fixture"></main>
+    <script type="module" src="./newapi-cards.ts"></script>
+  </body>
+</html>

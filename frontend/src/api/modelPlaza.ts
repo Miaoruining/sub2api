@@ -46,6 +46,10 @@ export interface PlazaTimePricing {
 export interface PlazaModel {
   name: string
   platform: string
+  /** 可选展示元数据；没有配置时不从模型名称推测能力。 */
+  description?: string
+  tags?: string[]
+  supported_endpoint_types?: string[]
   /** 实收口径的展示定价：多档时 intervals 为各档绝对单价（已由计费服务折算）；均为标准时段价。 */
   pricing: UserSupportedModelPricing | null
   official_pricing: PlazaOfficialPricing | null
