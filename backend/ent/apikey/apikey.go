@@ -27,6 +27,8 @@ const (
 	FieldKey = "key"
 	// FieldName holds the string denoting the name field in the database.
 	FieldName = "name"
+	// FieldRoutingStrategy holds the string denoting the routing_strategy field in the database.
+	FieldRoutingStrategy = "routing_strategy"
 	// FieldAutoGroup holds the string denoting the auto_group field in the database.
 	FieldAutoGroup = "auto_group"
 	// FieldGroupID holds the string denoting the group_id field in the database.
@@ -103,6 +105,7 @@ var Columns = []string{
 	FieldUserID,
 	FieldKey,
 	FieldName,
+	FieldRoutingStrategy,
 	FieldAutoGroup,
 	FieldGroupID,
 	FieldStatus,
@@ -151,6 +154,10 @@ var (
 	KeyValidator func(string) error
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
+	// DefaultRoutingStrategy holds the default value on creation for the "routing_strategy" field.
+	DefaultRoutingStrategy string
+	// RoutingStrategyValidator is a validator for the "routing_strategy" field. It is called by the builders before save.
+	RoutingStrategyValidator func(string) error
 	// DefaultAutoGroup holds the default value on creation for the "auto_group" field.
 	DefaultAutoGroup bool
 	// DefaultStatus holds the default value on creation for the "status" field.
@@ -211,6 +218,11 @@ func ByKey(opts ...sql.OrderTermOption) OrderOption {
 // ByName orders the results by the name field.
 func ByName(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldName, opts...).ToFunc()
+}
+
+// ByRoutingStrategy orders the results by the routing_strategy field.
+func ByRoutingStrategy(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRoutingStrategy, opts...).ToFunc()
 }
 
 // ByAutoGroup orders the results by the auto_group field.

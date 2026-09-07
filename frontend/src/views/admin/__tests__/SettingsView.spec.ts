@@ -736,6 +736,23 @@ describe("admin SettingsView payment visible method controls", () => {
     );
   });
 
+  it("saves the site-wide original Sub2API model plaza style", async () => {
+    getSettings.mockResolvedValue({ ...baseSettingsResponse, model_plaza_enabled: true, model_plaza_style: "cards" });
+    const wrapper = mountView();
+    await flushPromises();
+    const tab = wrapper.findAll("button").find(node => node.text().includes("admin.settings.tabs.features"));
+    expect(tab).toBeDefined();
+    await tab!.trigger("click");
+    await flushPromises();
+    const select = wrapper.findAll("select").find(node => node.find('option[value="sub2api"]').exists());
+    expect(select).toBeDefined();
+    await select!.setValue("sub2api");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+    expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({ model_plaza_style: "sub2api" }));
+    wrapper.unmount();
+  });
+
   it("renders panel rate limit card and saves settings", async () => {
     getPanelRateLimitSettings.mockClear();
     updatePanelRateLimitSettings.mockClear();

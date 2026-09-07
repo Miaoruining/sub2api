@@ -471,6 +471,15 @@
             {{ t('keys.autoGroup') }}
           </label>
           <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-dark-400">{{ t('keys.autoGroupHint') }}</p>
+          <label v-if="formData.auto_group" class="mt-3 block text-sm">
+            {{ t('keys.routingStrategy') }}
+            <select v-model="formData.routing_strategy" class="input mt-1">
+              <option value="smart">{{ t('keys.routingSmart') }}</option>
+              <option value="price">{{ t('keys.routingPrice') }}</option>
+              <option value="stable">{{ t('keys.routingStable') }}</option>
+            </select>
+            <span class="mt-2 block text-xs text-gray-500 dark:text-dark-400">{{ t('keys.routingHint') }}</span>
+          </label>
         </div>
         <div v-if="!formData.auto_group">
           <label class="input-label">{{ t('keys.groupLabel') }}</label>
@@ -1295,6 +1304,7 @@ const setGroupButtonRef = (keyId: number, el: Element | ComponentPublicInstance 
 }
 
 const formData = ref({
+  routing_strategy: 'smart' as 'smart' | 'price' | 'stable',
   auto_group: false,
   name: '',
   group_id: null as number | null,
@@ -1532,6 +1542,7 @@ const editKey = (key: ApiKey) => {
   formData.value = {
     name: key.name,
     auto_group: key.auto_group ?? false,
+    routing_strategy: key.routing_strategy ?? 'smart',
     group_id: key.group_id,
     status: key.status === 'quota_exhausted' || key.status === 'expired' ? 'inactive' : key.status,
     use_custom_key: false,
@@ -1691,6 +1702,7 @@ const handleSubmit = async () => {
         name: formData.value.name,
         group_id: formData.value.auto_group ? null : formData.value.group_id,
         auto_group: formData.value.auto_group,
+        routing_strategy: formData.value.routing_strategy,
         ip_whitelist: ipWhitelist,
         ip_blacklist: ipBlacklist,
         quota: quota,
@@ -1715,7 +1727,8 @@ const handleSubmit = async () => {
         quota,
         expiresInDays,
         rateLimitData,
-        formData.value.auto_group
+        formData.value.auto_group,
+        formData.value.routing_strategy
       )
       appStore.showSuccess(t('keys.keyCreatedSuccess'))
       // Only advance tour if active, on submit step, and creation succeeded
@@ -1761,6 +1774,7 @@ const closeModals = () => {
   formData.value = {
     name: '',
     auto_group: false,
+    routing_strategy: 'smart',
     group_id: null,
     status: 'active',
     use_custom_key: false,

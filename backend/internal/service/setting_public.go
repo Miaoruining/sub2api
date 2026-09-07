@@ -498,7 +498,15 @@ func (s *SettingService) GetAvailableChannelsRuntime(ctx context.Context) Availa
 
 // ModelPlazaRuntime is the lightweight view of the model-plaza feature consumed
 // by the public plaza handler.
+func NormalizeModelPlazaStyle(value string) string {
+	if value == "sub2api" {
+		return value
+	}
+	return "cards"
+}
+
 type ModelPlazaRuntime struct {
+	Style       string
 	Enabled     bool
 	RequireAuth bool
 	Description string
@@ -512,6 +520,7 @@ func (s *SettingService) GetModelPlazaRuntime(ctx context.Context) ModelPlazaRun
 		SettingKeyModelPlazaEnabled,
 		SettingKeyModelPlazaRequireAuth,
 		SettingKeyModelPlazaDescription,
+		SettingKeyModelPlazaStyle,
 	})
 	if err != nil {
 		return ModelPlazaRuntime{Enabled: false}
@@ -520,6 +529,7 @@ func (s *SettingService) GetModelPlazaRuntime(ctx context.Context) ModelPlazaRun
 		Enabled:     vals[SettingKeyModelPlazaEnabled] == "true",
 		RequireAuth: vals[SettingKeyModelPlazaRequireAuth] == "true",
 		Description: vals[SettingKeyModelPlazaDescription],
+		Style:       NormalizeModelPlazaStyle(vals[SettingKeyModelPlazaStyle]),
 	}
 }
 

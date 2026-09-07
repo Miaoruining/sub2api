@@ -7210,6 +7210,14 @@
                 rows="6"
                 class="input font-mono text-sm"
               ></textarea>
+              <label class="mt-4 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('admin.settings.features.modelPlaza.style') }}
+                <select v-model="form.model_plaza_style" class="input mt-2">
+                  <option value="cards">{{ t('admin.settings.features.modelPlaza.styleCards') }}</option>
+                  <option value="sub2api">{{ t('admin.settings.features.modelPlaza.styleOriginal') }}</option>
+                </select>
+              </label>
+              <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.settings.features.modelPlaza.styleHint') }}</p>
             </div>
           </div>
         </div>
@@ -9803,6 +9811,7 @@ const form = reactive<SettingsForm>({
   model_plaza_enabled: false,
   model_plaza_require_auth: false,
   model_plaza_description: '',
+  model_plaza_style: 'cards' as 'cards' | 'sub2api',
   // Plugin management menu visibility; plugin runtime is unaffected.
   plugin_management_enabled: false,
   // Affiliate (邀请返利) feature switch
@@ -11463,6 +11472,7 @@ async function saveSettings() {
       model_plaza_enabled: form.model_plaza_enabled,
       model_plaza_require_auth: form.model_plaza_require_auth,
       model_plaza_description: form.model_plaza_description,
+      model_plaza_style: form.model_plaza_style,
       plugin_management_enabled: form.plugin_management_enabled,
       // Affiliate (邀请返利) feature switch
       affiliate_enabled: form.affiliate_enabled,

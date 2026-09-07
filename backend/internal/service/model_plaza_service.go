@@ -41,8 +41,7 @@ type PlazaGroup struct {
 	Name        string
 	Description string
 	Platform    string
-	// SortOrder 与自动分组调度共用同一排序源。模型广场必须保持该顺序，
-	// 不能再按价格重排，否则详情页展示的自动路由链会与真实调度不一致。
+	// SortOrder 仅控制基础展示。自动路由按密钥策略实时排序。
 	SortOrder          int
 	SubscriptionType   string
 	RateMultiplier     float64

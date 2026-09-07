@@ -32,14 +32,15 @@ func NewAPIKeyHandler(apiKeyService *service.APIKeyService) *APIKeyHandler {
 
 // CreateAPIKeyRequest represents the create API key request payload
 type CreateAPIKeyRequest struct {
-	AutoGroup     bool     `json:"auto_group"`
-	Name          string   `json:"name" binding:"required"`
-	GroupID       *int64   `json:"group_id"`        // nullable
-	CustomKey     *string  `json:"custom_key"`      // 可选的自定义key
-	IPWhitelist   []string `json:"ip_whitelist"`    // IP 白名单
-	IPBlacklist   []string `json:"ip_blacklist"`    // IP 黑名单
-	Quota         *float64 `json:"quota"`           // 配额限制 (USD)
-	ExpiresInDays *int     `json:"expires_in_days"` // 过期天数
+	AutoGroup       bool     `json:"auto_group"`
+	RoutingStrategy string   `json:"routing_strategy"`
+	Name            string   `json:"name" binding:"required"`
+	GroupID         *int64   `json:"group_id"`        // nullable
+	CustomKey       *string  `json:"custom_key"`      // 可选的自定义key
+	IPWhitelist     []string `json:"ip_whitelist"`    // IP 白名单
+	IPBlacklist     []string `json:"ip_blacklist"`    // IP 黑名单
+	Quota           *float64 `json:"quota"`           // 配额限制 (USD)
+	ExpiresInDays   *int     `json:"expires_in_days"` // 过期天数
 
 	// Rate limit fields (0 = unlimited)
 	RateLimit5h *float64 `json:"rate_limit_5h"`
@@ -49,15 +50,16 @@ type CreateAPIKeyRequest struct {
 
 // UpdateAPIKeyRequest represents the update API key request payload
 type UpdateAPIKeyRequest struct {
-	AutoGroup   *bool     `json:"auto_group"`
-	Name        string    `json:"name"`
-	GroupID     *int64    `json:"group_id"`
-	Status      string    `json:"status" binding:"omitempty,oneof=active inactive"`
-	IPWhitelist *[]string `json:"ip_whitelist"` // IP 白名单（nil 不修改，空数组清空）
-	IPBlacklist *[]string `json:"ip_blacklist"` // IP 黑名单（nil 不修改，空数组清空）
-	Quota       *float64  `json:"quota"`        // 配额限制 (USD), 0=无限制
-	ExpiresAt   *string   `json:"expires_at"`   // 过期时间 (ISO 8601)
-	ResetQuota  *bool     `json:"reset_quota"`  // 重置已用配额
+	AutoGroup       *bool     `json:"auto_group"`
+	RoutingStrategy *string   `json:"routing_strategy"`
+	Name            string    `json:"name"`
+	GroupID         *int64    `json:"group_id"`
+	Status          string    `json:"status" binding:"omitempty,oneof=active inactive"`
+	IPWhitelist     *[]string `json:"ip_whitelist"` // IP 白名单（nil 不修改，空数组清空）
+	IPBlacklist     *[]string `json:"ip_blacklist"` // IP 黑名单（nil 不修改，空数组清空）
+	Quota           *float64  `json:"quota"`        // 配额限制 (USD), 0=无限制
+	ExpiresAt       *string   `json:"expires_at"`   // 过期时间 (ISO 8601)
+	ResetQuota      *bool     `json:"reset_quota"`  // 重置已用配额
 
 	// Rate limit fields (nil = no change, 0 = unlimited)
 	RateLimit5h         *float64 `json:"rate_limit_5h"`
@@ -199,13 +201,14 @@ func (h *APIKeyHandler) Create(c *gin.Context) {
 	}
 
 	svcReq := service.CreateAPIKeyRequest{
-		Name:          req.Name,
-		GroupID:       req.GroupID,
-		AutoGroup:     req.AutoGroup,
-		CustomKey:     req.CustomKey,
-		IPWhitelist:   req.IPWhitelist,
-		IPBlacklist:   req.IPBlacklist,
-		ExpiresInDays: req.ExpiresInDays,
+		Name:            req.Name,
+		GroupID:         req.GroupID,
+		AutoGroup:       req.AutoGroup,
+		RoutingStrategy: req.RoutingStrategy,
+		CustomKey:       req.CustomKey,
+		IPWhitelist:     req.IPWhitelist,
+		IPBlacklist:     req.IPBlacklist,
+		ExpiresInDays:   req.ExpiresInDays,
 	}
 	if req.Quota != nil {
 		svcReq.Quota = *req.Quota
@@ -256,6 +259,7 @@ func (h *APIKeyHandler) Update(c *gin.Context) {
 
 	svcReq := service.UpdateAPIKeyRequest{
 		AutoGroup:           req.AutoGroup,
+		RoutingStrategy:     req.RoutingStrategy,
 		IPWhitelist:         req.IPWhitelist,
 		IPBlacklist:         req.IPBlacklist,
 		Quota:               req.Quota,

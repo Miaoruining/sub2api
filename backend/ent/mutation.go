@@ -116,6 +116,7 @@ type APIKeyMutation struct {
 	deleted_at         *time.Time
 	key                *string
 	name               *string
+	routing_strategy   *string
 	auto_group         *bool
 	status             *string
 	last_used_at       *time.Time
@@ -481,6 +482,42 @@ func (m *APIKeyMutation) OldName(ctx context.Context) (v string, err error) {
 // ResetName resets all changes to the "name" field.
 func (m *APIKeyMutation) ResetName() {
 	m.name = nil
+}
+
+// SetRoutingStrategy sets the "routing_strategy" field.
+func (m *APIKeyMutation) SetRoutingStrategy(s string) {
+	m.routing_strategy = &s
+}
+
+// RoutingStrategy returns the value of the "routing_strategy" field in the mutation.
+func (m *APIKeyMutation) RoutingStrategy() (r string, exists bool) {
+	v := m.routing_strategy
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRoutingStrategy returns the old "routing_strategy" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldRoutingStrategy(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRoutingStrategy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRoutingStrategy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRoutingStrategy: %w", err)
+	}
+	return oldValue.RoutingStrategy, nil
+}
+
+// ResetRoutingStrategy resets all changes to the "routing_strategy" field.
+func (m *APIKeyMutation) ResetRoutingStrategy() {
+	m.routing_strategy = nil
 }
 
 // SetAutoGroup sets the "auto_group" field.
@@ -1569,7 +1606,7 @@ func (m *APIKeyMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *APIKeyMutation) Fields() []string {
-	fields := make([]string, 0, 24)
+	fields := make([]string, 0, 25)
 	if m.created_at != nil {
 		fields = append(fields, apikey.FieldCreatedAt)
 	}
@@ -1587,6 +1624,9 @@ func (m *APIKeyMutation) Fields() []string {
 	}
 	if m.name != nil {
 		fields = append(fields, apikey.FieldName)
+	}
+	if m.routing_strategy != nil {
+		fields = append(fields, apikey.FieldRoutingStrategy)
 	}
 	if m.auto_group != nil {
 		fields = append(fields, apikey.FieldAutoGroup)
@@ -1662,6 +1702,8 @@ func (m *APIKeyMutation) Field(name string) (ent.Value, bool) {
 		return m.Key()
 	case apikey.FieldName:
 		return m.Name()
+	case apikey.FieldRoutingStrategy:
+		return m.RoutingStrategy()
 	case apikey.FieldAutoGroup:
 		return m.AutoGroup()
 	case apikey.FieldGroupID:
@@ -1719,6 +1761,8 @@ func (m *APIKeyMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldKey(ctx)
 	case apikey.FieldName:
 		return m.OldName(ctx)
+	case apikey.FieldRoutingStrategy:
+		return m.OldRoutingStrategy(ctx)
 	case apikey.FieldAutoGroup:
 		return m.OldAutoGroup(ctx)
 	case apikey.FieldGroupID:
@@ -1805,6 +1849,13 @@ func (m *APIKeyMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetName(v)
+		return nil
+	case apikey.FieldRoutingStrategy:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRoutingStrategy(v)
 		return nil
 	case apikey.FieldAutoGroup:
 		v, ok := value.(bool)
@@ -2154,6 +2205,9 @@ func (m *APIKeyMutation) ResetField(name string) error {
 		return nil
 	case apikey.FieldName:
 		m.ResetName()
+		return nil
+	case apikey.FieldRoutingStrategy:
+		m.ResetRoutingStrategy()
 		return nil
 	case apikey.FieldAutoGroup:
 		m.ResetAutoGroup()

@@ -66,10 +66,12 @@ export async function create(
   quota?: number,
   expiresInDays?: number,
   rateLimitData?: { rate_limit_5h?: number; rate_limit_1d?: number; rate_limit_7d?: number },
-  autoGroup = false
+  autoGroup = false,
+  routingStrategy: 'smart' | 'price' | 'stable' = 'smart'
 ): Promise<ApiKey> {
   const payload: CreateApiKeyRequest = { name }
   if (autoGroup) payload.auto_group = true
+  payload.routing_strategy = routingStrategy
   if (groupId !== undefined) {
     payload.group_id = groupId
   }

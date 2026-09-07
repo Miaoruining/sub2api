@@ -100,6 +100,20 @@ func (_u *APIKeyUpdate) SetNillableName(v *string) *APIKeyUpdate {
 	return _u
 }
 
+// SetRoutingStrategy sets the "routing_strategy" field.
+func (_u *APIKeyUpdate) SetRoutingStrategy(v string) *APIKeyUpdate {
+	_u.mutation.SetRoutingStrategy(v)
+	return _u
+}
+
+// SetNillableRoutingStrategy sets the "routing_strategy" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableRoutingStrategy(v *string) *APIKeyUpdate {
+	if v != nil {
+		_u.SetRoutingStrategy(*v)
+	}
+	return _u
+}
+
 // SetAutoGroup sets the "auto_group" field.
 func (_u *APIKeyUpdate) SetAutoGroup(v bool) *APIKeyUpdate {
 	_u.mutation.SetAutoGroup(v)
@@ -569,6 +583,11 @@ func (_u *APIKeyUpdate) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "APIKey.name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.RoutingStrategy(); ok {
+		if err := apikey.RoutingStrategyValidator(v); err != nil {
+			return &ValidationError{Name: "routing_strategy", err: fmt.Errorf(`ent: validator failed for field "APIKey.routing_strategy": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Status(); ok {
 		if err := apikey.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "APIKey.status": %w`, err)}
@@ -606,6 +625,9 @@ func (_u *APIKeyUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.RoutingStrategy(); ok {
+		_spec.SetField(apikey.FieldRoutingStrategy, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.AutoGroup(); ok {
 		_spec.SetField(apikey.FieldAutoGroup, field.TypeBool, value)
@@ -900,6 +922,20 @@ func (_u *APIKeyUpdateOne) SetName(v string) *APIKeyUpdateOne {
 func (_u *APIKeyUpdateOne) SetNillableName(v *string) *APIKeyUpdateOne {
 	if v != nil {
 		_u.SetName(*v)
+	}
+	return _u
+}
+
+// SetRoutingStrategy sets the "routing_strategy" field.
+func (_u *APIKeyUpdateOne) SetRoutingStrategy(v string) *APIKeyUpdateOne {
+	_u.mutation.SetRoutingStrategy(v)
+	return _u
+}
+
+// SetNillableRoutingStrategy sets the "routing_strategy" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableRoutingStrategy(v *string) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetRoutingStrategy(*v)
 	}
 	return _u
 }
@@ -1386,6 +1422,11 @@ func (_u *APIKeyUpdateOne) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "APIKey.name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.RoutingStrategy(); ok {
+		if err := apikey.RoutingStrategyValidator(v); err != nil {
+			return &ValidationError{Name: "routing_strategy", err: fmt.Errorf(`ent: validator failed for field "APIKey.routing_strategy": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Status(); ok {
 		if err := apikey.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "APIKey.status": %w`, err)}
@@ -1440,6 +1481,9 @@ func (_u *APIKeyUpdateOne) sqlSave(ctx context.Context) (_node *APIKey, err erro
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.RoutingStrategy(); ok {
+		_spec.SetField(apikey.FieldRoutingStrategy, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.AutoGroup(); ok {
 		_spec.SetField(apikey.FieldAutoGroup, field.TypeBool, value)

@@ -32,6 +32,8 @@ type APIKey struct {
 	Key string `json:"key,omitempty"`
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
+	// RoutingStrategy holds the value of the "routing_strategy" field.
+	RoutingStrategy string `json:"routing_strategy,omitempty"`
 	// 按模型在用户获授权的同平台分组之间路由，按实际分组计费
 	AutoGroup bool `json:"auto_group,omitempty"`
 	// GroupID holds the value of the "group_id" field.
@@ -131,7 +133,7 @@ func (*APIKey) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullFloat64)
 		case apikey.FieldID, apikey.FieldUserID, apikey.FieldGroupID:
 			values[i] = new(sql.NullInt64)
-		case apikey.FieldKey, apikey.FieldName, apikey.FieldStatus:
+		case apikey.FieldKey, apikey.FieldName, apikey.FieldRoutingStrategy, apikey.FieldStatus:
 			values[i] = new(sql.NullString)
 		case apikey.FieldCreatedAt, apikey.FieldUpdatedAt, apikey.FieldDeletedAt, apikey.FieldLastUsedAt, apikey.FieldExpiresAt, apikey.FieldWindow5hStart, apikey.FieldWindow1dStart, apikey.FieldWindow7dStart:
 			values[i] = new(sql.NullTime)
@@ -192,6 +194,12 @@ func (_m *APIKey) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field name", values[i])
 			} else if value.Valid {
 				_m.Name = value.String
+			}
+		case apikey.FieldRoutingStrategy:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field routing_strategy", values[i])
+			} else if value.Valid {
+				_m.RoutingStrategy = value.String
 			}
 		case apikey.FieldAutoGroup:
 			if value, ok := values[i].(*sql.NullBool); !ok {
@@ -381,6 +389,9 @@ func (_m *APIKey) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("name=")
 	builder.WriteString(_m.Name)
+	builder.WriteString(", ")
+	builder.WriteString("routing_strategy=")
+	builder.WriteString(_m.RoutingStrategy)
 	builder.WriteString(", ")
 	builder.WriteString("auto_group=")
 	builder.WriteString(fmt.Sprintf("%v", _m.AutoGroup))

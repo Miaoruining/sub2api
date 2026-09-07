@@ -85,6 +85,11 @@ func Name(v string) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldName, v))
 }
 
+// RoutingStrategy applies equality check predicate on the "routing_strategy" field. It's identical to RoutingStrategyEQ.
+func RoutingStrategy(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldRoutingStrategy, v))
+}
+
 // AutoGroup applies equality check predicate on the "auto_group" field. It's identical to AutoGroupEQ.
 func AutoGroup(v bool) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldAutoGroup, v))
@@ -443,6 +448,71 @@ func NameEqualFold(v string) predicate.APIKey {
 // NameContainsFold applies the ContainsFold predicate on the "name" field.
 func NameContainsFold(v string) predicate.APIKey {
 	return predicate.APIKey(sql.FieldContainsFold(FieldName, v))
+}
+
+// RoutingStrategyEQ applies the EQ predicate on the "routing_strategy" field.
+func RoutingStrategyEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldRoutingStrategy, v))
+}
+
+// RoutingStrategyNEQ applies the NEQ predicate on the "routing_strategy" field.
+func RoutingStrategyNEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldRoutingStrategy, v))
+}
+
+// RoutingStrategyIn applies the In predicate on the "routing_strategy" field.
+func RoutingStrategyIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldRoutingStrategy, vs...))
+}
+
+// RoutingStrategyNotIn applies the NotIn predicate on the "routing_strategy" field.
+func RoutingStrategyNotIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldRoutingStrategy, vs...))
+}
+
+// RoutingStrategyGT applies the GT predicate on the "routing_strategy" field.
+func RoutingStrategyGT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldRoutingStrategy, v))
+}
+
+// RoutingStrategyGTE applies the GTE predicate on the "routing_strategy" field.
+func RoutingStrategyGTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldRoutingStrategy, v))
+}
+
+// RoutingStrategyLT applies the LT predicate on the "routing_strategy" field.
+func RoutingStrategyLT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldRoutingStrategy, v))
+}
+
+// RoutingStrategyLTE applies the LTE predicate on the "routing_strategy" field.
+func RoutingStrategyLTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldRoutingStrategy, v))
+}
+
+// RoutingStrategyContains applies the Contains predicate on the "routing_strategy" field.
+func RoutingStrategyContains(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContains(FieldRoutingStrategy, v))
+}
+
+// RoutingStrategyHasPrefix applies the HasPrefix predicate on the "routing_strategy" field.
+func RoutingStrategyHasPrefix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasPrefix(FieldRoutingStrategy, v))
+}
+
+// RoutingStrategyHasSuffix applies the HasSuffix predicate on the "routing_strategy" field.
+func RoutingStrategyHasSuffix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasSuffix(FieldRoutingStrategy, v))
+}
+
+// RoutingStrategyEqualFold applies the EqualFold predicate on the "routing_strategy" field.
+func RoutingStrategyEqualFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEqualFold(FieldRoutingStrategy, v))
+}
+
+// RoutingStrategyContainsFold applies the ContainsFold predicate on the "routing_strategy" field.
+func RoutingStrategyContainsFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContainsFold(FieldRoutingStrategy, v))
 }
 
 // AutoGroupEQ applies the EQ predicate on the "auto_group" field.

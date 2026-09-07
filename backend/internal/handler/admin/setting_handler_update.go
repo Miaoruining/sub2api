@@ -347,6 +347,7 @@ type UpdateSettingsRequest struct {
 	ModelPlazaEnabled     *bool   `json:"model_plaza_enabled"`
 	ModelPlazaRequireAuth *bool   `json:"model_plaza_require_auth"`
 	ModelPlazaDescription *string `json:"model_plaza_description"`
+	ModelPlazaStyle       *string `json:"model_plaza_style"`
 
 	// Plugin management menu visibility switch; plugin runtime is unaffected.
 	PluginManagementEnabled *bool `json:"plugin_management_enabled"`
@@ -1942,6 +1943,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.ModelPlazaRequireAuth
 		}(),
+		ModelPlazaStyle: func() string {
+			if req.ModelPlazaStyle != nil {
+				return *req.ModelPlazaStyle
+			}
+			return previousSettings.ModelPlazaStyle
+		}(),
 		ModelPlazaDescription: func() string {
 			if req.ModelPlazaDescription != nil {
 				return *req.ModelPlazaDescription
@@ -2376,6 +2383,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ModelPlazaEnabled:       updatedSettings.ModelPlazaEnabled,
 		ModelPlazaRequireAuth:   updatedSettings.ModelPlazaRequireAuth,
 		ModelPlazaDescription:   updatedSettings.ModelPlazaDescription,
+		ModelPlazaStyle:         updatedSettings.ModelPlazaStyle,
 		PluginManagementEnabled: updatedSettings.PluginManagementEnabled,
 
 		AffiliateEnabled: updatedSettings.AffiliateEnabled,

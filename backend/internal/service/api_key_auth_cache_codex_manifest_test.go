@@ -14,6 +14,7 @@ func TestAPIKeyAuthSnapshotGroupCodexModelsManifestRoundtrip(t *testing.T) {
 	groupID := int64(60)
 	apiKey := &APIKey{
 		ID: 92, UserID: 46, GroupID: &groupID, Key: "sk-codex-manifest-roundtrip", Status: StatusActive,
+		RoutingStrategy: "stable",
 		User: &User{ID: 46, Status: StatusActive},
 		Group: &Group{
 			ID: groupID, Name: "codex-manifest-roundtrip", Platform: PlatformOpenAI, Status: StatusActive,
@@ -35,6 +36,7 @@ func TestAPIKeyAuthSnapshotGroupCodexModelsManifestRoundtrip(t *testing.T) {
 	materialized, used, err := svc.applyAuthCacheEntry(apiKey.Key, &cached)
 	require.NoError(t, err)
 	require.True(t, used)
+	require.Equal(t, "stable", materialized.RoutingStrategy)
 	require.NotNil(t, materialized.Group)
 	require.True(t, materialized.Group.CodexModelsManifestConfig.Enabled)
 	require.Equal(t, []int64{7, 8}, materialized.Group.CodexModelsManifestConfig.AccountIDs)

@@ -67,7 +67,12 @@ export default {
   // API Keys
   keys: {
     autoGroup: 'Auto groups · All models',
-    autoGroupHint: 'Use enabled models in your authorized groups. Failover stays within the model platform and bills the selected group’s price, user rate and subscription. Switching groups may change the charge. Synchronous JSON endpoints are supported; use fixed-group keys for long-lived sessions, asynchronous tasks and uploads.',
+    autoGroupHint: 'Use enabled models in authorized groups and bill the selected group. Failover may change costs. Use fixed-group keys for long-lived sessions, asynchronous tasks and uploads.',
+    routingStrategy: 'Routing strategy',
+    routingSmart: 'Smart routing (default)',
+    routingPrice: 'Lowest price first',
+    routingStable: 'Stability first',
+    routingHint: 'Only eligible, authorized groups supporting the model are considered. Recent failures are demoted. Smart balances reference price and recent observations; stability favors fewer errors and faster responses. Prices use 1k input + 1k output; actual cache, context and time-based charges still apply. Missing samples do not imply verified stability.',
     title: 'API Keys',
     description: 'Manage your API keys and access tokens',
     searchPlaceholder: 'Search name or key...',
@@ -626,11 +631,12 @@ export default {
   modelPlaza: {
     catalog: {
       detailsShort: 'Details', noDescription: 'No description available.', requestUnit: 'request', cacheShort: 'Cached',
-      cards: 'Card view', table: 'Group price tables', all: 'All', suppliers: 'Providers', billing: 'Pricing type', groups: 'Groups', search: 'Search model names', reset: 'Reset', models: '{count} models', routes: '{count} group routes', details: 'View model details', copy: 'Copy model name', copied: 'Copied', copyFailed: 'Copy failed. Select the model name manually.', input: 'Input', output: 'Output', cache: 'Cached input', cacheWrite: 'Cache write', request: 'Per request', image: 'Per image', token: 'Usage based', unknown: 'Pricing not configured', priceNote: 'Prices are shown per 1M tokens with group rates included. Auto routing follows the group order shown in details.', scopeNote: 'The full authorized catalog is shown by default. The detail route chain includes only groups available to the current account.',
+      cards: 'Card view', table: 'Group price tables', all: 'All', suppliers: 'Providers', billing: 'Pricing type', groups: 'Groups', search: 'Search model names', reset: 'Reset', models: '{count} models', routes: '{count} group routes', details: 'View model details', copy: 'Copy model name', copied: 'Copied', copyFailed: 'Copy failed. Select the model name manually.', input: 'Input', output: 'Output', cache: 'Cached input', cacheWrite: 'Cache write', request: 'Per request', image: 'Per image', token: 'Usage based', unknown: 'Pricing not configured', priceNote: 'Prices are shown per 1M tokens with group rates included. Routing is evaluated per key strategy; details show default smart candidates.', scopeNote: 'The full authorized catalog is shown by default. The detail route chain includes only groups available to the current account.',
       filtersTitle: 'Filters', filtersDescription: 'Refine models by provider, group, and pricing type.', activeFilters: 'Filters active',
       allGroups: 'All groups', allSuppliers: 'All providers', allBilling: 'All types', close: 'Close', overview: 'Overview', performance: 'Performance', api: 'API',
       avgLatency: 'Average latency', successRate: 'Success rate', pricing: 'Pricing', basePrice: 'Base price', groupPricing: 'Pricing by group', rate: 'Rate',
-      autoRouteChain: 'Auto group chain →', autoRouteEmpty: 'No automatic route is available for this model on the current account. Card prices are shown for reference only.', routeOrderNote: 'The order is configured in Admin → Groups → Auto route order. Requests only try groups that the user can access and that support this model.',
+      autoRouteChain: 'Smart routing candidates →', autoRouteEmpty: 'No automatic route is available. The full visible price catalog is still shown below.', routeOrderNote: 'These are current default smart candidates, updated with price and recent observations. Choose smart, price or stability in API Keys. Requests only use authorized, available groups supporting the model.',
+      displayOnly: 'Price reference only · not currently auto-routable',
       noPerformance: 'Real-time performance data is not yet available for this model.', endpoints: 'Supported API endpoints', noEndpoints: 'No endpoint types are configured for this model.',
     },
     title: 'Model Plaza',

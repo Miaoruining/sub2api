@@ -26,7 +26,7 @@ function group(id: number, name: string, order?: number): ModelPlazaGroup {
 }
 
 describe('PlazaModelDrawer', () => {
-  it('shows only actual automatic routes in backend order with effective prices', async () => {
+  it('shows every visible group price while keeping ineligible groups out of the route chain', async () => {
     const entry = buildModelCatalog([
       group(1, 'second', 1),
       group(2, 'display only'),
@@ -37,10 +37,12 @@ describe('PlazaModelDrawer', () => {
       global: { stubs: { Teleport: true } }
     })
     const rows = wrapper.findAll('[data-test=route-row]')
-    expect(rows).toHaveLength(2)
+    expect(rows).toHaveLength(3)
     expect(rows[0]!.text()).toContain('first')
     expect(rows[0]!.text()).toContain('$6')
     expect(rows[1]!.text()).toContain('second')
+    expect(rows[2]!.text()).toContain('display only')
+    expect(rows[2]!.text()).toContain('modelPlaza.catalog.displayOnly')
     expect(wrapper.get('[data-test=route-chain]').text()).not.toContain('display only')
     await wrapper.get('button[aria-label="modelPlaza.catalog.close"]').trigger('click')
     expect(wrapper.emitted('close')).toHaveLength(1)

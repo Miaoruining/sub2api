@@ -22,6 +22,23 @@ type autoRouteKeyRepo struct {
 	key *service.APIKey
 }
 
+func TestAutoGroupStreamObservationRequiresProtocolCompletion(t *testing.T) {
+	w := newAutoGroupWriter(httptest.NewRecorder())
+	w.Header().Set("Content-Type", "text/event-stream")
+	_, err := w.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"delta\":\"response.completed\"}\n\n"))
+	require.NoError(t, err)
+	require.False(t, w.streamComplete)
+	_, err = w.Write([]byte("data: {\"type\":\"response.com"))
+	require.NoError(t, err)
+	_, err = w.Write([]byte("pleted\"}\n\n"))
+	require.NoError(t, err)
+	require.True(t, w.streamComplete)
+	_, err = w.Write([]byte("data: {\"type\":\"error\"}\n\n"))
+	require.NoError(t, err)
+	require.True(t, w.streamFailed)
+	require.True(t, w.committed, "observation must not delay successful streaming")
+}
+
 func (r autoRouteKeyRepo) GetByKeyForAuth(context.Context, string) (*service.APIKey, error) {
 	key := *r.key
 	return &key, nil
@@ -127,6 +144,13 @@ func TestAutoGroupHTTPFailoverBindsSelectedPriceAndPreservesBody(t *testing.T) {
 	require.Empty(t, w.Header().Get("X-Failed-Attempt"))
 	require.Equal(t, 1.0, snapshots[0].Group.RateMultiplier, "异步结算快照不能被下一次尝试改写")
 	require.Nil(t, original.GroupID)
+	w = httptest.NewRecorder()
+	request = httptest.NewRequest("POST", "/v1/responses", strings.NewReader(`{"model":"gpt-test","input":"hello"}`))
+	request.Header.Set("Authorization", "Bearer test-key")
+	r.ServeHTTP(w, request)
+	require.Equal(t, 200, w.Code)
+	require.Equal(t, []int64{1, 2, 2}, attempted, "recently failing group must be demoted on the next request")
+	require.Equal(t, "smart", w.Header().Get("X-Sub2API-Routing-Strategy"))
 }
 
 func TestAutoGroupHTTPDoesNotReplayClientErrorsOrCommittedStreams(t *testing.T) {

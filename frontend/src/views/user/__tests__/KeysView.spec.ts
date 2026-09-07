@@ -4,6 +4,7 @@ import { nextTick } from 'vue'
 
 import type { ApiKey } from '@/types'
 import KeysView from '../KeysView.vue'
+import { keysAPI } from '@/api'
 
 const {
   listKeys,
@@ -223,7 +224,7 @@ const mountView = async () => {
         TablePageLayout: TablePageLayoutStub,
         DataTable: DataTableStub,
         Pagination: PaginationStub,
-        BaseDialog: true,
+        BaseDialog: { props: ['show'], template: '<div v-if="show"><slot /><slot name="footer" /></div>' },
         ConfirmDialog: true,
         EmptyState: true,
         Select: SelectStub,
@@ -257,6 +258,20 @@ const getButtonByText = (wrapper: VueWrapper, text: string) => {
 }
 
 describe('user KeysView column settings', () => {
+  it('defaults automatic keys to smart and sends the user-selected strategy on creation', async () => {
+    const wrapper = await mountView()
+    await getButtonByText(wrapper, 'Create API Key').trigger('click')
+    await wrapper.get('[data-tour="key-form-name"]').setValue('routing-test')
+    const autoLabel = wrapper.findAll('label').find(label => label.text().includes('keys.autoGroup'))!
+    await autoLabel.get('input[type=checkbox]').setValue(true)
+    const strategy = wrapper.get('#key-form select')
+    expect((strategy.element as HTMLSelectElement).value).toBe('smart')
+    await strategy.setValue('stable')
+    await wrapper.get('#key-form').trigger('submit')
+    await flushPromises()
+    expect(keysAPI.create).toHaveBeenLastCalledWith('routing-test', null, undefined, [], [], 0, undefined, expect.any(Object), true, 'stable')
+    wrapper.unmount()
+  })
   beforeEach(() => {
     localStorage.clear()
 

@@ -34,7 +34,8 @@
     </div>
     <template v-else>
       <p class="max-w-3xl text-xs leading-5 text-gray-500 dark:text-dark-400">{{ t('modelPlaza.catalog.scopeNote') }}</p>
-      <PlazaCatalog :groups="response?.groups ?? []" />
+      <PlazaOriginalCatalog v-if="response?.style === 'sub2api'" :groups="response.groups" />
+      <PlazaCatalog v-else :groups="response?.groups ?? []" />
     </template>
   </div>
 </template>
@@ -46,6 +47,7 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import Icon from '@/components/icons/Icon.vue'
 import PlazaCatalog from './PlazaCatalog.vue'
+import PlazaOriginalCatalog from './PlazaOriginalCatalog.vue'
 import type { ModelPlazaResponse } from '@/api/modelPlaza'
 import { useAuthStore } from '@/stores/auth'
 

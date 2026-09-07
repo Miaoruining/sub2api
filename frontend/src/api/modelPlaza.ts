@@ -57,7 +57,7 @@ export interface PlazaModel {
   long_context_basis?: PlazaLongContextBasis
   /** 仅配置了分时倍率的模型返回。 */
   time_pricing?: PlazaTimePricing
-  /** 当前用户自动密钥实际尝试此分组的顺序；未返回表示只展示价格、不参与自动路由。 */
+  /** 当前用户默认智能策略的候选顺序快照；实际请求按密钥策略重新评估。 */
   auto_route_order?: number
 }
 
@@ -66,7 +66,7 @@ export interface ModelPlazaGroup {
   name: string
   description: string
   platform: string
-  /** 后台配置的自动路由顺序，数值越小越优先。 */
+  /** 后台配置的基础展示顺序，不控制自动路由。 */
   sort_order?: number
   /** 'standard' | 'subscription' */
   subscription_type: string
@@ -87,6 +87,7 @@ export interface ModelPlazaGroup {
 }
 
 export interface ModelPlazaResponse {
+  style?: 'cards' | 'sub2api'
   /** 管理员配置的全局价格说明（Markdown）。 */
   description: string
   groups: ModelPlazaGroup[]

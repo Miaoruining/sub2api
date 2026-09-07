@@ -67,12 +67,12 @@ See NEWAPI-LICENSE for the full notice.
                     <span class="text-gray-500 dark:text-gray-400">{{ t('modelPlaza.catalog.autoRouteChain') }}</span>
                     <template v-for="(route, index) in autoRoutes" :key="route.group.id">
                       <Icon v-if="index" name="arrowRight" size="xs" class="text-gray-400" />
-                      <span class="rounded-full px-2 py-1 font-semibold" :class="routeTone(index)">{{ route.group.name }}</span>
+                      <span class="rounded-full border px-2 py-1 font-semibold" :class="plazaProviderBadge(route.group.platform)">{{ route.group.name }}</span>
                     </template>
                   </div>
                   <p v-else class="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">{{ t('modelPlaza.catalog.autoRouteEmpty') }}</p>
 
-                  <div v-if="autoRoutes.length" class="mt-4 overflow-x-auto">
+                  <div v-if="entry.routes.length" class="mt-4 overflow-x-auto">
                     <table class="w-full min-w-[700px] text-left text-sm">
                       <thead class="border-b border-gray-200 text-xs text-gray-500 dark:border-white/10 dark:text-gray-400">
                         <tr>
@@ -85,8 +85,8 @@ See NEWAPI-LICENSE for the full notice.
                         </tr>
                       </thead>
                       <tbody>
-                        <tr v-for="(route, index) in autoRoutes" :key="route.group.id" data-test="route-row" class="border-b border-gray-100 last:border-b-0 dark:border-white/[0.07]">
-                          <td class="px-3 py-4 font-semibold" :class="routeTextTone(index)">{{ route.group.name }}</td>
+                        <tr v-for="route in entry.routes" :key="route.group.id" data-test="route-row" class="border-b border-gray-100 last:border-b-0 dark:border-white/[0.07]">
+                          <td class="px-3 py-4 font-semibold"><span class="rounded-full border px-2 py-1" :class="plazaProviderBadge(route.group.platform)">{{ route.group.name }}</span><span v-if="route.model.auto_route_order == null" class="mt-2 block text-xs font-normal text-gray-500">{{ t('modelPlaza.catalog.displayOnly') }}</span></td>
                           <td class="px-3 py-4 font-mono">{{ effectiveRate(route) }}x</td>
                           <td class="px-3 py-4 font-mono">{{ routePrice(route, 'input_price') }}</td>
                           <td class="px-3 py-4 font-mono">{{ routePrice(route, 'output_price') }}</td>
@@ -97,6 +97,7 @@ See NEWAPI-LICENSE for the full notice.
                     </table>
                   </div>
                   <p class="mt-3 text-xs text-gray-400 dark:text-gray-500">{{ t('modelPlaza.catalog.routeOrderNote') }}</p>
+                  <a href="/keys" class="mt-3 inline-block text-sm font-medium text-primary-600 underline dark:text-primary-400">{{ t('keys.routingStrategy') }} →</a>
                 </div>
               </section>
             </template>
@@ -123,7 +124,7 @@ import type { GroupPlatform } from '@/types'
 import Icon from '@/components/icons/Icon.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import geminiLogo from '@/assets/model-plaza/gemini.svg'
-import { catalogAutoRoutes, type CatalogModel, type ModelRoute } from './catalog'
+import { catalogAutoRoutes, plazaProviderBadge, type CatalogModel, type ModelRoute } from './catalog'
 
 const props = defineProps<{ show: boolean; entry: CatalogModel | null }>()
 const emit = defineEmits<{ close: []; copy: [name: string] }>()
@@ -173,12 +174,6 @@ function routePrice(route: ModelRoute, field: 'input_price' | 'output_price' | '
   return formatMoney(value == null ? value : value * effectiveRate(route) * 1_000_000)
 }
 
-function routeTone(index: number): string {
-  return ['bg-cyan-50 text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-300', 'bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300', 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300'][index % 3]!
-}
-function routeTextTone(index: number): string {
-  return ['text-cyan-600 dark:text-cyan-300', 'text-violet-600 dark:text-violet-300', 'text-amber-600 dark:text-amber-300'][index % 3]!
-}
 
 function onKeydown(event: KeyboardEvent) { if (event.key === 'Escape' && props.show) emit('close') }
 let previousOverflow = ''

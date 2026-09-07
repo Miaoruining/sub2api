@@ -720,6 +720,7 @@ export interface CompositeRouteDecision {
 }
 
 export interface ApiKey {
+  routing_strategy?: 'smart' | 'price' | 'stable'
   /** 缺省为 false，兼容旧服务端。 */
   auto_group?: boolean
   id: number
@@ -754,6 +755,7 @@ export interface ApiKey {
 }
 
 export interface CreateApiKeyRequest {
+  routing_strategy?: 'smart' | 'price' | 'stable'
   auto_group?: boolean
   name: string
   group_id?: number | null
@@ -768,6 +770,7 @@ export interface CreateApiKeyRequest {
 }
 
 export interface UpdateApiKeyRequest {
+  routing_strategy?: 'smart' | 'price' | 'stable'
   auto_group?: boolean
   name?: string
   group_id?: number | null

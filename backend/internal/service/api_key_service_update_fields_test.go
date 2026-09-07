@@ -109,6 +109,21 @@ func TestAutoGroupUpdateClearsFixedGroupWithoutRewritingUsage(t *testing.T) {
 	require.Len(t, repo.updateFields, 1)
 }
 
+func TestAPIKeyRoutingStrategyUpdatePreservesAccounting(t *testing.T) {
+	svc, repo := newUpdateFieldsAPIKeyService(&APIKey{ID: 1, UserID: 7, Key: "test-routing-key", AutoGroup: true, QuotaUsed: 30, Usage5h: 12})
+	strategy := "stable"
+	key, err := svc.Update(context.Background(), 1, 7, UpdateAPIKeyRequest{RoutingStrategy: &strategy})
+	require.NoError(t, err)
+	require.Equal(t, "stable", key.RoutingStrategy)
+	require.Equal(t, 30.0, key.QuotaUsed)
+	require.Equal(t, 12.0, key.Usage5h)
+	require.Equal(t, []APIKeyUpdateFields{{RoutingStrategy: true}}, repo.updateFields)
+	strategy = "unknown"
+	_, err = svc.Update(context.Background(), 1, 7, UpdateAPIKeyRequest{RoutingStrategy: &strategy})
+	require.Error(t, err)
+	require.Len(t, repo.updateFields, 1)
+}
+
 // 显式重置仍需声明对应的列，避免收窄写入列时把功能改坏。
 func TestAPIKeyUpdate_DeclaresUsageColumnsOnExplicitReset(t *testing.T) {
 	reset := true

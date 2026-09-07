@@ -435,6 +435,10 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyModelPlazaEnabled] = strconv.FormatBool(settings.ModelPlazaEnabled)
 	updates[SettingKeyModelPlazaRequireAuth] = strconv.FormatBool(settings.ModelPlazaRequireAuth)
 	updates[SettingKeyModelPlazaDescription] = settings.ModelPlazaDescription
+	if settings.ModelPlazaStyle != "" && settings.ModelPlazaStyle != "cards" && settings.ModelPlazaStyle != "sub2api" {
+		return nil, infraerrors.BadRequest("INVALID_MODEL_PLAZA_STYLE", "无效的模型广场样式")
+	}
+	updates[SettingKeyModelPlazaStyle] = NormalizeModelPlazaStyle(settings.ModelPlazaStyle)
 	updates[SettingKeyPluginManagementEnabled] = strconv.FormatBool(settings.PluginManagementEnabled)
 
 	// Affiliate (邀请返利) feature switch

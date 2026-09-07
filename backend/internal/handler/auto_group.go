@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -83,6 +84,7 @@ func (h *GatewayHandler) AutoGroupMiddleware(engine http.Handler, keys *service.
 			autoGroupError(c, 404, "model_not_found", "此密钥没有支持该模型的已启用分组")
 			return
 		}
+		candidates = h.gatewayService.RankAutoGroupCandidates(c.Request.Context(), candidates, model, key.UserID, key.RoutingStrategy)
 		for i, group := range candidates {
 			c.Set("auto_group_dispatched", true)
 			if c.Request.Context().Err() != nil {
@@ -94,7 +96,19 @@ func (h *GatewayHandler) AutoGroupMiddleware(engine http.Handler, keys *service.
 			request.ContentLength = int64(len(body))
 			writer := newAutoGroupWriter(c.Writer)
 			writer.Header().Set("X-Sub2API-Group-ID", strconv.FormatInt(group.ID, 10))
+			writer.Header().Set("X-Sub2API-Routing-Strategy", service.NormalizeRoutingStrategy(key.RoutingStrategy))
+			started := time.Now()
 			engine.ServeHTTP(writer, request)
+			// 参数/余额/用户限额错误及用户主动取消不污染线路健康。
+			isStream := strings.Contains(writer.Header().Get("Content-Type"), "text/event-stream")
+			failed := writer.status >= 500 || (writer.status >= 400 && attempt.Retryable()) || writer.streamFailed || (isStream && !writer.streamComplete && !writer.streamUnobservable && writer.status >= 200 && writer.status < 300 && group.Platform != service.PlatformGemini)
+			if c.Request.Context().Err() == nil && !writer.downstreamFailed && (failed || (writer.status >= 200 && writer.status < 300 && (!isStream || writer.streamComplete))) && !strings.Contains(path, "count") && !strings.Contains(path, "input_tokens") {
+				latency := time.Since(started)
+				if !writer.firstByte.IsZero() {
+					latency = writer.firstByte.Sub(started)
+				}
+				h.gatewayService.ObserveAutoRoute(group.ID, model, failed, latency)
+			}
 			if !writer.committed && writer.status >= 400 && attempt.Retryable() && i+1 < len(candidates) && i+1 < maxAutoGroupAttempts && c.Request.Context().Err() == nil {
 				continue
 			}
@@ -174,11 +188,18 @@ func (h *GatewayHandler) writeAutoGroupModels(c *gin.Context, catalog []service.
 // 只缓冲错误响应，成功响应及 SSE 立即透传。显式 Flush/Hijack 或超过
 // 64 KiB 后不可切组，不缓存成功流、不拼接两次响应，也不重试普通 4xx/5xx。
 type autoGroupWriter struct {
-	target    http.ResponseWriter
-	header    http.Header
-	status    int
-	body      bytes.Buffer
-	committed bool
+	target             http.ResponseWriter
+	header             http.Header
+	status             int
+	body               bytes.Buffer
+	committed          bool
+	firstByte          time.Time
+	streamLine         []byte
+	streamLineOverflow bool
+	streamComplete     bool
+	streamFailed       bool
+	streamUnobservable bool
+	downstreamFailed   bool
 }
 
 func newAutoGroupWriter(target http.ResponseWriter) *autoGroupWriter {
@@ -195,6 +216,12 @@ func (w *autoGroupWriter) WriteHeader(status int) {
 	}
 }
 func (w *autoGroupWriter) Write(p []byte) (int, error) {
+	if len(p) > 0 && w.firstByte.IsZero() {
+		w.firstByte = time.Now()
+	}
+	if strings.Contains(w.header.Get("Content-Type"), "text/event-stream") {
+		w.observeStream(p)
+	}
 	if w.status == 0 {
 		w.WriteHeader(200)
 	}
@@ -202,9 +229,47 @@ func (w *autoGroupWriter) Write(p []byte) (int, error) {
 		w.commit()
 	}
 	if w.committed {
-		return w.target.Write(p)
+		n, err := w.target.Write(p)
+		if err != nil {
+			w.downstreamFailed = true
+		}
+		return n, err
 	}
 	return w.body.Write(p)
+}
+
+// 旁路观察终止事件，不缓冲/改写输出；跨 Write 的残留行最多 64 KiB。
+// 仅解析协议顶层 type，不把模型正文中的 response.completed 字样当成功。
+func (w *autoGroupWriter) observeStream(p []byte) {
+	for _, b := range p {
+		if b != '\n' {
+			if !w.streamLineOverflow {
+				if len(w.streamLine) < 64<<10 {
+					w.streamLine = append(w.streamLine, b)
+				} else {
+					w.streamLine = nil
+					w.streamLineOverflow = true
+					w.streamUnobservable = true
+				}
+			}
+			continue
+		}
+		if !w.streamLineOverflow {
+			line := strings.TrimSpace(string(w.streamLine))
+			if strings.HasPrefix(line, "data:") {
+				data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+				kind := gjson.Get(data, "type").String()
+				if data == "[DONE]" || kind == "message_stop" || kind == "response.completed" {
+					w.streamComplete = true
+				}
+				if kind == "error" || kind == "response.failed" || kind == "response.incomplete" || gjson.Get(data, "error").Exists() {
+					w.streamFailed = true
+				}
+			}
+		}
+		w.streamLine = w.streamLine[:0]
+		w.streamLineOverflow = false
+	}
 }
 func (w *autoGroupWriter) commit() {
 	if w.committed {

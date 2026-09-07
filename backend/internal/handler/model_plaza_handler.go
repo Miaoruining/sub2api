@@ -107,6 +107,7 @@ type modelPlazaGroup struct {
 // modelPlazaResponse 广场页响应。
 type modelPlazaResponse struct {
 	Description string            `json:"description"`
+	Style       string            `json:"style"`
 	Groups      []modelPlazaGroup `json:"groups"`
 }
 
@@ -165,12 +166,24 @@ func (h *ModelPlazaHandler) Get(c *gin.Context) {
 			catalog, catalogErr := h.gatewayService.AutoGroupCatalog(c.Request.Context(), available)
 			if catalogErr == nil {
 				autoRouteOrder = make(map[int64]map[string]int, len(catalog))
-				for order, entry := range catalog {
-					models := make(map[string]int, len(entry.Models))
+				seen := make(map[string]bool)
+				for _, entry := range catalog {
 					for _, name := range entry.Models {
-						models[name] = order
+						if seen[name] {
+							continue
+						}
+						seen[name] = true
+						candidates, err := service.AutoGroupCandidates(catalog, name)
+						if err != nil {
+							continue
+						}
+						for order, group := range h.gatewayService.RankAutoGroupCandidates(c.Request.Context(), candidates, name, subject.UserID, "smart") {
+							if autoRouteOrder[group.ID] == nil {
+								autoRouteOrder[group.ID] = make(map[string]int)
+							}
+							autoRouteOrder[group.ID][name] = order
+						}
 					}
-					autoRouteOrder[entry.Group.ID] = models
 				}
 			} else if c.Query("available") == "true" {
 				response.ErrorFrom(c, catalogErr)
@@ -214,6 +227,7 @@ func (h *ModelPlazaHandler) Get(c *gin.Context) {
 	}
 	response.Success(c, modelPlazaResponse{
 		Description: rt.Description,
+		Style:       rt.Style,
 		Groups:      out,
 	})
 }

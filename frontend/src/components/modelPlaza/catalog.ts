@@ -1,5 +1,18 @@
 import type { ModelPlazaGroup, PlazaModel } from '@/api/modelPlaza'
 
+export function plazaProviderOrder(platform: string): number {
+  return ({ openai: 0, anthropic: 1, gemini: 2, grok: 3 } as Record<string, number>)[platform] ?? 4
+}
+
+export function plazaProviderBadge(platform: string): string {
+  return ({
+    openai: 'border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-400',
+    anthropic: 'border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-400',
+    gemini: 'border-blue-500/40 bg-blue-500/10 text-blue-700 dark:text-blue-400',
+    grok: 'border-purple-500/40 bg-purple-500/10 text-purple-700 dark:text-purple-400'
+  } as Record<string, string>)[platform] || 'border-gray-500/40 text-gray-600 dark:text-gray-400'
+}
+
 export interface ModelRoute { group: ModelPlazaGroup; model: PlazaModel }
 export interface CatalogModel {
   id: string
@@ -32,10 +45,10 @@ export function buildModelCatalog(groups: ModelPlazaGroup[]): CatalogModel[] {
       return aAuto - bAuto || (a.group.sort_order ?? 0) - (b.group.sort_order ?? 0) || a.group.id - b.group.id
     })
   }
-  return [...models.values()].sort((a, b) => a.name.localeCompare(b.name))
+  return [...models.values()].sort((a, b) => plazaProviderOrder(a.platform) - plazaProviderOrder(b.platform) || a.name.localeCompare(b.name))
 }
 
-/** 当前用户使用自动密钥时，这个模型会严格按此顺序尝试分组。 */
+/** 当前用户的默认智能候选快照；实际请求会按密钥策略和最新状态重排。 */
 export function catalogAutoRoutes(entry: CatalogModel): ModelRoute[] {
   return entry.routes.filter(route => route.model.auto_route_order != null)
 }

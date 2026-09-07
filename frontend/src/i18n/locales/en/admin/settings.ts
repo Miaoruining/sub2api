@@ -43,6 +43,10 @@ export default {
           enabledHint: 'When off, the sidebar entry is hidden and the endpoint returns an empty list.',
         },
         modelPlaza: {
+          style: 'Model Plaza display style',
+          styleCards: 'Current cards',
+          styleOriginal: 'Original Sub2API (group price tables)',
+          styleHint: 'Applies site-wide after saving and refreshing the plaza. Only presentation changes; models, groups, routing and billing remain unchanged.',
           title: 'Model Plaza',
           description: 'A public page showcasing available models and pricing by group. Disabled by default.',
           enabled: 'Enable Model Plaza',

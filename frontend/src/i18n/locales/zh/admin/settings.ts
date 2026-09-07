@@ -43,6 +43,10 @@ export default {
           enabledHint: '关闭后用户端侧边栏入口隐藏，接口返回空数组。',
         },
         modelPlaza: {
+          style: '模型广场展示样式',
+          styleCards: '当前卡片式',
+          styleOriginal: '原版 Sub2API（分组价目表）',
+          styleHint: '保存后全站生效，刷新模型广场即可切换；仅改变展示，不影响模型、分组、路由或计费。',
           title: '模型广场',
           description: '以分组为单位向访客展示可用模型与价格的公开页面。默认关闭。',
           enabled: '启用模型广场',

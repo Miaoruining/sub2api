@@ -62,6 +62,12 @@ func (s *APIKeyRepoSuite) TestAutoGroupRoundTripAndDatabaseConstraint() {
 	loaded, err := s.repo.GetByKeyForAuth(s.ctx, key.Key)
 	s.Require().NoError(err)
 	s.Require().True(loaded.AutoGroup)
+	s.Require().Equal("smart", loaded.RoutingStrategy)
+	loaded.RoutingStrategy = "stable"
+	s.Require().NoError(s.repo.Update(s.ctx, loaded, service.APIKeyUpdateFields{RoutingStrategy: true}))
+	loaded, err = s.repo.GetByKeyForAuth(s.ctx, key.Key)
+	s.Require().NoError(err)
+	s.Require().Equal("stable", loaded.RoutingStrategy)
 	s.Require().Nil(loaded.GroupID)
 	loaded.AutoGroup = false
 	loaded.GroupID = &group.ID
@@ -78,6 +84,14 @@ func (s *APIKeyRepoSuite) TestAutoGroupRoundTripAndDatabaseConstraint() {
 func (s *APIKeyRepoSuite) TestGetByID_NotFound() {
 	_, err := s.repo.GetByID(s.ctx, 999999)
 	s.Require().Error(err, "expected error for non-existent ID")
+}
+
+func (s *APIKeyRepoSuite) TestRoutingStrategyDatabaseConstraint() {
+	user := s.mustCreateUser("strategy-constraint@example.test")
+	key := &service.APIKey{UserID: user.ID, Key: "test-strategy-constraint", Name: "Strategy", AutoGroup: true, Status: service.StatusActive}
+	s.Require().NoError(s.repo.Create(s.ctx, key))
+	_, err := s.client.APIKey.UpdateOneID(key.ID).SetRoutingStrategy("unknown").Save(s.ctx)
+	s.Require().Error(err)
 }
 
 func (s *APIKeyRepoSuite) TestGetByKey() {

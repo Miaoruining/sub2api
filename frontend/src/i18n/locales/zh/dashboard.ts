@@ -67,7 +67,12 @@ export default {
   // API Keys
   keys: {
     autoGroup: '自动分组 · 全模型',
-    autoGroupHint: '访问你有权限的已启用模型，GPT、Claude 等只在各自平台分组内切换。按实际命中分组的价格、专属倍率及套餐结算，切组可能改变费用。当前支持同步 JSON 接口；长连接、异步任务和文件上传请使用指定分组密钥。',
+    autoGroupHint: '访问你有权限的已启用模型，按实际命中分组结算，切组可能改变费用。长连接、异步任务和文件上传请使用固定分组密钥。',
+    routingStrategy: '路由策略',
+    routingSmart: '智能路由（默认）',
+    routingPrice: '低价优先',
+    routingStable: '稳定优先',
+    routingHint: '仅在有权限且支持该模型的可用分组中选择。近期故障线路降级；智能综合参考价格和近期表现，稳定优先侧重错误率与响应速度。价格以 1k 输入 + 1k 输出估算，缓存、长上下文与分时费用以实际结算为准；无样本不代表已验证稳定。',
     title: 'API 密钥',
     description: '管理您的 API 密钥和访问令牌',
     searchPlaceholder: '搜索名称或Key...',
@@ -631,11 +636,12 @@ export default {
   modelPlaza: {
     catalog: {
       detailsShort: '详情', noDescription: '暂无描述。', requestUnit: '次', cacheShort: '缓存',
-      cards: '卡片视图', table: '分组价格表', all: '全部', suppliers: '所有供应商', billing: '定价类型', groups: '分组', search: '搜索模型名称', reset: '重置', models: '{count} 个模型', routes: '{count} 条分组线路', details: '查看模型详情', copy: '复制模型名称', copied: '已复制', copyFailed: '复制失败，请手动选择模型名称', input: '输入', output: '输出', cache: '缓存输入', cacheWrite: '缓存写入', request: '按次计费', image: '按张计费', token: '按量计费', unknown: '价格待配置', priceNote: '价格按 1M tokens 展示并已计入分组倍率；实际自动路由严格按详情中的分组顺序尝试。', scopeNote: '默认展示全部授权价目；详情中的自动路由链仅包含当前账户实际可调度的分组。',
+      cards: '卡片视图', table: '分组价格表', all: '全部', suppliers: '所有供应商', billing: '定价类型', groups: '分组', search: '搜索模型名称', reset: '重置', models: '{count} 个模型', routes: '{count} 条分组线路', details: '查看模型详情', copy: '复制模型名称', copied: '已复制', copyFailed: '复制失败，请手动选择模型名称', input: '输入', output: '输出', cache: '缓存输入', cacheWrite: '缓存写入', request: '按次计费', image: '按张计费', token: '按量计费', unknown: '价格待配置', priceNote: '价格按 1M tokens 展示并已计入分组倍率；自动路由按密钥所选策略实时评估，详情列出默认智能候选。', scopeNote: '默认展示全部授权价目；详情中的自动路由链仅包含当前账户实际可调度的分组。',
       filtersTitle: '筛选', filtersDescription: '按供应商、分组和定价类型细化模型。', activeFilters: '筛选已启用',
       allGroups: '所有分组', allSuppliers: '所有供应商', allBilling: '所有类型', close: '关闭', overview: '概览', performance: '性能', api: 'API',
       avgLatency: '平均延迟', successRate: '成功率', pricing: '定价', basePrice: '基础价格', groupPricing: '按分组定价', rate: '倍率',
-      autoRouteChain: '自动分组链 →', autoRouteEmpty: '当前账户没有该模型的自动路由线路；下方卡片价格仅作价目展示。', routeOrderNote: '顺序由管理员在“分组管理 → 自动路由顺序”中设置；请求只会在用户有权限且支持该模型的分组中依次尝试。',
+      autoRouteChain: '智能路由候选 →', autoRouteEmpty: '当前账户没有该模型的自动路由线路；下方仍展示完整可见价目。', routeOrderNote: '这里展示默认智能策略的当前候选，顺序随近期状态与价格变化。可在“API 密钥”中为自动密钥选择智能、低价或稳定优先；实际调用只使用有权限且支持该模型的可用分组。',
+      displayOnly: '仅展示价格 · 当前不参与自动路由',
       noPerformance: '暂未接入该模型的实时性能数据。', endpoints: '支持的 API 端点', noEndpoints: '该模型暂未配置端点类型。',
     },
     title: '模型广场',

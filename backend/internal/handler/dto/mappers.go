@@ -88,6 +88,7 @@ func APIKeyFromService(k *service.APIKey) *APIKey {
 		Name:               k.Name,
 		GroupID:            k.GroupID,
 		AutoGroup:          k.AutoGroup,
+		RoutingStrategy:    service.NormalizeRoutingStrategy(k.RoutingStrategy),
 		Status:             k.Status,
 		IPWhitelist:        k.IPWhitelist,
 		IPBlacklist:        k.IPBlacklist,

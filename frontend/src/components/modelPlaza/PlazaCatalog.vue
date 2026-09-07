@@ -22,7 +22,7 @@ See NEWAPI-LICENSE for the full notice.
         <h3 class="mb-2.5 text-sm font-semibold text-gray-900 dark:text-white">{{ filter.label }}</h3>
         <div class="flex min-w-0 flex-wrap gap-2">
           <button v-for="option in filter.options" :key="option.value" type="button" class="inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-left text-xs transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-500"
-            :class="selection[filter.key] === option.value ? 'border-gray-500 bg-gray-100 font-semibold text-gray-900 dark:border-gray-500 dark:bg-white/10 dark:text-white' : 'border-gray-200 text-gray-600 hover:border-gray-400 hover:text-gray-900 dark:border-white/10 dark:text-gray-400 dark:hover:border-white/25 dark:hover:text-white'"
+            :class="option.platform ? [plazaProviderBadge(option.platform), selection[filter.key] === option.value && 'ring-2 ring-current font-semibold'] : selection[filter.key] === option.value ? 'border-gray-500 bg-gray-100 font-semibold text-gray-900 dark:border-gray-500 dark:bg-white/10 dark:text-white' : 'border-gray-200 text-gray-600 hover:border-gray-400 hover:text-gray-900 dark:border-white/10 dark:text-gray-400 dark:hover:border-white/25 dark:hover:text-white'"
             :aria-pressed="selection[filter.key] === option.value" @click="selection[filter.key] = option.value">
             <span class="truncate">{{ option.label }}</span>
             <span v-if="option.rate" class="rounded-full bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] dark:bg-white/[0.06]">x{{ option.rate }}</span>
@@ -43,7 +43,7 @@ See NEWAPI-LICENSE for the full notice.
       <p class="text-xs leading-5 text-gray-500 dark:text-dark-400">{{ t('modelPlaza.catalog.priceNote') }}</p>
       <p v-if="copyStatus" role="status" class="text-xs text-primary-600">{{ copyStatus }}</p>
       <div v-if="visible.length" class="model-card-grid">
-        <PlazaModelCard v-for="entry in visible" :key="entry.id" :entry="entry" @copy="copy" @details="selected = entry" />
+        <PlazaModelCard v-for="entry in visible" :key="entry.id" :entry="entry" @copy="copy" @details="selected = catalog.find(model => model.id === entry.id) || entry" />
       </div>
       <p v-else class="rounded-xl border border-dashed border-gray-300 py-14 text-center text-sm text-gray-500 dark:border-white/10 dark:text-gray-400">{{ t('modelPlaza.noSearchResult') }}</p>
     </main>
@@ -59,7 +59,7 @@ import type { ModelPlazaGroup } from '@/api/modelPlaza'
 import Icon from '@/components/icons/Icon.vue'
 import PlazaModelCard from './PlazaModelCard.vue'
 import PlazaModelDrawer from './PlazaModelDrawer.vue'
-import { buildModelCatalog, type CatalogModel } from './catalog'
+import { buildModelCatalog, plazaProviderBadge, plazaProviderOrder, type CatalogModel } from './catalog'
 
 const props = defineProps<{ groups: ModelPlazaGroup[] }>()
 const { t } = useI18n()
@@ -68,7 +68,7 @@ const selection = ref({ platform: 'all', mode: 'all', group: 'all' })
 const selected = ref<CatalogModel | null>(null)
 const copyStatus = ref('')
 type FilterKey = 'platform' | 'mode' | 'group'
-interface FilterOption { value: string; label: string; count: number; rate?: number }
+interface FilterOption { value: string; label: string; count: number; rate?: number; platform?: string }
 interface CatalogFilter { key: FilterKey; label: string; options: FilterOption[] }
 const catalog = computed(() => buildModelCatalog(props.groups))
 const hasActiveFilter = computed(() => search.value.trim() !== '' || Object.values(selection.value).some(value => value !== 'all'))
@@ -83,8 +83,8 @@ function providerLabel(platform: string): string {
 function modeLabel(mode: string) { return t(`modelPlaza.catalog.${['token', 'image'].includes(mode) ? mode : 'request'}`) }
 function effectiveRate(group: ModelPlazaGroup): number { return group.user_rate_multiplier ?? group.rate_multiplier }
 const filters = computed<CatalogFilter[]>(() => [
-  { key: 'group' as const, label: t('modelPlaza.catalog.groups'), options: [{ value: 'all', label: t('modelPlaza.catalog.allGroups'), count: props.groups.length }, ...props.groups.map(group => ({ value: String(group.id), label: group.name, count: group.models.length, rate: effectiveRate(group) }))] },
-  { key: 'platform' as const, label: t('modelPlaza.catalog.suppliers'), options: [{ value: 'all', label: t('modelPlaza.catalog.allSuppliers'), count: catalog.value.length }, ...[...new Set(catalog.value.map(model => model.platform))].map(value => ({ value, label: providerLabel(value), count: catalog.value.filter(model => model.platform === value).length }))] },
+  { key: 'group' as const, label: t('modelPlaza.catalog.groups'), options: [{ value: 'all', label: t('modelPlaza.catalog.allGroups'), count: props.groups.length }, ...[...props.groups].sort((a, b) => plazaProviderOrder(a.platform) - plazaProviderOrder(b.platform)).map(group => ({ value: String(group.id), label: group.name, platform: group.platform, count: group.models.length, rate: effectiveRate(group) }))] },
+  { key: 'platform' as const, label: t('modelPlaza.catalog.suppliers'), options: [{ value: 'all', label: t('modelPlaza.catalog.allSuppliers'), count: catalog.value.length }, ...[...new Set(catalog.value.map(model => model.platform))].sort((a, b) => plazaProviderOrder(a) - plazaProviderOrder(b)).map(value => ({ value, platform: value, label: providerLabel(value), count: catalog.value.filter(model => model.platform === value).length }))] },
   { key: 'mode' as const, label: t('modelPlaza.catalog.billing'), options: [{ value: 'all', label: t('modelPlaza.catalog.allBilling'), count: catalog.value.length }, ...[...new Set(catalog.value.map(model => model.mode))].map(value => ({ value, label: modeLabel(value), count: catalog.value.filter(model => model.mode === value).length }))] }
 ])
 function reset() { selection.value = { platform: 'all', mode: 'all', group: 'all' }; search.value = '' }
