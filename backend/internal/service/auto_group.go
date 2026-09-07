@@ -129,8 +129,8 @@ func autoGroupRegisteredModels(group Group, accounts []Account) []string {
 		if account.Platform != group.Platform {
 			continue
 		}
-		if group.CustomModelsListEnabled() {
-			for _, name := range group.ModelsListConfig.Models {
+		if group.ModelAllowlistEnabled() {
+			for _, name := range group.ModelAllowlist.Models {
 				if account.IsModelSupported(name) {
 					registered[name] = true
 				}
@@ -182,7 +182,7 @@ func (s *GatewayService) BuildAutoGroupCodexManifest(ctx context.Context, catalo
 		if !ok {
 			continue
 		}
-		body, err := buildCodexModelsManifestForAccounts(PlatformOpenAI, []string{id}, accounts, nil, true)
+		body, err := buildCodexModelsManifestForAccounts(PlatformOpenAI, []string{id}, accounts, nil, nil, true)
 		if err != nil {
 			return nil, err
 		}

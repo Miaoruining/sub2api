@@ -13,7 +13,7 @@ func TestAutoGroupRegisteredModelsDoesNotInventModelsOrMixPlatforms(t *testing.T
 	accounts := []Account{{Platform: PlatformOpenAI, Credentials: map[string]any{"model_mapping": map[string]any{"gpt-enabled": "gpt-enabled", "gpt-*": "gpt-enabled", "claude-wrong": "claude-wrong"}}}, {Platform: PlatformAnthropic, Credentials: map[string]any{"model_mapping": map[string]any{"claude-only": "claude-only"}}}}
 	require.Equal(t, []string{"gpt-enabled"}, autoGroupRegisteredModels(group, accounts))
 	require.Empty(t, autoGroupRegisteredModels(group, []Account{{Platform: PlatformOpenAI}}))
-	group.ModelsListConfig = GroupModelsListConfig{Enabled: true, Models: []string{"gpt-enabled", "gpt-disabled"}}
+	group.ModelAllowlist = GroupModelAllowlist{Enabled: true, Models: []string{"gpt-enabled", "gpt-disabled"}}
 	accounts[0].Credentials = map[string]any{"model_mapping": map[string]any{"gpt-enabled": "gpt-enabled"}}
 	require.Equal(t, []string{"gpt-enabled"}, autoGroupRegisteredModels(group, accounts))
 	require.Empty(t, autoGroupRegisteredModels(group, nil))
