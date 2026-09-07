@@ -54,6 +54,27 @@ func (s *APIKeyRepoSuite) TestCreate() {
 	s.Require().Equal("sk-create-test", got.Key)
 }
 
+func (s *APIKeyRepoSuite) TestAutoGroupRoundTripAndDatabaseConstraint() {
+	user := s.mustCreateUser("auto-group@example.test")
+	group := s.mustCreateGroup("auto-group-fixed")
+	key := &service.APIKey{UserID: user.ID, Key: "test-auto-group-integration", Name: "Auto", AutoGroup: true, Status: service.StatusActive}
+	s.Require().NoError(s.repo.Create(s.ctx, key))
+	loaded, err := s.repo.GetByKeyForAuth(s.ctx, key.Key)
+	s.Require().NoError(err)
+	s.Require().True(loaded.AutoGroup)
+	s.Require().Nil(loaded.GroupID)
+	loaded.AutoGroup = false
+	loaded.GroupID = &group.ID
+	s.Require().NoError(s.repo.Update(s.ctx, loaded, service.APIKeyUpdateFields{AutoGroup: true, GroupID: true}))
+	loaded, err = s.repo.GetByID(s.ctx, key.ID)
+	s.Require().NoError(err)
+	s.Require().False(loaded.AutoGroup)
+	s.Require().Equal(group.ID, *loaded.GroupID)
+	// 直接绕过服务层也不能同时绑定自动与固定分组。
+	_, err = s.client.APIKey.UpdateOneID(key.ID).SetAutoGroup(true).Save(s.ctx)
+	s.Require().Error(err)
+}
+
 func (s *APIKeyRepoSuite) TestGetByID_NotFound() {
 	_, err := s.repo.GetByID(s.ctx, 999999)
 	s.Require().Error(err, "expected error for non-existent ID")

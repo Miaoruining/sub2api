@@ -85,6 +85,20 @@ func (_c *APIKeyCreate) SetName(v string) *APIKeyCreate {
 	return _c
 }
 
+// SetAutoGroup sets the "auto_group" field.
+func (_c *APIKeyCreate) SetAutoGroup(v bool) *APIKeyCreate {
+	_c.mutation.SetAutoGroup(v)
+	return _c
+}
+
+// SetNillableAutoGroup sets the "auto_group" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableAutoGroup(v *bool) *APIKeyCreate {
+	if v != nil {
+		_c.SetAutoGroup(*v)
+	}
+	return _c
+}
+
 // SetGroupID sets the "group_id" field.
 func (_c *APIKeyCreate) SetGroupID(v int64) *APIKeyCreate {
 	_c.mutation.SetGroupID(v)
@@ -383,6 +397,10 @@ func (_c *APIKeyCreate) defaults() error {
 		v := apikey.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := _c.mutation.AutoGroup(); !ok {
+		v := apikey.DefaultAutoGroup
+		_c.mutation.SetAutoGroup(v)
+	}
 	if _, ok := _c.mutation.Status(); !ok {
 		v := apikey.DefaultStatus
 		_c.mutation.SetStatus(v)
@@ -448,6 +466,9 @@ func (_c *APIKeyCreate) check() error {
 		if err := apikey.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "APIKey.name": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.AutoGroup(); !ok {
+		return &ValidationError{Name: "auto_group", err: errors.New(`ent: missing required field "APIKey.auto_group"`)}
 	}
 	if _, ok := _c.mutation.Status(); !ok {
 		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "APIKey.status"`)}
@@ -530,6 +551,10 @@ func (_c *APIKeyCreate) createSpec() (*APIKey, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)
 		_node.Name = value
+	}
+	if value, ok := _c.mutation.AutoGroup(); ok {
+		_spec.SetField(apikey.FieldAutoGroup, field.TypeBool, value)
+		_node.AutoGroup = value
 	}
 	if value, ok := _c.mutation.Status(); ok {
 		_spec.SetField(apikey.FieldStatus, field.TypeString, value)
@@ -760,6 +785,18 @@ func (u *APIKeyUpsert) SetName(v string) *APIKeyUpsert {
 // UpdateName sets the "name" field to the value that was provided on create.
 func (u *APIKeyUpsert) UpdateName() *APIKeyUpsert {
 	u.SetExcluded(apikey.FieldName)
+	return u
+}
+
+// SetAutoGroup sets the "auto_group" field.
+func (u *APIKeyUpsert) SetAutoGroup(v bool) *APIKeyUpsert {
+	u.Set(apikey.FieldAutoGroup, v)
+	return u
+}
+
+// UpdateAutoGroup sets the "auto_group" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateAutoGroup() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldAutoGroup)
 	return u
 }
 
@@ -1182,6 +1219,20 @@ func (u *APIKeyUpsertOne) SetName(v string) *APIKeyUpsertOne {
 func (u *APIKeyUpsertOne) UpdateName() *APIKeyUpsertOne {
 	return u.Update(func(s *APIKeyUpsert) {
 		s.UpdateName()
+	})
+}
+
+// SetAutoGroup sets the "auto_group" field.
+func (u *APIKeyUpsertOne) SetAutoGroup(v bool) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetAutoGroup(v)
+	})
+}
+
+// UpdateAutoGroup sets the "auto_group" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateAutoGroup() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateAutoGroup()
 	})
 }
 
@@ -1820,6 +1871,20 @@ func (u *APIKeyUpsertBulk) SetName(v string) *APIKeyUpsertBulk {
 func (u *APIKeyUpsertBulk) UpdateName() *APIKeyUpsertBulk {
 	return u.Update(func(s *APIKeyUpsert) {
 		s.UpdateName()
+	})
+}
+
+// SetAutoGroup sets the "auto_group" field.
+func (u *APIKeyUpsertBulk) SetAutoGroup(v bool) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetAutoGroup(v)
+	})
+}
+
+// UpdateAutoGroup sets the "auto_group" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateAutoGroup() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateAutoGroup()
 	})
 }
 

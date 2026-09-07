@@ -2,17 +2,23 @@
   <BaseDialog :show="show" :title="t('keys.ccSwitchGuide.title')" @close="emit('close')">
     <div class="space-y-5">
       <p class="text-sm text-gray-600 dark:text-dark-300">{{ t('keys.ccSwitchGuide.intro') }}</p>
-      <p v-if="!apiKey?.group" role="alert" class="text-sm text-amber-700 dark:text-amber-300">
+      <p v-if="!apiKey?.group && !apiKey?.auto_group" role="alert" class="text-sm text-amber-700 dark:text-amber-300">
         {{ t('keys.useKeyModal.noGroupDescription') }}
       </p>
-      <p v-else-if="apiKey.status !== 'active'" role="alert" class="text-sm text-amber-700 dark:text-amber-300">
+      <p v-else-if="apiKey?.status !== 'active'" role="alert" class="text-sm text-amber-700 dark:text-amber-300">
         {{ t('keys.ccSwitchGuide.inactive') }}
       </p>
       <dl class="space-y-3 rounded-xl bg-gray-50 p-4 text-sm dark:bg-dark-800">
         <div><dt class="text-gray-500 dark:text-dark-400">{{ t('keys.ccSwitchGuide.provider') }}</dt><dd class="mt-1 break-words font-medium text-gray-900 dark:text-white">{{ providerName }}</dd></div>
-        <div><dt class="text-gray-500 dark:text-dark-400">{{ t('keys.groupLabel') }}</dt><dd class="mt-1 text-gray-900 dark:text-white">{{ apiKey?.group?.name || '—' }}</dd></div>
+        <div><dt class="text-gray-500 dark:text-dark-400">{{ t('keys.groupLabel') }}</dt><dd class="mt-1 text-gray-900 dark:text-white">{{ apiKey?.auto_group ? t('keys.autoGroup') : apiKey?.group?.name || '—' }}</dd></div>
         <div><dt class="text-gray-500 dark:text-dark-400">{{ t('keys.ccSwitchGuide.endpoint') }}</dt><dd class="mt-1 break-all font-mono text-gray-900 dark:text-white">{{ config.endpoint }}</dd></div>
       </dl>
+      <label v-if="apiKey?.auto_group" class="block text-sm font-medium text-gray-900 dark:text-white">
+        {{ t('keys.ccsClientSelect.title') }}
+        <select v-model="autoPlatform" class="input mt-2">
+          <option value="openai">Codex</option><option value="anthropic">Claude Code</option><option value="gemini">Gemini CLI</option>
+        </select>
+      </label>
       <label v-if="platform === 'antigravity'" class="block text-sm font-medium text-gray-900 dark:text-white">
         {{ t('keys.ccsClientSelect.title') }}
         <select v-model="clientType" class="input mt-2">
@@ -79,12 +85,13 @@ const model = ref('')
 const models = ref<string[]>([])
 const modelState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 const launchState = ref<'idle' | 'launched' | 'error'>('idle')
-const platform = computed(() => props.apiKey?.group?.platform)
+const autoPlatform = ref<'openai' | 'anthropic' | 'gemini'>('openai')
+const platform = computed(() => props.apiKey?.auto_group ? autoPlatform.value : props.apiKey?.group?.platform)
 const baseUrl = computed(() => props.baseUrl.trim() || window.location.origin)
 const providerName = computed(() => [props.siteName.trim() || 'ModelPort', props.apiKey?.group?.name, props.apiKey?.name].filter(Boolean).join(' · '))
 const config = computed(() => resolveCcSwitchImportConfig(platform.value, clientType.value, baseUrl.value))
-const canImport = computed(() => Boolean(props.apiKey?.key && props.apiKey.group && props.apiKey.status === 'active') &&
-  (platform.value !== 'openai' || (modelState.value !== 'loading' && Boolean(model.value.trim()))))
+const canImport = computed(() => Boolean(props.apiKey?.key && (props.apiKey.group || props.apiKey.auto_group) && props.apiKey.status === 'active') &&
+  (platform.value !== 'openai' || ((props.apiKey?.auto_group ? modelState.value === 'ready' : modelState.value !== 'loading') && Boolean(model.value.trim()))))
 let controller: AbortController | null = null
 
 async function loadModels() {
@@ -112,7 +119,7 @@ async function loadModels() {
   }
 }
 
-watch(() => [props.show, props.apiKey?.id, props.apiKey?.key, props.apiKey?.group_id, props.baseUrl], () => {
+watch(() => [props.show, props.apiKey?.id, props.apiKey?.key, props.apiKey?.group_id, props.apiKey?.auto_group, autoPlatform.value, props.baseUrl], () => {
   controller?.abort()
   controller = null
   model.value = ''

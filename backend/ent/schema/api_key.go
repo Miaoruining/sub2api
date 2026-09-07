@@ -41,6 +41,8 @@ func (APIKey) Fields() []ent.Field {
 		field.String("name").
 			MaxLen(100).
 			NotEmpty(),
+		field.Bool("auto_group").Default(false).
+			Comment("按模型在用户获授权的同平台分组之间路由，按实际分组计费"),
 		field.Int64("group_id").
 			Optional().
 			Nillable(),

@@ -66,6 +66,8 @@ export default {
 
   // API Keys
   keys: {
+    autoGroup: 'Auto groups · All models',
+    autoGroupHint: 'Use enabled models in your authorized groups. Failover stays within the model platform and bills the selected group’s price, user rate and subscription. Switching groups may change the charge. Synchronous JSON endpoints are supported; use fixed-group keys for long-lived sessions, asynchronous tasks and uploads.',
     title: 'API Keys',
     description: 'Manage your API keys and access tokens',
     searchPlaceholder: 'Search name or key...',
@@ -622,6 +624,10 @@ export default {
 
   // Model Plaza (public group/model pricing showcase)
   modelPlaza: {
+    catalog: {
+      availableOnly: 'Only models available to my auto keys (uncheck for the full visible price catalog)',
+      cards: 'Card view', table: 'Group price tables', all: 'All', suppliers: 'Providers', billing: 'Billing mode', groups: 'Available groups', search: 'Search model names', reset: 'Reset filters', models: '{count} models', routes: '{count} group routes', details: 'View group prices', copy: 'Copy model name', copied: 'Copied', copyFailed: 'Copy failed. Select the model name manually.', input: 'Input', output: 'Output', cache: 'Cache read', request: 'Per request', image: 'Per image', token: 'Per token', unknown: 'Pricing not configured', priceNote: 'Standard-period price ranges include your group rates. Billing uses the selected group; expand for tiers, peak and time-based pricing.', scopeNote: 'This is a price catalog. Auto-key access also requires permission, an active plan where applicable, and a configured model list.',
+    },
     title: 'Model Plaza',
     description: 'Browse available models and pricing by group',
     loading: 'Loading...',

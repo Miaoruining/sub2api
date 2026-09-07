@@ -33,6 +33,7 @@ type APIKey struct {
 	Key         string
 	Name        string
 	GroupID     *int64
+	AutoGroup   bool
 	Status      string
 	IPWhitelist []string
 	IPBlacklist []string

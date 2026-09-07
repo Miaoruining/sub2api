@@ -22,6 +22,11 @@
       {{ t('modelPlaza.anonymousHint') }}
     </p>
 
+    <label v-if="isAuthenticated" class="flex items-center gap-2 text-sm text-gray-600 dark:text-dark-300">
+      <input type="checkbox" :checked="availableOnly" @change="emit('update:availableOnly', ($event.target as HTMLInputElement).checked)" />
+      {{ t('modelPlaza.catalog.availableOnly') }}
+    </label>
+
     <!-- 加载/错误/空 -->
     <div v-if="loading" class="flex min-h-[240px] items-center justify-center">
       <div class="h-8 w-8 animate-spin rounded-full border-2 border-primary-600/25 border-t-primary-600 dark:border-primary-400/25 dark:border-t-primary-400"></div>
@@ -33,6 +38,14 @@
       {{ t('modelPlaza.loadFailed') }}
     </div>
     <template v-else>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <p class="max-w-3xl text-xs leading-5 text-gray-500 dark:text-dark-400">{{ t('modelPlaza.catalog.scopeNote') }}</p>
+        <div class="inline-flex gap-1 rounded-lg bg-gray-100 p-1 dark:bg-dark-800">
+          <button v-for="mode in (['cards', 'table'] as const)" :key="mode" type="button" class="rounded-md px-3 py-1.5 text-xs font-medium" :class="view === mode ? 'bg-white text-primary-600 shadow-sm dark:bg-dark-700' : 'text-gray-500'" :aria-pressed="view === mode" @click="view = mode">{{ t(`modelPlaza.catalog.${mode}`) }}</button>
+        </div>
+      </div>
+      <PlazaCatalog v-if="view === 'cards'" :groups="response?.groups ?? []" />
+      <template v-else>
       <!-- 筛选区:平台 → 分组 → 倍率 -->
       <PlazaFilterBar
         :platforms="platforms"
@@ -58,6 +71,7 @@
       >
         {{ searchActive ? t('modelPlaza.noSearchResult') : t('modelPlaza.empty') }}
       </div>
+      </template>
     </template>
   </div>
 </template>
@@ -70,6 +84,7 @@ import DOMPurify from 'dompurify'
 import Icon from '@/components/icons/Icon.vue'
 import PlazaFilterBar from './PlazaFilterBar.vue'
 import PlazaGroupSection from './PlazaGroupSection.vue'
+import PlazaCatalog from './PlazaCatalog.vue'
 import type { ModelPlazaGroup, ModelPlazaResponse } from '@/api/modelPlaza'
 import { useAuthStore } from '@/stores/auth'
 
@@ -79,13 +94,16 @@ const props = defineProps<{
   error?: boolean
   /** 后台内嵌形态(AppLayout 内):隐藏页头。 */
   embedded?: boolean
+  availableOnly?: boolean
 }>()
+const emit = defineEmits<{ 'update:availableOnly': [value: boolean] }>()
 
 const { t } = useI18n()
 const authStore = useAuthStore()
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 
 const selectedPlatform = ref<string>('all')
+const view = ref<'cards' | 'table'>('cards')
 const selectedGroupId = ref<number | 'all'>('all')
 const selectedRate = ref<number | 'all'>('all')
 const searchQuery = ref('')

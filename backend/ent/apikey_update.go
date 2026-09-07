@@ -100,6 +100,20 @@ func (_u *APIKeyUpdate) SetNillableName(v *string) *APIKeyUpdate {
 	return _u
 }
 
+// SetAutoGroup sets the "auto_group" field.
+func (_u *APIKeyUpdate) SetAutoGroup(v bool) *APIKeyUpdate {
+	_u.mutation.SetAutoGroup(v)
+	return _u
+}
+
+// SetNillableAutoGroup sets the "auto_group" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableAutoGroup(v *bool) *APIKeyUpdate {
+	if v != nil {
+		_u.SetAutoGroup(*v)
+	}
+	return _u
+}
+
 // SetGroupID sets the "group_id" field.
 func (_u *APIKeyUpdate) SetGroupID(v int64) *APIKeyUpdate {
 	_u.mutation.SetGroupID(v)
@@ -593,6 +607,9 @@ func (_u *APIKeyUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.AutoGroup(); ok {
+		_spec.SetField(apikey.FieldAutoGroup, field.TypeBool, value)
+	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(apikey.FieldStatus, field.TypeString, value)
 	}
@@ -883,6 +900,20 @@ func (_u *APIKeyUpdateOne) SetName(v string) *APIKeyUpdateOne {
 func (_u *APIKeyUpdateOne) SetNillableName(v *string) *APIKeyUpdateOne {
 	if v != nil {
 		_u.SetName(*v)
+	}
+	return _u
+}
+
+// SetAutoGroup sets the "auto_group" field.
+func (_u *APIKeyUpdateOne) SetAutoGroup(v bool) *APIKeyUpdateOne {
+	_u.mutation.SetAutoGroup(v)
+	return _u
+}
+
+// SetNillableAutoGroup sets the "auto_group" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableAutoGroup(v *bool) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetAutoGroup(*v)
 	}
 	return _u
 }
@@ -1409,6 +1440,9 @@ func (_u *APIKeyUpdateOne) sqlSave(ctx context.Context) (_node *APIKey, err erro
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.AutoGroup(); ok {
+		_spec.SetField(apikey.FieldAutoGroup, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.Status(); ok {
 		_spec.SetField(apikey.FieldStatus, field.TypeString, value)

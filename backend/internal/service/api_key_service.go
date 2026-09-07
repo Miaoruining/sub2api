@@ -65,6 +65,7 @@ type APIKeyUpdateFields struct {
 	Status    bool
 	Quota     bool
 	GroupID   bool
+	AutoGroup bool
 	ExpiresAt bool
 	// QuotaUsed 仅供"重置配额用量"路径声明；常规计费走 IncrementQuotaUsed。
 	QuotaUsed bool
@@ -209,6 +210,7 @@ type APIKeyAuthCacheInvalidator interface {
 
 // CreateAPIKeyRequest 创建API Key请求
 type CreateAPIKeyRequest struct {
+	AutoGroup   bool     `json:"auto_group"`
 	Name        string   `json:"name"`
 	GroupID     *int64   `json:"group_id"`
 	CustomKey   *string  `json:"custom_key"`   // 可选的自定义key
@@ -227,6 +229,7 @@ type CreateAPIKeyRequest struct {
 
 // UpdateAPIKeyRequest 更新API Key请求
 type UpdateAPIKeyRequest struct {
+	AutoGroup   *bool     `json:"auto_group"`
 	Name        *string   `json:"name"`
 	GroupID     *int64    `json:"group_id"`
 	Status      *string   `json:"status"`
@@ -459,6 +462,9 @@ func (s *APIKeyService) canUserBindGroup(ctx context.Context, user *User, group 
 
 // Create 创建API Key
 func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIKeyRequest) (*APIKey, error) {
+	if req.AutoGroup && req.GroupID != nil {
+		return nil, infraerrors.BadRequest("AUTO_GROUP_ASSIGNMENT", "自动分组密钥不能同时指定固定分组")
+	}
 	if err := validateCreateAPIKeyRequest(req); err != nil {
 		return nil, err
 	}
@@ -536,6 +542,7 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 		Key:         key,
 		Name:        html.EscapeString(req.Name),
 		GroupID:     req.GroupID,
+		AutoGroup:   req.AutoGroup,
 		Status:      StatusActive,
 		IPWhitelist: req.IPWhitelist,
 		IPBlacklist: req.IPBlacklist,
@@ -790,6 +797,17 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 	// 下面若干分支会顺带把 Status 改回 active（配额扩容、清除过期等），
 	// 所以用原始值比对来决定是否写 status，而不是只看 req.Status。
 	originalStatus := apiKey.Status
+	if req.AutoGroup != nil && *req.AutoGroup && req.GroupID != nil {
+		return nil, infraerrors.BadRequest("AUTO_GROUP_ASSIGNMENT", "自动分组密钥不能同时指定固定分组")
+	}
+	if req.AutoGroup != nil {
+		apiKey.AutoGroup = *req.AutoGroup
+		fields.AutoGroup = true
+		if apiKey.AutoGroup {
+			apiKey.GroupID, apiKey.Group = nil, nil
+			fields.GroupID = true
+		}
+	}
 
 	// 更新字段
 	if req.Name != nil {
@@ -814,6 +832,8 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 		}
 
 		apiKey.GroupID = req.GroupID
+		apiKey.AutoGroup = false
+		fields.AutoGroup = true
 		fields.GroupID = true
 	}
 

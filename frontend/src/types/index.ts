@@ -720,6 +720,8 @@ export interface CompositeRouteDecision {
 }
 
 export interface ApiKey {
+  /** 缺省为 false，兼容旧服务端。 */
+  auto_group?: boolean
   id: number
   user_id: number
   key: string
@@ -752,6 +754,7 @@ export interface ApiKey {
 }
 
 export interface CreateApiKeyRequest {
+  auto_group?: boolean
   name: string
   group_id?: number | null
   custom_key?: string // Optional custom API Key
@@ -765,6 +768,7 @@ export interface CreateApiKeyRequest {
 }
 
 export interface UpdateApiKeyRequest {
+  auto_group?: boolean
   name?: string
   group_id?: number | null
   status?: 'active' | 'inactive'

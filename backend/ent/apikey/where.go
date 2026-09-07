@@ -85,6 +85,11 @@ func Name(v string) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldName, v))
 }
 
+// AutoGroup applies equality check predicate on the "auto_group" field. It's identical to AutoGroupEQ.
+func AutoGroup(v bool) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldAutoGroup, v))
+}
+
 // GroupID applies equality check predicate on the "group_id" field. It's identical to GroupIDEQ.
 func GroupID(v int64) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldGroupID, v))
@@ -438,6 +443,16 @@ func NameEqualFold(v string) predicate.APIKey {
 // NameContainsFold applies the ContainsFold predicate on the "name" field.
 func NameContainsFold(v string) predicate.APIKey {
 	return predicate.APIKey(sql.FieldContainsFold(FieldName, v))
+}
+
+// AutoGroupEQ applies the EQ predicate on the "auto_group" field.
+func AutoGroupEQ(v bool) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldAutoGroup, v))
+}
+
+// AutoGroupNEQ applies the NEQ predicate on the "auto_group" field.
+func AutoGroupNEQ(v bool) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldAutoGroup, v))
 }
 
 // GroupIDEQ applies the EQ predicate on the "group_id" field.

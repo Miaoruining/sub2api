@@ -23,6 +23,20 @@ function catalog(slugs: string[]) {
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.restoreAllMocks(); fetchManifest.mockReset() })
 
 describe('CC Switch import guide', () => {
+  it('requires a verified model catalog for auto keys and allows selecting the client', async () => {
+    fetchManifest.mockRejectedValue(new Error('Offline'))
+    const wrapper = render()
+    await wrapper.setProps({ apiKey: { ...key, auto_group: true, group_id: null, group: undefined } })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('keys.useKeyModal.noGroupDescription')
+    await wrapper.get('#ccswitch-model').setValue('unverified-model')
+    expect(wrapper.get('.btn-primary').attributes('disabled')).toBeDefined()
+    await wrapper.get('select').setValue('anthropic')
+    await flushPromises()
+    expect(wrapper.get('.btn-primary').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('#ccswitch-model').exists()).toBe(false)
+  })
+
   it('imports the selected group model only on click, without leaking its key into the page', async () => {
     fetchManifest.mockResolvedValue(catalog(['gpt-5.6-luna', 'gpt-5.6-sol']))
     const open = vi.spyOn(window, 'open').mockReturnValue(null)

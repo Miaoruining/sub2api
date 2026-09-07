@@ -487,6 +487,9 @@ func markOpsRoutingCapacityLimited(c *gin.Context) {
 		return
 	}
 	c.Set(opsRoutingCapacityLimitedKey, true)
+	if c.Request != nil {
+		service.MarkAutoGroupRetryable(c.Request.Context())
+	}
 }
 
 func markOpsRoutingCapacityLimitedIfNoAvailable(c *gin.Context, err error) {
@@ -1090,6 +1093,10 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 		c.Writer = w
 		c.Next()
 		w.finalizeCapture()
+		// 子请求已经按实际命中分组记录，外层自动路由请求不重复计数。
+		if c.GetBool("auto_group_dispatched") {
+			return
+		}
 
 		if _, rejected := middleware2.GetIngressRejectReason(c); rejected {
 			return

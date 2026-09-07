@@ -93,6 +93,22 @@ func TestAPIKeyUpdate_OnlyDeclaresRequestedColumns(t *testing.T) {
 	}
 }
 
+func TestAutoGroupUpdateClearsFixedGroupWithoutRewritingUsage(t *testing.T) {
+	id := int64(2)
+	svc, repo := newUpdateFieldsAPIKeyService(&APIKey{ID: 1, UserID: 7, Key: "test-auto-key", GroupID: &id, Group: &Group{ID: id}, QuotaUsed: 30})
+	on := true
+	key, err := svc.Update(context.Background(), 1, 7, UpdateAPIKeyRequest{AutoGroup: &on})
+	require.NoError(t, err)
+	require.True(t, key.AutoGroup)
+	require.Nil(t, key.GroupID)
+	require.Nil(t, key.Group)
+	require.Equal(t, 30.0, key.QuotaUsed)
+	require.Equal(t, []APIKeyUpdateFields{{AutoGroup: true, GroupID: true}}, repo.updateFields)
+	_, err = svc.Update(context.Background(), 1, 7, UpdateAPIKeyRequest{AutoGroup: &on, GroupID: &id})
+	require.Error(t, err)
+	require.Len(t, repo.updateFields, 1)
+}
+
 // 显式重置仍需声明对应的列，避免收窄写入列时把功能改坏。
 func TestAPIKeyUpdate_DeclaresUsageColumnsOnExplicitReset(t *testing.T) {
 	reset := true

@@ -157,6 +157,11 @@ func GoogleErrorWriter(c *gin.Context, status int, message string) {
 // 如果未分组且系统设置不允许未分组 Key 调度则返回 403。
 func RequireGroupAssignment(settingService *service.SettingService, writeError GatewayErrorWriter) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if key, ok := GetAPIKeyFromContext(c); ok && key != nil && key.AutoGroup && key.GroupID == nil {
+			writeError(c, http.StatusForbidden, "自动分组尚未解析，请使用支持自动路由的标准接口")
+			c.Abort()
+			return
+		}
 		apiKey, ok := GetAPIKeyFromContext(c)
 		if !ok || apiKey.GroupID != nil {
 			c.Next()

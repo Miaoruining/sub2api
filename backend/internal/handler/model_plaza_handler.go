@@ -21,6 +21,7 @@ type ModelPlazaHandler struct {
 	plazaService   *service.ModelPlazaService
 	apiKeyService  *service.APIKeyService
 	settingService *service.SettingService
+	gatewayService *service.GatewayService
 }
 
 // NewModelPlazaHandler 创建模型广场 handler。
@@ -28,11 +29,13 @@ func NewModelPlazaHandler(
 	plazaService *service.ModelPlazaService,
 	apiKeyService *service.APIKeyService,
 	settingService *service.SettingService,
+	gatewayService *service.GatewayService,
 ) *ModelPlazaHandler {
 	return &ModelPlazaHandler{
 		plazaService:   plazaService,
 		apiKeyService:  apiKeyService,
 		settingService: settingService,
+		gatewayService: gatewayService,
 	}
 }
 
@@ -141,6 +144,10 @@ func (h *ModelPlazaHandler) Get(c *gin.Context) {
 		}
 		userRates, err = h.apiKeyService.GetUserGroupRates(c.Request.Context(), subject.UserID)
 		if err != nil {
+			if c.Query("available") == "true" {
+				response.ErrorFrom(c, err)
+				return
+			}
 			// 专属倍率仅是展示增强，失败降级为分组默认倍率。
 			slog.Warn("model_plaza_user_rates_failed", "error", err, "user_id", subject.UserID)
 			userRates = nil
@@ -148,6 +155,43 @@ func (h *ModelPlazaHandler) Get(c *gin.Context) {
 	}
 
 	visible := filterPlazaVisibleGroups(groups, allowedGroups, restrictPublicGroups)
+	if c.Query("available") == "true" {
+		if !authed {
+			response.Unauthorized(c, "Authentication required")
+			return
+		}
+		available, err := h.apiKeyService.GetAvailableGroups(c.Request.Context(), subject.UserID)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		catalog, err := h.gatewayService.AutoGroupCatalog(c.Request.Context(), available)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		byGroup := make(map[int64]map[string]bool, len(catalog))
+		for _, entry := range catalog {
+			byGroup[entry.Group.ID] = map[string]bool{}
+			for _, name := range entry.Models {
+				byGroup[entry.Group.ID][name] = true
+			}
+		}
+		filtered := make([]service.PlazaGroup, 0, len(visible))
+		for _, group := range visible {
+			models := make([]service.PlazaModel, 0, len(group.Models))
+			for _, model := range group.Models {
+				if byGroup[group.ID][model.Name] {
+					models = append(models, model)
+				}
+			}
+			group.Models = models
+			if len(models) > 0 {
+				filtered = append(filtered, group)
+			}
+		}
+		visible = filtered
+	}
 
 	out := make([]modelPlazaGroup, 0, len(visible))
 	for i := range visible {

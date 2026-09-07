@@ -116,6 +116,7 @@ type APIKeyMutation struct {
 	deleted_at         *time.Time
 	key                *string
 	name               *string
+	auto_group         *bool
 	status             *string
 	last_used_at       *time.Time
 	ip_whitelist       *[]string
@@ -480,6 +481,42 @@ func (m *APIKeyMutation) OldName(ctx context.Context) (v string, err error) {
 // ResetName resets all changes to the "name" field.
 func (m *APIKeyMutation) ResetName() {
 	m.name = nil
+}
+
+// SetAutoGroup sets the "auto_group" field.
+func (m *APIKeyMutation) SetAutoGroup(b bool) {
+	m.auto_group = &b
+}
+
+// AutoGroup returns the value of the "auto_group" field in the mutation.
+func (m *APIKeyMutation) AutoGroup() (r bool, exists bool) {
+	v := m.auto_group
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAutoGroup returns the old "auto_group" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldAutoGroup(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAutoGroup is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAutoGroup requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAutoGroup: %w", err)
+	}
+	return oldValue.AutoGroup, nil
+}
+
+// ResetAutoGroup resets all changes to the "auto_group" field.
+func (m *APIKeyMutation) ResetAutoGroup() {
+	m.auto_group = nil
 }
 
 // SetGroupID sets the "group_id" field.
@@ -1532,7 +1569,7 @@ func (m *APIKeyMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *APIKeyMutation) Fields() []string {
-	fields := make([]string, 0, 23)
+	fields := make([]string, 0, 24)
 	if m.created_at != nil {
 		fields = append(fields, apikey.FieldCreatedAt)
 	}
@@ -1550,6 +1587,9 @@ func (m *APIKeyMutation) Fields() []string {
 	}
 	if m.name != nil {
 		fields = append(fields, apikey.FieldName)
+	}
+	if m.auto_group != nil {
+		fields = append(fields, apikey.FieldAutoGroup)
 	}
 	if m.group != nil {
 		fields = append(fields, apikey.FieldGroupID)
@@ -1622,6 +1662,8 @@ func (m *APIKeyMutation) Field(name string) (ent.Value, bool) {
 		return m.Key()
 	case apikey.FieldName:
 		return m.Name()
+	case apikey.FieldAutoGroup:
+		return m.AutoGroup()
 	case apikey.FieldGroupID:
 		return m.GroupID()
 	case apikey.FieldStatus:
@@ -1677,6 +1719,8 @@ func (m *APIKeyMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldKey(ctx)
 	case apikey.FieldName:
 		return m.OldName(ctx)
+	case apikey.FieldAutoGroup:
+		return m.OldAutoGroup(ctx)
 	case apikey.FieldGroupID:
 		return m.OldGroupID(ctx)
 	case apikey.FieldStatus:
@@ -1761,6 +1805,13 @@ func (m *APIKeyMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetName(v)
+		return nil
+	case apikey.FieldAutoGroup:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAutoGroup(v)
 		return nil
 	case apikey.FieldGroupID:
 		v, ok := value.(int64)
@@ -2103,6 +2154,9 @@ func (m *APIKeyMutation) ResetField(name string) error {
 		return nil
 	case apikey.FieldName:
 		m.ResetName()
+		return nil
+	case apikey.FieldAutoGroup:
+		m.ResetAutoGroup()
 		return nil
 	case apikey.FieldGroupID:
 		m.ResetGroupID()

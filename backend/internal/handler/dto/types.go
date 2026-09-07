@@ -54,6 +54,7 @@ type AdminUser struct {
 }
 
 type APIKey struct {
+	AutoGroup   bool       `json:"auto_group"`
 	ID          int64      `json:"id"`
 	UserID      int64      `json:"user_id"`
 	Key         string     `json:"key"`

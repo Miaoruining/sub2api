@@ -141,8 +141,9 @@
                 class="-mx-2 -my-1 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 transition-all duration-200 hover:bg-gray-100 dark:hover:bg-dark-700"
                 :title="t('keys.clickToChangeGroup')"
               >
+                <span v-if="row.auto_group" class="text-sm font-medium text-primary-600 dark:text-primary-400">{{ t('keys.autoGroup') }}</span>
                 <GroupBadge
-                  v-if="row.group"
+                  v-else-if="row.group"
                   :name="row.group.name"
                   :platform="row.group.platform"
                   :subscription-type="row.group.subscription_type"
@@ -464,7 +465,14 @@
           />
         </div>
 
-        <div>
+        <div class="rounded-xl border border-primary-200 bg-primary-50/40 p-4 dark:border-primary-800 dark:bg-primary-950/20">
+          <label class="flex cursor-pointer items-center gap-2 font-medium">
+            <input v-model="formData.auto_group" type="checkbox" class="h-4 w-4" />
+            {{ t('keys.autoGroup') }}
+          </label>
+          <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-dark-400">{{ t('keys.autoGroupHint') }}</p>
+        </div>
+        <div v-if="!formData.auto_group">
           <label class="input-label">{{ t('keys.groupLabel') }}</label>
           <Select
             v-model="formData.group_id"
@@ -994,6 +1002,7 @@
       :api-key="selectedKey?.key || ''"
       :base-url="publicSettings?.api_base_url || ''"
       :platform="selectedKey?.group?.platform || null"
+      :auto-group="selectedKey?.auto_group"
       :allow-messages-dispatch="selectedKey?.group?.allow_messages_dispatch || false"
       @close="closeUseKeyModal"
     />
@@ -1286,6 +1295,7 @@ const setGroupButtonRef = (keyId: number, el: Element | ComponentPublicInstance 
 }
 
 const formData = ref({
+  auto_group: false,
   name: '',
   group_id: null as number | null,
   status: 'active' as 'active' | 'inactive',
@@ -1521,6 +1531,7 @@ const editKey = (key: ApiKey) => {
   const hasExpiration = !!key.expires_at
   formData.value = {
     name: key.name,
+    auto_group: key.auto_group ?? false,
     group_id: key.group_id,
     status: key.status === 'quota_exhausted' || key.status === 'expired' ? 'inactive' : key.status,
     use_custom_key: false,
@@ -1621,7 +1632,7 @@ const confirmDelete = (key: ApiKey) => {
 
 const handleSubmit = async () => {
   // Validate group_id is required
-  if (formData.value.group_id === null) {
+  if (!formData.value.auto_group && formData.value.group_id === null) {
     appStore.showError(t('keys.groupRequired'))
     return
   }
@@ -1678,7 +1689,8 @@ const handleSubmit = async () => {
     if (showEditModal.value && selectedKey.value) {
       const updates: UpdateApiKeyRequest = {
         name: formData.value.name,
-        group_id: formData.value.group_id,
+        group_id: formData.value.auto_group ? null : formData.value.group_id,
+        auto_group: formData.value.auto_group,
         ip_whitelist: ipWhitelist,
         ip_blacklist: ipBlacklist,
         quota: quota,
@@ -1696,13 +1708,14 @@ const handleSubmit = async () => {
       const customKey = formData.value.use_custom_key ? formData.value.custom_key : undefined
       await keysAPI.create(
         formData.value.name,
-        formData.value.group_id,
+        formData.value.auto_group ? null : formData.value.group_id,
         customKey,
         ipWhitelist,
         ipBlacklist,
         quota,
         expiresInDays,
-        rateLimitData
+        rateLimitData,
+        formData.value.auto_group
       )
       appStore.showSuccess(t('keys.keyCreatedSuccess'))
       // Only advance tour if active, on submit step, and creation succeeded
@@ -1747,6 +1760,7 @@ const closeModals = () => {
   selectedKey.value = null
   formData.value = {
     name: '',
+    auto_group: false,
     group_id: null,
     status: 'active',
     use_custom_key: false,

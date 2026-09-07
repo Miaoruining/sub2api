@@ -66,6 +66,8 @@ export default {
 
   // API Keys
   keys: {
+    autoGroup: '自动分组 · 全模型',
+    autoGroupHint: '访问你有权限的已启用模型，GPT、Claude 等只在各自平台分组内切换。按实际命中分组的价格、专属倍率及套餐结算，切组可能改变费用。当前支持同步 JSON 接口；长连接、异步任务和文件上传请使用指定分组密钥。',
     title: 'API 密钥',
     description: '管理您的 API 密钥和访问令牌',
     searchPlaceholder: '搜索名称或Key...',
@@ -627,6 +629,10 @@ export default {
 
   // Model Plaza (public group/model pricing showcase)
   modelPlaza: {
+    catalog: {
+      availableOnly: '仅显示我的自动密钥可用模型（取消可查看全部授权价目）',
+      cards: '卡片视图', table: '分组价格表', all: '全部', suppliers: '供应商', billing: '计费方式', groups: '可用分组', search: '搜索模型名称', reset: '重置筛选', models: '{count} 个模型', routes: '{count} 条分组线路', details: '查看分组价格', copy: '复制模型名称', copied: '已复制', copyFailed: '复制失败，请手动选择模型名称', input: '输入', output: '输出', cache: '缓存命中', request: '按次计费', image: '按张计费', token: '按量计费', unknown: '价格待配置', priceNote: '下列为标准时段价格范围，按实际命中分组收费；专属倍率已计入，阶梯、高峰及分时价格请展开查看。', scopeNote: '此处为模型价目展示；自动密钥实际可用范围以你的权限、有效套餐和已配置的模型清单为准。',
+    },
     title: '模型广场',
     description: '按分组浏览可用模型与价格',
     loading: '加载中...',
