@@ -71,6 +71,9 @@ type modelPlazaModel struct {
 	Platform        string                     `json:"platform"`
 	Pricing         *userSupportedModelPricing `json:"pricing"`
 	OfficialPricing *modelPlazaOfficialPricing `json:"official_pricing"`
+	// AutoRouteOrder 表示当前登录用户使用自动密钥时，该模型实际命中此分组的顺序。
+	// nil 表示该线路只用于展示价目，不在当前用户的自动路由候选中。
+	AutoRouteOrder *int `json:"auto_route_order,omitempty"`
 	// LongContextBasis 多档时的计价基准："whole_request"（整单按档）| "marginal"（仅超出部分）。
 	LongContextBasis string `json:"long_context_basis,omitempty"`
 	// TimePricing 分时倍率时段，落在时段内的请求整单乘倍率；无分时省略。
@@ -83,6 +86,7 @@ type modelPlazaGroup struct {
 	Name               string   `json:"name"`
 	Description        string   `json:"description"`
 	Platform           string   `json:"platform"`
+	SortOrder          int      `json:"sort_order"`
 	SubscriptionType   string   `json:"subscription_type"`
 	RateMultiplier     float64  `json:"rate_multiplier"`
 	UserRateMultiplier *float64 `json:"user_rate_multiplier,omitempty"`
@@ -135,6 +139,7 @@ func (h *ModelPlazaHandler) Get(c *gin.Context) {
 	var allowedGroups map[int64]struct{}
 	var restrictPublicGroups bool
 	var userRates map[int64]float64
+	var autoRouteOrder map[int64]map[string]int
 	if authed {
 		allowedGroups, restrictPublicGroups, err = h.apiKeyService.GetUserGroupVisibility(c.Request.Context(), subject.UserID)
 		if err != nil {
@@ -152,6 +157,33 @@ func (h *ModelPlazaHandler) Get(c *gin.Context) {
 			slog.Warn("model_plaza_user_rates_failed", "error", err, "user_id", subject.UserID)
 			userRates = nil
 		}
+
+		// 无论是否开启“仅看可用”筛选，都返回真实自动路由元数据。
+		// 页面可以展示完整价目，同时只把当前用户真正可调度的线路串成路由链。
+		available, availableErr := h.apiKeyService.GetAvailableGroups(c.Request.Context(), subject.UserID)
+		if availableErr == nil {
+			catalog, catalogErr := h.gatewayService.AutoGroupCatalog(c.Request.Context(), available)
+			if catalogErr == nil {
+				autoRouteOrder = make(map[int64]map[string]int, len(catalog))
+				for order, entry := range catalog {
+					models := make(map[string]int, len(entry.Models))
+					for _, name := range entry.Models {
+						models[name] = order
+					}
+					autoRouteOrder[entry.Group.ID] = models
+				}
+			} else if c.Query("available") == "true" {
+				response.ErrorFrom(c, catalogErr)
+				return
+			} else {
+				slog.Warn("model_plaza_auto_routes_failed", "error", catalogErr, "user_id", subject.UserID)
+			}
+		} else if c.Query("available") == "true" {
+			response.ErrorFrom(c, availableErr)
+			return
+		} else {
+			slog.Warn("model_plaza_available_groups_failed", "error", availableErr, "user_id", subject.UserID)
+		}
 	}
 
 	visible := filterPlazaVisibleGroups(groups, allowedGroups, restrictPublicGroups)
@@ -160,28 +192,11 @@ func (h *ModelPlazaHandler) Get(c *gin.Context) {
 			response.Unauthorized(c, "Authentication required")
 			return
 		}
-		available, err := h.apiKeyService.GetAvailableGroups(c.Request.Context(), subject.UserID)
-		if err != nil {
-			response.ErrorFrom(c, err)
-			return
-		}
-		catalog, err := h.gatewayService.AutoGroupCatalog(c.Request.Context(), available)
-		if err != nil {
-			response.ErrorFrom(c, err)
-			return
-		}
-		byGroup := make(map[int64]map[string]bool, len(catalog))
-		for _, entry := range catalog {
-			byGroup[entry.Group.ID] = map[string]bool{}
-			for _, name := range entry.Models {
-				byGroup[entry.Group.ID][name] = true
-			}
-		}
 		filtered := make([]service.PlazaGroup, 0, len(visible))
 		for _, group := range visible {
 			models := make([]service.PlazaModel, 0, len(group.Models))
 			for _, model := range group.Models {
-				if byGroup[group.ID][model.Name] {
+				if _, ok := autoRouteOrder[group.ID][model.Name]; ok {
 					models = append(models, model)
 				}
 			}
@@ -195,7 +210,7 @@ func (h *ModelPlazaHandler) Get(c *gin.Context) {
 
 	out := make([]modelPlazaGroup, 0, len(visible))
 	for i := range visible {
-		out = append(out, toModelPlazaGroupDTO(&visible[i], userRates))
+		out = append(out, toModelPlazaGroupDTO(&visible[i], userRates, autoRouteOrder[visible[i].ID]))
 	}
 	response.Success(c, modelPlazaResponse{
 		Description: rt.Description,
@@ -228,24 +243,30 @@ func filterPlazaVisibleGroups(
 }
 
 // toModelPlazaGroupDTO 将 service 层广场分组映射为白名单 DTO,并合并用户专属倍率。
-func toModelPlazaGroupDTO(g *service.PlazaGroup, userRates map[int64]float64) modelPlazaGroup {
+func toModelPlazaGroupDTO(g *service.PlazaGroup, userRates map[int64]float64, autoRouteModels map[string]int) modelPlazaGroup {
 	models := make([]modelPlazaModel, 0, len(g.Models))
 	for i := range g.Models {
 		m := &g.Models[i]
-		models = append(models, modelPlazaModel{
+		model := modelPlazaModel{
 			Name:             m.Name,
 			Platform:         m.Platform,
 			Pricing:          toUserPricing(m.Pricing),
 			OfficialPricing:  toModelPlazaOfficialPricing(m.OfficialPricing),
 			LongContextBasis: string(m.LongContextBasis),
 			TimePricing:      toModelPlazaTimePricing(m.TimePricing),
-		})
+		}
+		if order, ok := autoRouteModels[m.Name]; ok {
+			orderCopy := order
+			model.AutoRouteOrder = &orderCopy
+		}
+		models = append(models, model)
 	}
 	dto := modelPlazaGroup{
 		ID:                        g.ID,
 		Name:                      g.Name,
 		Description:               g.Description,
 		Platform:                  g.Platform,
+		SortOrder:                 g.SortOrder,
 		SubscriptionType:          g.SubscriptionType,
 		RateMultiplier:            g.RateMultiplier,
 		PeakRateEnabled:           g.PeakRateEnabled,

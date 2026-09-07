@@ -631,8 +631,12 @@ export default {
   modelPlaza: {
     catalog: {
       detailsShort: '详情', noDescription: '暂无描述。', requestUnit: '次', cacheShort: '缓存',
-      availableOnly: '仅显示我的自动密钥可用模型（取消可查看全部授权价目）',
-      cards: '卡片视图', table: '分组价格表', all: '全部', suppliers: '供应商', billing: '计费方式', groups: '可用分组', search: '搜索模型名称', reset: '重置筛选', models: '{count} 个模型', routes: '{count} 条分组线路', details: '查看分组价格', copy: '复制模型名称', copied: '已复制', copyFailed: '复制失败，请手动选择模型名称', input: '输入', output: '输出', cache: '缓存命中', request: '按次计费', image: '按张计费', token: '按量计费', unknown: '价格待配置', priceNote: '下列为标准时段价格范围，按实际命中分组收费；专属倍率已计入，阶梯、高峰及分时价格请展开查看。', scopeNote: '此处为模型价目展示；自动密钥实际可用范围以你的权限、有效套餐和已配置的模型清单为准。',
+      cards: '卡片视图', table: '分组价格表', all: '全部', suppliers: '所有供应商', billing: '定价类型', groups: '分组', search: '搜索模型名称', reset: '重置', models: '{count} 个模型', routes: '{count} 条分组线路', details: '查看模型详情', copy: '复制模型名称', copied: '已复制', copyFailed: '复制失败，请手动选择模型名称', input: '输入', output: '输出', cache: '缓存输入', cacheWrite: '缓存写入', request: '按次计费', image: '按张计费', token: '按量计费', unknown: '价格待配置', priceNote: '价格按 1M tokens 展示并已计入分组倍率；实际自动路由严格按详情中的分组顺序尝试。', scopeNote: '默认展示全部授权价目；详情中的自动路由链仅包含当前账户实际可调度的分组。',
+      filtersTitle: '筛选', filtersDescription: '按供应商、分组和定价类型细化模型。', activeFilters: '筛选已启用',
+      allGroups: '所有分组', allSuppliers: '所有供应商', allBilling: '所有类型', close: '关闭', overview: '概览', performance: '性能', api: 'API',
+      avgLatency: '平均延迟', successRate: '成功率', pricing: '定价', basePrice: '基础价格', groupPricing: '按分组定价', rate: '倍率',
+      autoRouteChain: '自动分组链 →', autoRouteEmpty: '当前账户没有该模型的自动路由线路；下方卡片价格仅作价目展示。', routeOrderNote: '顺序由管理员在“分组管理 → 自动路由顺序”中设置；请求只会在用户有权限且支持该模型的分组中依次尝试。',
+      noPerformance: '暂未接入该模型的实时性能数据。', endpoints: '支持的 API 端点', noEndpoints: '该模型暂未配置端点类型。',
     },
     title: '模型广场',
     description: '按分组浏览可用模型与价格',

@@ -191,22 +191,22 @@ func TestListPlazaGroups_InactiveChannelSkipped(t *testing.T) {
 	require.Empty(t, out)
 }
 
-func TestListPlazaGroups_SortedByRateMultiplierAsc(t *testing.T) {
+func TestListPlazaGroups_SortedByAutoRouteOrder(t *testing.T) {
 	channels := []Channel{
 		plazaPricedChannel(1, "ch", []int64{10, 20, 30}, "anthropic", "claude-sonnet"),
 	}
 	groups := []Group{
-		{ID: 10, Name: "b-standard", Platform: "anthropic", RateMultiplier: 1},
-		{ID: 20, Name: "a-standard", Platform: "anthropic", RateMultiplier: 1},
-		{ID: 30, Name: "cheap", Platform: "anthropic", RateMultiplier: 0.5},
+		{ID: 10, Name: "first", Platform: "anthropic", RateMultiplier: 1, SortOrder: 10},
+		{ID: 20, Name: "same-order-later-id", Platform: "anthropic", RateMultiplier: 0.2, SortOrder: 20},
+		{ID: 30, Name: "same-order-higher-id", Platform: "anthropic", RateMultiplier: 0.1, SortOrder: 20},
 	}
 	svc := newPlazaService(channels, groups, nil)
 	out, err := svc.ListGroups(context.Background())
 	require.NoError(t, err)
 	require.Len(t, out, 3)
-	require.Equal(t, "cheap", out[0].Name, "倍率低者在前")
-	require.Equal(t, "a-standard", out[1].Name, "同倍率按名称")
-	require.Equal(t, "b-standard", out[2].Name)
+	require.Equal(t, "first", out[0].Name, "自动路由序号更小的分组在前")
+	require.Equal(t, "same-order-later-id", out[1].Name, "同序号按 ID 保持确定顺序")
+	require.Equal(t, "same-order-higher-id", out[2].Name)
 }
 
 func TestListPlazaGroups_OfficialPricingFill(t *testing.T) {

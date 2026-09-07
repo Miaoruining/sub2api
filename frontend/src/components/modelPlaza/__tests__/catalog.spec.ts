@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ModelPlazaGroup, PlazaModel } from '@/api/modelPlaza'
-import { buildModelCatalog, catalogPrices } from '../catalog'
+import { buildModelCatalog, catalogAutoRoutes, catalogPrices } from '../catalog'
 
 function model(overrides: Partial<PlazaModel> = {}): PlazaModel {
   return { name: 'gpt-test', platform: 'openai', official_pricing: null,
@@ -36,5 +36,14 @@ describe('model catalog', () => {
   it('never substitutes official prices or zero for missing customer prices', () => {
     const catalog = buildModelCatalog([group(1, { models: [model({ pricing: null, official_pricing: { input_price: 0.01, output_price: 0.02, cache_read_price: null, cache_write_price: null } })] })])
     expect(catalogPrices(catalog[0], 'input_price')).toEqual([])
+  })
+  it('keeps display-only prices but orders actual routes by the backend route order', () => {
+    const catalog = buildModelCatalog([
+      group(1, { sort_order: 10, models: [model({ auto_route_order: 1 })] }),
+      group(2, { sort_order: 0, models: [model()] }),
+      group(3, { sort_order: 20, models: [model({ auto_route_order: 0 })] })
+    ])
+    expect(catalog[0].routes.map(route => route.group.id)).toEqual([3, 1, 2])
+    expect(catalogAutoRoutes(catalog[0]).map(route => route.group.id)).toEqual([3, 1])
   })
 })

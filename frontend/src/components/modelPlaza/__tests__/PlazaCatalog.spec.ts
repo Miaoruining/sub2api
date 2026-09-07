@@ -13,15 +13,18 @@ function group(id: number, platform: string, name: string): ModelPlazaGroup {
     models: [{ name, platform, pricing: null, official_pricing: null }] }
 }
 describe('PlazaCatalog', () => {
-  it('searches unique model cards, resets filters and opens real group prices', async () => {
-    const wrapper = mount(PlazaCatalog, { props: { groups: [group(1, 'openai', 'gpt-test'), group(2, 'openai', 'gpt-test'), group(3, 'anthropic', 'claude-test')] }, global: { stubs: { BaseDialog: { props: ['show'], template: '<div v-if="show" data-test="detail"><slot /></div>' }, PlazaGroupSection: { props: ['group'], template: '<div data-test="group">{{ group.name }}</div>' } } } })
+  it('searches unique model cards, resets filters and opens the model drawer', async () => {
+    const wrapper = mount(PlazaCatalog, {
+      props: { groups: [group(1, 'openai', 'gpt-test'), group(2, 'openai', 'gpt-test'), group(3, 'anthropic', 'claude-test')] },
+      global: { stubs: { PlazaModelDrawer: { props: ['show', 'entry'], template: '<div v-if="show" data-test="detail">{{ entry.routes.length }}</div>' } } }
+    })
     expect(wrapper.findAll('article')).toHaveLength(2)
     await wrapper.get('input[type=search]').setValue('gpt')
     expect(wrapper.findAll('article')).toHaveLength(1)
     const details = wrapper.get('article .details-button')
     await details.trigger('click')
-    expect(wrapper.findAll('[data-test=group]')).toHaveLength(2)
-    await wrapper.get('aside > button').trigger('click')
+    expect(wrapper.get('[data-test=detail]').text()).toBe('2')
+    await wrapper.get('[data-test=reset]').trigger('click')
     expect(wrapper.findAll('article')).toHaveLength(2)
     await wrapper.get('input[type=search]').setValue('missing-model')
     expect(wrapper.findAll('article')).toHaveLength(0)

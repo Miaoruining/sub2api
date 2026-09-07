@@ -1,14 +1,14 @@
 <template>
   <!-- 后台内嵌形态:?embedded=1 且已登录,套完整后台布局 -->
   <AppLayout v-if="isEmbedded">
-    <ModelPlazaContent v-model:available-only="availableOnly" :response="data" :loading="loading" :error="loadFailed" embedded />
+    <ModelPlazaContent :response="data" :loading="loading" :error="loadFailed" embedded />
   </AppLayout>
 
   <!-- 独立形态:自带导航条(logo/站名 + 登录/回后台) -->
   <div v-else class="min-h-screen bg-gray-50 dark:bg-dark-950">
     <PlazaNavBar />
     <main class="mx-auto max-w-[1800px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-      <ModelPlazaContent v-model:available-only="availableOnly" :response="data" :loading="loading" :error="loadFailed" />
+      <ModelPlazaContent :response="data" :loading="loading" :error="loadFailed" />
     </main>
   </div>
 </template>
@@ -33,7 +33,6 @@ const isEmbedded = computed(() => route.query.embedded === '1' && authStore.isAu
 const data = ref<ModelPlazaResponse | null>(null)
 const loading = ref(true)
 const loadFailed = ref(false)
-const availableOnly = ref(true)
 let requestID = 0
 
 onMounted(() => {
@@ -41,12 +40,14 @@ onMounted(() => {
   void appStore.fetchPublicSettings()
 })
 
-watch([availableOnly, () => authStore.isAuthenticated], async () => {
+watch(() => authStore.isAuthenticated, async () => {
   const id = ++requestID
   loading.value = true
   loadFailed.value = false
   try {
-    const result = await getModelPlaza({ available: authStore.isAuthenticated && availableOnly.value })
+    // 广场始终展示全部授权价目；实际自动路由线路由接口中的
+    // auto_route_order 单独标识，不再用默认筛选隐藏模型或分组。
+    const result = await getModelPlaza()
     if (id === requestID) data.value = result
   } catch {
     if (id === requestID) loadFailed.value = true

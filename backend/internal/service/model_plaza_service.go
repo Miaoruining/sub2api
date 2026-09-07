@@ -37,10 +37,13 @@ type PlazaModel struct {
 // 支持模型（普通分组按分组平台隔离，Composite 分组展开关联渠道已配置的
 // 具体平台），与「可用渠道」页口径一致。
 type PlazaGroup struct {
-	ID                 int64
-	Name               string
-	Description        string
-	Platform           string
+	ID          int64
+	Name        string
+	Description string
+	Platform    string
+	// SortOrder 与自动分组调度共用同一排序源。模型广场必须保持该顺序，
+	// 不能再按价格重排，否则详情页展示的自动路由链会与真实调度不一致。
+	SortOrder          int
 	SubscriptionType   string
 	RateMultiplier     float64
 	PeakRateEnabled    bool
@@ -95,7 +98,7 @@ func NewModelPlazaService(
 //   - token 模型的单价与阶梯按实收口径合成（见 ResolveContextPricingSchedule），
 //     图片计费模型的档位价按实收口径合成（见 plazaImageDisplayPricing）；
 //   - 每个模型附带官方参考价（查不到为 nil）；
-//   - 只返回 Models 非空的分组；分组按 RateMultiplier 升序（同倍率按名称），
+//   - 只返回 Models 非空的分组；分组按 SortOrder 升序（同序号按 ID），
 //     组内模型按名称排序。
 //
 // 可见性过滤（专属分组）不在此层做，由 handler 按登录态裁剪。
@@ -123,6 +126,7 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 			Name:                      g.Name,
 			Description:               g.Description,
 			Platform:                  g.Platform,
+			SortOrder:                 g.SortOrder,
 			SubscriptionType:          g.SubscriptionType,
 			RateMultiplier:            g.RateMultiplier,
 			PeakRateEnabled:           g.PeakRateEnabled,
@@ -212,10 +216,10 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 	}
 
 	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].RateMultiplier != out[j].RateMultiplier {
-			return out[i].RateMultiplier < out[j].RateMultiplier
+		if out[i].SortOrder != out[j].SortOrder {
+			return out[i].SortOrder < out[j].SortOrder
 		}
-		return out[i].Name < out[j].Name
+		return out[i].ID < out[j].ID
 	})
 	return out, nil
 }

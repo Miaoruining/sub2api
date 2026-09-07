@@ -57,6 +57,8 @@ export interface PlazaModel {
   long_context_basis?: PlazaLongContextBasis
   /** 仅配置了分时倍率的模型返回。 */
   time_pricing?: PlazaTimePricing
+  /** 当前用户自动密钥实际尝试此分组的顺序；未返回表示只展示价格、不参与自动路由。 */
+  auto_route_order?: number
 }
 
 export interface ModelPlazaGroup {
@@ -64,6 +66,8 @@ export interface ModelPlazaGroup {
   name: string
   description: string
   platform: string
+  /** 后台配置的自动路由顺序，数值越小越优先。 */
+  sort_order?: number
   /** 'standard' | 'subscription' */
   subscription_type: string
   rate_multiplier: number

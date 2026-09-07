@@ -24,7 +24,20 @@ export function buildModelCatalog(groups: ModelPlazaGroup[]): CatalogModel[] {
       if (!entry.routes.some(route => route.group.id === group.id)) entry.routes.push({ group, model })
     }
   }
+
+  for (const entry of models.values()) {
+    entry.routes.sort((a, b) => {
+      const aAuto = a.model.auto_route_order ?? Number.MAX_SAFE_INTEGER
+      const bAuto = b.model.auto_route_order ?? Number.MAX_SAFE_INTEGER
+      return aAuto - bAuto || (a.group.sort_order ?? 0) - (b.group.sort_order ?? 0) || a.group.id - b.group.id
+    })
+  }
   return [...models.values()].sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/** 当前用户使用自动密钥时，这个模型会严格按此顺序尝试分组。 */
+export function catalogAutoRoutes(entry: CatalogModel): ModelRoute[] {
+  return entry.routes.filter(route => route.model.auto_route_order != null)
 }
 
 export function catalogPrices(entry: CatalogModel, field: 'input_price' | 'output_price' | 'cache_read_price' | 'per_request_price'): number[] {
