@@ -1086,6 +1086,43 @@ func TestIsModelRestricted_ModelInPricing(t *testing.T) {
 	require.False(t, restricted)
 }
 
+func TestIsModelRestricted_RefreshesStaleCacheBeforeRejectingAllowedModel(t *testing.T) {
+	channels := []Channel{{
+		ID:             1,
+		Status:         StatusActive,
+		GroupIDs:       []int64{10},
+		RestrictModels: true,
+		ModelPricing: []ChannelModelPricing{
+			{Platform: PlatformOpenAI, Models: []string{"gpt-5.6-sol"}},
+		},
+	}}
+	listAllCalls := 0
+	repo := &mockChannelRepository{
+		listAllFn: func(_ context.Context) ([]Channel, error) {
+			listAllCalls++
+			return append([]Channel(nil), channels...), nil
+		},
+		getGroupPlatformsFn: func(_ context.Context, _ []int64) (map[int64]string, error) {
+			return map[int64]string{10: PlatformOpenAI}, nil
+		},
+	}
+	svc := newTestChannelService(repo)
+
+	// 先构建一个尚未包含 gpt-6-astra 的本地快照。
+	require.False(t, svc.IsModelRestricted(context.Background(), 10, "gpt-5.6-sol"))
+	require.Equal(t, 1, listAllCalls)
+
+	// 模拟另一实例已保存渠道配置，而当前实例还持有旧快照。
+	channels[0].ModelPricing = []ChannelModelPricing{{
+		Platform: PlatformOpenAI,
+		Models:   []string{"gpt-5.6-sol", "gpt-6-astra"},
+	}}
+
+	// 旧快照会先命中限制；复核必须刷新后放行，不能向客户端返回 503。
+	require.False(t, svc.IsModelRestricted(context.Background(), 10, "gpt-6-astra"))
+	require.Equal(t, 2, listAllCalls)
+}
+
 func TestIsModelRestricted_ModelInWildcard(t *testing.T) {
 	ch := Channel{
 		ID:             1,

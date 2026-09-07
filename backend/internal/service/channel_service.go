@@ -144,9 +144,10 @@ func (r ChannelMappingResult) ToUsageFields(reqModel, upstreamModel string) Chan
 }
 
 const (
-	channelCacheTTL       = 10 * time.Minute
-	channelErrorTTL       = 5 * time.Second // DB 错误时的短缓存
-	channelCacheDBTimeout = 10 * time.Second
+	channelCacheTTL                   = 10 * time.Minute
+	channelErrorTTL                   = 5 * time.Second // DB 错误时的短缓存
+	channelCacheDBTimeout             = 10 * time.Second
+	channelRestrictionRefreshInterval = 10 * time.Second
 )
 
 // ChannelService 渠道管理服务
@@ -158,6 +159,12 @@ type ChannelService struct {
 
 	cache   atomic.Value // *channelCache
 	cacheSF singleflight.Group
+
+	// 上游请求热路径通常只读缓存。若缓存把本应允许的模型判为受限，
+	// 在受限分支进行一次节流复核，避免渠道刚更新或多实例缓存短暂滞后
+	// 时直接向用户返回 503。
+	restrictionRefreshAt atomic.Int64
+	restrictionRefreshSF singleflight.Group
 }
 
 // NewChannelService 创建渠道服务实例。
@@ -547,7 +554,45 @@ func (s *ChannelService) IsModelRestricted(ctx context.Context, groupID int64, m
 	if lk == nil {
 		return false
 	}
-	return checkRestricted(lk, groupID, model)
+	if !checkRestricted(lk, groupID, model) {
+		return false
+	}
+
+	// "限制模型"是拒绝请求的最后一道保护。命中限制时，先以缓存结论
+	// 判断；仅在节流窗口外同步一次数据库快照，再做最终判断。这样既能
+	// 消除配置更新后的短暂误拦截，也不会让未知模型请求持续打到数据库。
+	if !s.refreshRestrictionCache(ctx) {
+		return true
+	}
+	refreshed, refreshErr := s.lookupGroupChannel(ctx, groupID)
+	if refreshErr != nil {
+		slog.Warn("failed to recheck channel model restriction", "group_id", groupID, "model", model, "error", refreshErr)
+		return true
+	}
+	return refreshed != nil && checkRestricted(refreshed, groupID, model)
+}
+
+// refreshRestrictionCache rebuilds the local channel snapshot at most once per
+// interval when a request would otherwise be rejected by a model restriction.
+// It returns false when the existing restriction result should be retained.
+func (s *ChannelService) refreshRestrictionCache(ctx context.Context) bool {
+	now := time.Now().UnixNano()
+	last := s.restrictionRefreshAt.Load()
+	if last != 0 && now-last < channelRestrictionRefreshInterval.Nanoseconds() {
+		return false
+	}
+	if !s.restrictionRefreshAt.CompareAndSwap(last, now) {
+		return false
+	}
+
+	_, err, _ := s.restrictionRefreshSF.Do("channel_restriction_refresh", func() (any, error) {
+		return s.buildCache(ctx)
+	})
+	if err != nil {
+		slog.Warn("failed to refresh channel cache after restricted model match", "error", err)
+		return false
+	}
+	return true
 }
 
 // ResolveChannelMappingAndRestrict 解析渠道映射。
