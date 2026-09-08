@@ -19,6 +19,7 @@ const groupModelAllowlistRepairMigration = "236_group_model_allowlist_repair.sql
 func TestMigration236RenamesLegacyModelsListConfigColumn(t *testing.T) {
 	tx := testTx(t)
 	ctx := context.Background()
+	prepareGroupModelAllowlistRepairFixture(ctx, t, tx)
 
 	_, err := tx.ExecContext(ctx, "ALTER TABLE groups RENAME COLUMN model_allowlist TO models_list_config")
 	require.NoError(t, err)
@@ -49,6 +50,7 @@ RETURNING id
 func TestMigration236BackfillsWhenBothColumnsExist(t *testing.T) {
 	tx := testTx(t)
 	ctx := context.Background()
+	prepareGroupModelAllowlistRepairFixture(ctx, t, tx)
 
 	_, err := tx.ExecContext(ctx,
 		"ALTER TABLE groups ADD COLUMN models_list_config JSONB NOT NULL DEFAULT '{}'::jsonb")
@@ -84,6 +86,7 @@ RETURNING id
 func TestMigration236RecreatesMissingModelAllowlistColumn(t *testing.T) {
 	tx := testTx(t)
 	ctx := context.Background()
+	prepareGroupModelAllowlistRepairFixture(ctx, t, tx)
 
 	_, err := tx.ExecContext(ctx, "ALTER TABLE groups DROP COLUMN model_allowlist")
 	require.NoError(t, err)
@@ -102,6 +105,14 @@ RETURNING id
 		"SELECT model_allowlist::text FROM groups WHERE id = $1", groupID).Scan(&allowlist))
 	require.JSONEq(t, `{}`, allowlist)
 	requireModelAllowlistColumnShape(ctx, t, tx)
+}
+
+// ModelPort 的兼容迁移会保留旧列，先在测试事务中移除它，再构造各个上游修复场景。
+// testTx 会回滚整个事务，不改变生产迁移或其他用例的数据库结构。
+func prepareGroupModelAllowlistRepairFixture(ctx context.Context, t *testing.T, tx *sql.Tx) {
+	t.Helper()
+	_, err := tx.ExecContext(ctx, "ALTER TABLE groups DROP COLUMN IF EXISTS models_list_config")
+	require.NoError(t, err)
 }
 
 func applyGroupModelAllowlistRepair(ctx context.Context, t *testing.T, tx *sql.Tx) {
