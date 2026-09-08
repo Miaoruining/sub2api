@@ -12,7 +12,7 @@ export default {
     adminRepeatSwitch: 'Allow administrators to draw repeatedly anytime',
     adminRepeatSwitchHint: 'Enabled by default, for administrators only. No top-up or attempt limit, independent of the public switch and 10:00–11:00 window. Real rewards share the daily 100-credit limit with regular users. Disabling restores regular rules.',
     prizeTitle: 'A little extra for today', prizeSubtitle: 'Rewards go directly to your available balance',
-    quota: 'credits', noPrize: 'No prize', noPrizeHint: 'No win today? Try again tomorrow.',
+    quota: 'credits', noPrize: 'No prize', tryNextTime: 'Try next time', noPrizeHint: 'No win today? Try again tomorrow.',
     draw: 'Draw for free', drawing: 'Revealing your result…',
     spinning: 'The draw is spinning. Please wait…', settling: 'Slowing down to reveal your result…',
     refresh: 'Refresh status', recharge: 'Top up',

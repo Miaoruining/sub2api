@@ -18,15 +18,24 @@
         <div class="lottery-stage rounded-2xl p-5 sm:p-8 lg:col-span-2" :class="{ 'is-drawing': drawing }" :aria-busy="drawing">
           <h3 class="text-xl font-semibold text-gray-900 dark:text-white">{{ t('lottery.prizeTitle') }}</h3>
           <p class="mt-1 text-sm text-gray-500 dark:text-dark-400" role="status">{{ t(drawing ? revealPhase === 'settling' ? 'lottery.settling' : 'lottery.spinning' : 'lottery.prizeSubtitle') }}</p>
-          <div class="mt-7 grid grid-cols-3 gap-3">
-            <div v-for="prize in status.prizes.filter(p => p > 0)" :key="prize" class="prize-tile" :data-prize="prize" :class="{ active: drawing && activePrize === prize, selected: !drawing && result?.prize === prize }">
-              <span class="text-3xl font-semibold tabular-nums sm:text-4xl">{{ prize }}</span>
-              <span class="mt-2 text-xs text-gray-500 dark:text-dark-400">{{ t('lottery.quota') }}</span>
+          <div class="lottery-ring mt-7">
+            <div v-for="(slot, slotIndex) in lotteryRing" :key="slotIndex" class="prize-tile" :data-prize="slot.prize" :data-slot="slotIndex" :style="{ gridColumn: slot.x + 1, gridRow: slot.y + 1 }" :class="{ 'no-prize-tile': slot.prize === 0, active: drawing && activeSlot === slotIndex, selected: !drawing && selectedSlot === slotIndex }">
+              <template v-if="slot.prize > 0">
+                <span class="prize-amount font-semibold tabular-nums">{{ slot.prize }}</span>
+                <span class="mt-2 text-xs text-gray-500 dark:text-dark-400">{{ t('lottery.quota') }}</span>
+              </template>
+              <template v-else>
+                <Icon name="refresh" size="md" class="mb-2 opacity-60" aria-hidden="true" />
+                <span class="no-prize-label font-semibold">{{ t('lottery.tryNextTime') }}</span>
+              </template>
             </div>
-          </div>
-          <div class="no-prize-tile mt-3 flex items-center justify-between gap-3 rounded-xl bg-white/60 px-4 py-3 text-sm dark:bg-dark-900/40" data-prize="0" :class="{ active: drawing && activePrize === 0, selected: !drawing && result?.prize === 0 }">
-            <span class="font-medium text-gray-700 dark:text-dark-200">{{ t('lottery.noPrize') }}</span>
-            <span class="text-xs text-gray-500 dark:text-dark-400">{{ noPrizeHint }}</span>
+            <div class="ring-center">
+              <Icon name="gift" size="xl" class="center-gift text-rose-600 dark:text-rose-400" aria-hidden="true" />
+              <button class="draw-button" :disabled="drawing || (!pendingDraw && effectiveState !== 'ready') || loading" @click="draw">
+                {{ t(drawing ? 'lottery.drawing' : pendingDraw ? 'lottery.retryDraw' : status.admin_repeat && status.today ? 'lottery.again' : 'lottery.draw') }}
+              </button>
+            </div>
+            <div v-if="drawing && activeSlot !== null" class="ring-slider" aria-hidden="true" :style="sliderStyle" />
           </div>
         </div>
 
@@ -39,9 +48,6 @@
             {{ t(status.eligible ? 'lottery.eligible' : 'lottery.ineligible') }}
           </p>
           <div class="mt-auto space-y-3 pt-7">
-            <button class="draw-button" :disabled="drawing || (!pendingDraw && effectiveState !== 'ready') || loading" @click="draw">
-              {{ t(drawing ? 'lottery.drawing' : pendingDraw ? 'lottery.retryDraw' : status.admin_repeat && status.today ? 'lottery.again' : 'lottery.draw') }}
-            </button>
             <router-link v-if="!status.eligible" to="/purchase" class="btn btn-secondary w-full">{{ t('lottery.recharge') }}</router-link>
           </div>
         </div>
@@ -98,7 +104,7 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { lotteryAPI, type LotteryDraw, type LotteryStatus } from '@/api/lottery'
 import { useAuthStore } from '@/stores/auth'
-import { useLotteryReveal } from '@/composables/useLotteryReveal'
+import { lotteryRing, useLotteryReveal } from '@/composables/useLotteryReveal'
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -106,7 +112,19 @@ const status = ref<LotteryStatus | null>(null)
 const result = ref<LotteryDraw | null>(null)
 const loading = ref(false)
 const drawing = ref(false)
-const { phase: revealPhase, activePrize, start: startReveal, finish: finishReveal, cancel: cancelReveal } = useLotteryReveal()
+const { phase: revealPhase, activeSlot, stepDuration, start: startReveal, finish: finishReveal, cancel: cancelReveal } = useLotteryReveal()
+const selectedSlot = computed(() => {
+  if (!result.value) return null
+  if (activeSlot.value !== null && lotteryRing[activeSlot.value].prize === result.value.prize) return activeSlot.value
+  return lotteryRing.findIndex(slot => slot.prize === result.value?.prize)
+})
+const sliderStyle = computed(() => {
+  const slot = lotteryRing[activeSlot.value ?? 0]
+  return {
+    transform: `translate(calc(${slot.x * 100}% + ${slot.x} * var(--ring-gap)), calc(${slot.y * 100}% + ${slot.y} * var(--ring-gap)))`,
+    transitionDuration: `${stepDuration.value}ms`,
+  }
+})
 const error = ref('')
 // 未确认的管理员请求保留同一个编号，不能因网络重试而重新开奖。
 const pendingDraw = ref<{ date: string; id: string } | null>(null)
@@ -190,12 +208,17 @@ onUnmounted(() => { disposed = true; if (timer) clearInterval(timer) })
 <style scoped>
 .lottery-stage { background: radial-gradient(ellipse at top right, #ffe4e6, #fff7f5 65%); border: 1px solid #f5d8db; }
 :global(.dark .lottery-stage) { background: radial-gradient(ellipse at top right, #43212b, #201a20 70%); border-color: #52313b; }
-.prize-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 7.5rem; border-radius: .9rem; background: #fff; color: #b42a3c; border: 1px solid #f3e2e5; }
+.lottery-ring { --ring-gap: clamp(.5rem, 1.5vw, .875rem); position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr)); gap: var(--ring-gap); width: 100%; max-width: 32rem; aspect-ratio: 1; margin-inline: auto; }
+.prize-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; min-width: 0; border-radius: .9rem; background: #fff; color: #b42a3c; border: 1px solid #f3e2e5; }
+.prize-amount { font-size: clamp(1.65rem, 4vw, 2.5rem); line-height: 1; }
+.no-prize-label { font-size: clamp(.8rem, 2vw, 1.05rem); }
+.ring-center { grid-column: 2; grid-row: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .75rem; min-width: 0; padding: .3rem; }
+.ring-center .draw-button { padding: .6rem .35rem; font-size: clamp(.75rem, 1.5vw, .875rem); line-height: 1.5; text-wrap: balance; }
+.ring-slider { position: absolute; top: 0; left: 0; width: calc((100% - 2 * var(--ring-gap)) / 3); height: calc((100% - 2 * var(--ring-gap)) / 3); border: 2px solid #e55368; border-radius: .9rem; background: #e553680d; box-shadow: 0 0 0 3px #e553681a, 0 4px 20px #c72d4033; pointer-events: none; transition-property: transform; transition-timing-function: linear; will-change: transform; }
 :global(.dark .lottery-stage .prize-tile) { background: #2b2229; color: #fda4af; border-color: #4e303a; }
-.prize-tile, .no-prize-tile { position: relative; transition: transform .15s ease, box-shadow .15s ease; }
-.prize-tile::after, .no-prize-tile::after { content: ''; position: absolute; inset: -2px; border: 2px solid #e55368; border-radius: inherit; opacity: 0; pointer-events: none; transition: opacity .12s ease; }
-.prize-tile.active, .no-prize-tile.active { transform: translateY(-3px) scale(1.025); box-shadow: 0 6px 22px #c72d4033; }
-.prize-tile.active::after, .no-prize-tile.active::after, .prize-tile.selected::after, .no-prize-tile.selected::after { opacity: 1; }
+.prize-tile { position: relative; transition: box-shadow .15s ease; }
+.prize-tile::after { content: ''; position: absolute; inset: -1px; border: 2px solid #e55368; border-radius: inherit; opacity: 0; pointer-events: none; }
+.prize-tile.selected::after { opacity: 1; }
 .prize-tile.selected, .no-prize-tile.selected { box-shadow: 0 0 0 4px #e553681a; }
 .result-reveal-enter-active { transition: opacity .45s ease, transform .45s cubic-bezier(.2,.8,.2,1); }
 .result-reveal-enter-from { opacity: 0; transform: translateY(12px) scale(.98); }
@@ -205,7 +228,9 @@ onUnmounted(() => { disposed = true; if (timer) clearInterval(timer) })
 .draw-button:focus-visible { outline: 3px solid #fb7185; outline-offset: 3px; }
 .draw-button:disabled { opacity: .45; cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
+  .ring-slider { transition: none; }
   .prize-tile, .no-prize-tile, .prize-tile::after, .no-prize-tile::after, .draw-button, .result-reveal-enter-active { transition: none; }
   .prize-tile.active, .no-prize-tile.active, .result-reveal-enter-from { transform: none; }
 }
+@media (max-width: 400px) { .ring-center { gap: .35rem; padding: 0; } .center-gift { display: none; } }
 </style>

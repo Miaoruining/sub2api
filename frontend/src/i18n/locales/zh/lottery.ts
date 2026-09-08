@@ -12,7 +12,7 @@ export default {
     adminRepeatSwitch: '允许管理员随时重复抽奖',
     adminRepeatSwitchHint: '默认开启，仅管理员生效。免充值、不限次数、不受普通活动开关及 10:00–11:00 时段限制；奖励真实到账，与普通用户共享每日 100 额度上限。关闭后管理员恢复普通规则。',
     prizeTitle: '今日幸运礼遇', prizeSubtitle: '中奖额度直接存入可用余额',
-    quota: '额度', noPrize: '无奖', noPrizeHint: '未中奖也别灰心，明日再来',
+    quota: '额度', noPrize: '无奖', tryNextTime: '下次再来', noPrizeHint: '未中奖也别灰心，明日再来',
     draw: '免费抽一次', drawing: '正在揭晓今日结果…',
     spinning: '幸运正在流转，请稍候…', settling: '即将揭晓，锁定你的幸运…',
     refresh: '刷新状态', recharge: '前往充值',
