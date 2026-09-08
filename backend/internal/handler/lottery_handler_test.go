@@ -25,7 +25,7 @@ func (r *lotteryHandlerRepo) Status(_ context.Context, uid int64) (*service.Lott
 	r.uid = uid
 	return &service.LotteryStatus{State: "ready", Prizes: service.LotteryPrizes(), History: []service.LotteryDraw{}}, nil
 }
-func (r *lotteryHandlerRepo) Draw(_ context.Context, uid int64, date string) (*service.LotteryDraw, error) {
+func (r *lotteryHandlerRepo) Draw(_ context.Context, uid int64, date string, _ ...string) (*service.LotteryDraw, error) {
 	r.uid = uid
 	r.called = true
 	return &service.LotteryDraw{ID: 1, ActivityDate: date, Prize: 1}, nil
@@ -76,7 +76,7 @@ func TestLotteryHandlerRejectsAnonymousAndMalformedDate(t *testing.T) {
 	h.Draw(c)
 	require.Equal(t, 401, w.Code)
 	require.False(t, repo.called)
-	for _, body := range []string{`{}`, `{"activity_date":"not-a-date"}`, `{"activity_date":999}`} {
+	for _, body := range []string{`{}`, `{"activity_date":"not-a-date"}`, `{"activity_date":999}`, `{"activity_date":"2038-01-02","request_id":"invalid"}`} {
 		c, w = lotteryContext(t, body, 42, "user")
 		h.Draw(c)
 		require.GreaterOrEqual(t, w.Code, 400)
@@ -87,7 +87,7 @@ func TestLotteryAdminHandlersRejectNormalUsers(t *testing.T) {
 	repo := &lotteryHandlerRepo{}
 	h := NewLotteryHandler(service.NewLotteryService(repo, nil, nil))
 	for _, action := range []func(*gin.Context){h.AdminStatus, h.UpdateConfig} {
-		c, w := lotteryContext(t, `{"enabled":true}`, 42, "user")
+		c, w := lotteryContext(t, `{"admin_repeat_enabled":true}`, 42, "user")
 		action(c)
 		require.Equal(t, 403, w.Code)
 		require.False(t, repo.called)

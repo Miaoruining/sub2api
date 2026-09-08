@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 )
@@ -23,7 +24,7 @@ func lotteryFixture(t *testing.T, n int) (*lotteryRepository, []int64, string) {
 	r := NewLotteryRepository(integrationDB).(*lotteryRepository)
 	r.clock = func(context.Context, lotteryQuery) (time.Time, error) { return now, nil }
 	r.ticket = func() (int, error) { return 9552, nil } // 1 额度。
-	_, err := integrationDB.ExecContext(ctx, `UPDATE lottery_settings SET enabled=true WHERE id=1`)
+	_, err := integrationDB.ExecContext(ctx, `UPDATE lottery_settings SET enabled=true,admin_repeat_enabled=true WHERE id=1`)
 	require.NoError(t, err)
 	rows, err := integrationDB.QueryContext(ctx, `INSERT INTO users(email,password_hash,balance)
 SELECT $1 || '-' || n || '@example.test','test-hash',3.125 FROM generate_series(1,$2) n RETURNING id`, fmt.Sprintf("lottery-%d", time.Now().UnixNano()), n)
@@ -50,7 +51,7 @@ SELECT $1 || '-' || n || '@example.test','test-hash',3.125 FROM generate_series(
 		}
 		_, e := integrationDB.ExecContext(ctx, `DELETE FROM lottery_days WHERE activity_date IN ('2038-01-02','2038-01-03')`)
 		require.NoError(t, e)
-		_, e = integrationDB.ExecContext(ctx, `UPDATE lottery_settings SET enabled=false WHERE id=1`)
+		_, e = integrationDB.ExecContext(ctx, `UPDATE lottery_settings SET enabled=false,admin_repeat_enabled=true WHERE id=1`)
 		require.NoError(t, e)
 	})
 	return r, uids, date
@@ -278,4 +279,167 @@ func TestLotteryAdminNextDayRulesAndAudit(t *testing.T) {
 	var count int
 	require.NoError(t, integrationDB.QueryRow(`SELECT count(*) FROM lottery_config_audits WHERE actor_id=$1`, uids[0]).Scan(&count))
 	require.Equal(t, 1, count)
+}
+
+func TestLotteryAdminRepeatBypassesPublicGatesButKeepsSharedBudget(t *testing.T) {
+	r, uids, date := lotteryFixture(t, 2)
+	ctx := context.Background()
+	_, err := integrationDB.Exec(`UPDATE users SET role='admin' WHERE id=$1`, uids[0])
+	require.NoError(t, err)
+	_, err = integrationDB.Exec(`UPDATE lottery_settings SET enabled=false WHERE id=1`)
+	require.NoError(t, err)
+	r.clock = func(context.Context, lotteryQuery) (time.Time, error) {
+		return time.Date(2038, 1, 2, 0, 0, 0, 0, time.UTC), nil
+	}
+	s, err := r.Status(ctx, uids[0])
+	require.NoError(t, err)
+	require.True(t, s.AdminRepeat)
+	require.True(t, s.Eligible)
+	require.Equal(t, "ready", s.State)
+	_, err = r.Draw(ctx, uids[0], date)
+	require.ErrorIs(t, err, service.ErrLotteryRequest)
+	_, err = r.Draw(ctx, uids[0], date, "bad-key")
+	require.ErrorIs(t, err, service.ErrLotteryRequest)
+	_, err = r.Draw(ctx, uids[1], date, uuid.NewString())
+	require.ErrorIs(t, err, service.ErrLotteryClosed)
+	// 多次无奖也产生不同流水，中奖走真实余额和相同预算。
+	r.ticket = func() (int, error) { return 0, nil }
+	d1, err := r.Draw(ctx, uids[0], date, uuid.NewString())
+	require.NoError(t, err)
+	require.Zero(t, d1.Prize)
+	d2, err := r.Draw(ctx, uids[0], date, uuid.NewString())
+	require.NoError(t, err)
+	require.NotEqual(t, d1.ID, d2.ID)
+	s, err = r.Status(ctx, uids[0])
+	require.NoError(t, err)
+	require.Equal(t, d2.ID, s.Today.ID)
+	require.Equal(t, "ready", s.State)
+	// 普通用户先获 1 额度后，管理员抽中 100 必须转无奖。
+	r.clock = func(context.Context, lotteryQuery) (time.Time, error) {
+		return time.Date(2038, 1, 2, 2, 0, 0, 0, time.UTC), nil
+	}
+	_, err = integrationDB.Exec(`UPDATE lottery_settings SET enabled=true WHERE id=1`)
+	require.NoError(t, err)
+	lotteryPaid(t, []int64{uids[1]})
+	r.ticket = func() (int, error) { return 9552, nil }
+	_, err = r.Draw(ctx, uids[1], date)
+	require.NoError(t, err)
+	r.ticket = func() (int, error) { return 9999, nil }
+	d3, err := r.Draw(ctx, uids[0], date, uuid.NewString())
+	require.NoError(t, err)
+	require.Zero(t, d3.Prize)
+	// 再让管理员 120 个不同请求并发，最多只能发放剩余 99 额度。
+	r.ticket = func() (int, error) { return 9552, nil }
+	var wg sync.WaitGroup
+	errs := make(chan error, 120)
+	sem := make(chan struct{}, 24)
+	for i := 0; i < 120; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			_, e := r.Draw(ctx, uids[0], date, uuid.NewString())
+			errs <- e
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	success := 0
+	for e := range errs {
+		if e == nil {
+			success++
+		} else {
+			require.ErrorIs(t, e, service.ErrLotteryClosed)
+		}
+	}
+	require.Equal(t, 99, success)
+	a, err := r.AdminStatus(ctx, date)
+	require.NoError(t, err)
+	require.Equal(t, 100, a.Spent)
+	require.Equal(t, 103, a.DrawCount)
+	s, err = r.Status(ctx, uids[0])
+	require.NoError(t, err)
+	require.Equal(t, "ended", s.State)
+	var increase, total float64
+	require.NoError(t, integrationDB.QueryRow(`SELECT SUM(balance-3.125) FROM users WHERE id=ANY($1)`, pq.Array(uids)).Scan(&increase))
+	require.NoError(t, integrationDB.QueryRow(`SELECT SUM(prize) FROM lottery_draws WHERE activity_date=$1`, date).Scan(&total))
+	require.Equal(t, 100.0, increase)
+	require.Equal(t, increase, total)
+}
+
+func TestLotteryAdminRepeatRequestReplayAndRevocation(t *testing.T) {
+	r, uids, date := lotteryFixture(t, 1)
+	ctx := context.Background()
+	_, err := integrationDB.Exec(`UPDATE users SET role='admin' WHERE id=$1`, uids[0])
+	require.NoError(t, err)
+	key := uuid.NewString()
+	var wg sync.WaitGroup
+	results := make(chan *service.LotteryDraw, 40)
+	errs := make(chan error, 40)
+	for i := 0; i < 40; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); d, e := r.Draw(ctx, uids[0], date, key); results <- d; errs <- e }()
+	}
+	wg.Wait()
+	close(results)
+	close(errs)
+	for e := range errs {
+		require.NoError(t, e)
+	}
+	var first int64
+	for d := range results {
+		if first == 0 {
+			first = d.ID
+		}
+		require.Equal(t, first, d.ID)
+	}
+	second, err := r.Draw(ctx, uids[0], date, uuid.NewString())
+	require.NoError(t, err)
+	require.NotEqual(t, first, second.ID)
+	d, err := r.Draw(ctx, uids[0], date, key)
+	require.NoError(t, err)
+	require.Equal(t, first, d.ID)
+	off := false
+	require.NoError(t, r.UpdateConfig(ctx, uids[0], service.LotteryConfigUpdate{AdminRepeatEnabled: &off}))
+	a, err := r.AdminStatus(ctx, date)
+	require.NoError(t, err)
+	require.False(t, a.AdminRepeatEnabled)
+	require.True(t, a.Enabled)
+	s, err := r.Status(ctx, uids[0])
+	require.NoError(t, err)
+	require.False(t, s.AdminRepeat)
+	require.Equal(t, "drawn", s.State)
+	// 关闭开关不能再发奖，同一天已参与按普通规则返回最后结果。
+	d, err = r.Draw(ctx, uids[0], date, uuid.NewString())
+	require.NoError(t, err)
+	require.Equal(t, second.ID, d.ID)
+	on := true
+	require.NoError(t, r.UpdateConfig(ctx, uids[0], service.LotteryConfigUpdate{AdminRepeatEnabled: &on}))
+	_, err = integrationDB.Exec(`UPDATE users SET role='user' WHERE id=$1`, uids[0])
+	require.NoError(t, err)
+	s, err = r.Status(ctx, uids[0])
+	require.NoError(t, err)
+	require.False(t, s.AdminRepeat)
+	d, err = r.Draw(ctx, uids[0], date, uuid.NewString())
+	require.NoError(t, err)
+	require.Equal(t, second.ID, d.ID)
+	r.clock = func(context.Context, lotteryQuery) (time.Time, error) {
+		return time.Date(2038, 1, 3, 0, 0, 0, 0, time.UTC), nil
+	}
+	d, err = r.Draw(ctx, uids[0], date, key)
+	require.NoError(t, err)
+	require.Equal(t, first, d.ID)
+	_, err = r.Draw(ctx, uids[0], date, uuid.NewString())
+	require.NoError(t, err) // 普通模式旧日回放，不新增。
+	_, err = integrationDB.Exec(`UPDATE users SET role='admin' WHERE id=$1`, uids[0])
+	require.NoError(t, err)
+	_, err = r.Draw(ctx, uids[0], date, uuid.NewString())
+	require.ErrorIs(t, err, service.ErrLotteryClosed)
+	var spent, count, audits int
+	require.NoError(t, integrationDB.QueryRow(`SELECT spent,draw_count FROM lottery_days WHERE activity_date=$1`, date).Scan(&spent, &count))
+	require.Equal(t, 2, spent)
+	require.Equal(t, 2, count)
+	require.NoError(t, integrationDB.QueryRow(`SELECT count(*) FROM lottery_config_audits WHERE actor_id=$1 AND before_config ? 'admin_repeat_enabled' AND after_config ? 'admin_repeat_enabled'`, uids[0]).Scan(&audits))
+	require.Equal(t, 2, audits)
 }

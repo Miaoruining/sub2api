@@ -73,4 +73,38 @@ describe('LotteryView', () => {
     expect(w.get('[role="alert"]').text()).toContain('状态加载失败')
     expect(w.find('.draw-button').exists()).toBe(false); w.unmount()
   })
+  it('lets administrators draw again using a new request id after each confirmed result', async () => {
+    api.status.mockResolvedValue(state({ admin_repeat: true }))
+    const w = render(); await flushPromises()
+    expect(w.text()).toContain('管理员可重复参与')
+    expect(w.text()).not.toContain('充值满 10 元即可参与')
+    const first = { id: 11, activity_date: '2026-09-08', prize: 1, created_at: '2026-09-08T02:00:00Z' }
+    api.draw.mockResolvedValue(first)
+    api.status.mockResolvedValue(state({ admin_repeat: true, today: first, history: [first] }))
+    await w.get('.draw-button').trigger('click'); await flushPromises()
+    expect(w.get('.draw-button').text()).toBe('再抽一次')
+    expect(w.get('.draw-button').attributes('disabled')).toBeUndefined()
+    const firstKey = api.draw.mock.calls[0][1]
+    expect(firstKey).toMatch(/^[0-9a-f-]{36}$/)
+    await w.get('.draw-button').trigger('click'); await flushPromises()
+    expect(api.draw.mock.calls[1][1]).not.toBe(firstKey)
+    expect(api.refreshUser).toHaveBeenCalledTimes(2); w.unmount()
+  })
+  it('retries an unconfirmed administrator draw with the same date and request id even after closure', async () => {
+    api.status.mockResolvedValue(state({ admin_repeat: true }))
+    const w = render(); await flushPromises()
+    api.draw.mockRejectedValueOnce(new Error('network'))
+    api.status.mockResolvedValue(state({ admin_repeat: true, state: 'ended' }))
+    await w.get('.draw-button').trigger('click'); await flushPromises()
+    expect(w.get('.draw-button').text()).toBe('重试本次抽奖')
+    expect(w.get('.draw-button').attributes('disabled')).toBeUndefined()
+    const firstCall = api.draw.mock.calls[0]
+    const result = { id: 12, activity_date: '2026-09-08', prize: 100, created_at: '2026-09-08T02:00:00Z' }
+    api.draw.mockResolvedValue(result)
+    api.status.mockResolvedValue(state({ admin_repeat: true, state: 'ended', today: result, history: [result] }))
+    await w.get('.draw-button').trigger('click'); await flushPromises()
+    expect(api.draw.mock.calls[1]).toEqual(firstCall)
+    expect(w.get('.draw-button').attributes('disabled')).toBeDefined()
+    expect(w.text()).toContain('100 额度已到账'); w.unmount()
+  })
 })

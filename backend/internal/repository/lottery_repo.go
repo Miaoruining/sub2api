@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/google/uuid"
 )
 
 type lotteryRepository struct {
@@ -61,7 +62,22 @@ func lotteryEligible(ctx context.Context, q lotteryQuery, uid int64) (bool, erro
 
 func lotteryFindDraw(ctx context.Context, q lotteryQuery, uid int64, date string) (*service.LotteryDraw, error) {
 	var d service.LotteryDraw
-	err := q.QueryRowContext(ctx, `SELECT id, activity_date::text, prize, created_at FROM lottery_draws WHERE user_id=$1 AND activity_date=$2::date`, uid, date).Scan(&d.ID, &d.ActivityDate, &d.Prize, &d.CreatedAt)
+	err := q.QueryRowContext(ctx, `SELECT id, activity_date::text, prize, created_at FROM lottery_draws WHERE user_id=$1 AND activity_date=$2::date ORDER BY id DESC LIMIT 1`, uid, date).Scan(&d.ID, &d.ActivityDate, &d.Prize, &d.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
+func lotteryFindRequest(ctx context.Context, q lotteryQuery, uid int64, date, requestID string) (*service.LotteryDraw, error) {
+	if requestID == "" {
+		return nil, nil
+	}
+	var d service.LotteryDraw
+	err := q.QueryRowContext(ctx, `SELECT id,activity_date::text,prize,created_at FROM lottery_draws WHERE user_id=$1 AND activity_date=$2::date AND request_id=$3::uuid`, uid, date, requestID).Scan(&d.ID, &d.ActivityDate, &d.Prize, &d.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -96,13 +112,17 @@ func (r *lotteryRepository) Status(ctx context.Context, uid int64) (*service.Lot
 	}
 	date, open, next := service.LotteryWindow(now)
 	out := &service.LotteryStatus{ActivityDate: date, State: "ready", ServerTime: now, OpensAt: open, NextOpensAt: next, Prizes: service.LotteryPrizes(), History: []service.LotteryDraw{}}
-	var enabled bool
-	if err := tx.QueryRowContext(ctx, `SELECT enabled FROM lottery_settings WHERE id=1`).Scan(&enabled); err != nil {
+	var enabled, adminEnabled bool
+	if err := tx.QueryRowContext(ctx, `SELECT enabled,admin_repeat_enabled FROM lottery_settings WHERE id=1`).Scan(&enabled, &adminEnabled); err != nil {
+		return nil, err
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT $2 AND role='admin' FROM users WHERE id=$1 AND status='active' AND deleted_at IS NULL`, uid, adminEnabled).Scan(&out.AdminRepeat); err != nil {
 		return nil, err
 	}
 	if out.Eligible, err = lotteryEligible(ctx, tx, uid); err != nil {
 		return nil, err
 	}
+	out.Eligible = out.Eligible || out.AdminRepeat
 	var spent int
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE((SELECT spent FROM lottery_days WHERE activity_date=$1::date),0)`, date).Scan(&spent); err != nil {
 		return nil, err
@@ -118,7 +138,7 @@ func (r *lotteryRepository) Status(ctx context.Context, uid int64) (*service.Lot
 			return nil, err
 		}
 		out.History = append(out.History, d)
-		if d.ActivityDate == date {
+		if d.ActivityDate == date && out.Today == nil {
 			copy := d
 			out.Today = &copy
 		}
@@ -127,11 +147,11 @@ func (r *lotteryRepository) Status(ctx context.Context, uid int64) (*service.Lot
 		return nil, err
 	}
 	switch {
-	case out.Today != nil:
+	case out.Today != nil && !out.AdminRepeat:
 		out.State = "drawn"
-	case !enabled:
+	case !enabled && !out.AdminRepeat:
 		out.State = "disabled"
-	case now.Before(open):
+	case now.Before(open) && !out.AdminRepeat:
 		out.State = "not_open"
 	case spent >= service.LotteryDailyBudget:
 		out.State = "ended"
@@ -141,23 +161,43 @@ func (r *lotteryRepository) Status(ctx context.Context, uid int64) (*service.Lot
 	return out, tx.Commit()
 }
 
-func (r *lotteryRepository) Draw(ctx context.Context, uid int64, requestedDate string) (*service.LotteryDraw, error) {
+func (r *lotteryRepository) Draw(ctx context.Context, uid int64, requestedDate string, requestIDs ...string) (*service.LotteryDraw, error) {
+	requestID := ""
+	if len(requestIDs) > 0 && requestIDs[0] != "" {
+		id, err := uuid.Parse(requestIDs[0])
+		if err != nil {
+			return nil, service.ErrLotteryRequest
+		}
+		requestID = id.String()
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
 	// 允许已完成请求在活动关闭或跨天后重试，但不允许旧页面消耗新一天机会。
-	if d, err := lotteryFindDraw(ctx, tx, uid, requestedDate); err != nil {
+	if d, err := lotteryFindRequest(ctx, tx, uid, requestedDate, requestID); err != nil {
 		return nil, err
 	} else if d != nil {
 		return d, tx.Commit()
 	}
-	var enabled bool
-	if err := tx.QueryRowContext(ctx, `SELECT enabled FROM lottery_settings WHERE id=1 FOR SHARE`).Scan(&enabled); err != nil {
+	var enabled, adminEnabled bool
+	if err := tx.QueryRowContext(ctx, `SELECT enabled,admin_repeat_enabled FROM lottery_settings WHERE id=1 FOR SHARE`).Scan(&enabled, &adminEnabled); err != nil {
 		return nil, err
 	}
-	if !enabled {
+	var role string
+	if err := tx.QueryRowContext(ctx, `SELECT role FROM users WHERE id=$1 AND status='active' AND deleted_at IS NULL`, uid).Scan(&role); err != nil {
+		return nil, service.ErrLotteryIneligible
+	}
+	adminRepeat := adminEnabled && role == service.RoleAdmin
+	if !adminRepeat {
+		if d, err := lotteryFindDraw(ctx, tx, uid, requestedDate); err != nil {
+			return nil, err
+		} else if d != nil {
+			return d, tx.Commit()
+		}
+	}
+	if !enabled && !adminRepeat {
 		return nil, service.ErrLotteryClosed
 	}
 	now, err := r.clock(ctx, tx)
@@ -165,8 +205,11 @@ func (r *lotteryRepository) Draw(ctx context.Context, uid int64, requestedDate s
 		return nil, err
 	}
 	date, open, _ := service.LotteryWindow(now)
-	if date != requestedDate || now.Before(open) {
+	if date != requestedDate || (now.Before(open) && !adminRepeat) {
 		return nil, service.ErrLotteryClosed
+	}
+	if adminRepeat && requestID == "" {
+		return nil, service.ErrLotteryRequest
 	}
 	weights, err := lotteryWeights(ctx, tx, date)
 	if err != nil {
@@ -187,17 +230,32 @@ func (r *lotteryRepository) Draw(ctx context.Context, uid int64, requestedDate s
 		return nil, err
 	}
 	var before string
-	if err := tx.QueryRowContext(ctx, `SELECT balance::text FROM users WHERE id=$1 AND deleted_at IS NULL AND status='active' FOR UPDATE`, uid).Scan(&before); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT balance::text,role FROM users WHERE id=$1 AND deleted_at IS NULL AND status='active' FOR UPDATE`, uid).Scan(&before, &role); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, service.ErrLotteryIneligible
 		}
 		return nil, err
 	}
 	// 所有进程共用当日行锁；等待锁后必须重新检查唯一结果、资格及时间。
-	if d, err := lotteryFindDraw(ctx, tx, uid, date); err != nil {
+	if d, err := lotteryFindRequest(ctx, tx, uid, date, requestID); err != nil {
 		return nil, err
 	} else if d != nil {
 		return d, tx.Commit()
+	}
+	// 角色可能在等待预算锁期间被修改，必须根据锁定后的用户重新判断。
+	adminRepeat = adminEnabled && role == service.RoleAdmin
+	if !adminRepeat {
+		if d, err := lotteryFindDraw(ctx, tx, uid, date); err != nil {
+			return nil, err
+		} else if d != nil {
+			return d, tx.Commit()
+		}
+		if !enabled || now.Before(open) {
+			return nil, service.ErrLotteryClosed
+		}
+	}
+	if adminRepeat && requestID == "" {
+		return nil, service.ErrLotteryRequest
 	}
 	if spent >= service.LotteryDailyBudget {
 		return nil, service.ErrLotteryClosed
@@ -206,7 +264,7 @@ func (r *lotteryRepository) Draw(ctx context.Context, uid int64, requestedDate s
 	if err != nil {
 		return nil, err
 	}
-	if !eligible {
+	if !eligible && !adminRepeat {
 		return nil, service.ErrLotteryIneligible
 	}
 	now, err = r.clock(ctx, tx)
@@ -214,7 +272,7 @@ func (r *lotteryRepository) Draw(ctx context.Context, uid int64, requestedDate s
 		return nil, err
 	}
 	lockedDate, _, _ := service.LotteryWindow(now)
-	if lockedDate != date || now.Before(open) {
+	if lockedDate != date || (now.Before(open) && !adminRepeat) {
 		return nil, service.ErrLotteryClosed
 	}
 	ticket, err := r.ticket()
@@ -232,8 +290,8 @@ func (r *lotteryRepository) Draw(ctx context.Context, uid int64, requestedDate s
 		}
 	}
 	d := &service.LotteryDraw{ActivityDate: date, Prize: prize}
-	if err := tx.QueryRowContext(ctx, `INSERT INTO lottery_draws(user_id,activity_date,prize,ticket,budget_before,balance_before,balance_after,created_at)
-VALUES ($1,$2::date,$3,$4,$5,$6::numeric,$7::numeric,$8) RETURNING id,created_at`, uid, date, prize, ticket, service.LotteryDailyBudget-spent, before, after, now).Scan(&d.ID, &d.CreatedAt); err != nil {
+	if err := tx.QueryRowContext(ctx, `INSERT INTO lottery_draws(user_id,activity_date,prize,ticket,budget_before,balance_before,balance_after,created_at,admin_repeat,request_id)
+VALUES ($1,$2::date,$3,$4,$5,$6::numeric,$7::numeric,$8,$9,NULLIF($10,'')::uuid) RETURNING id,created_at`, uid, date, prize, ticket, service.LotteryDailyBudget-spent, before, after, now, adminRepeat, requestID).Scan(&d.ID, &d.CreatedAt); err != nil {
 		return nil, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE lottery_days SET spent=spent+$2,draw_count=draw_count+1 WHERE activity_date=$1::date`, date, prize); err != nil {
@@ -263,7 +321,7 @@ func (r *lotteryRepository) AdminStatus(ctx context.Context, requestedDate strin
 		date = requestedDate
 	}
 	out := &service.LotteryAdminStatus{ActivityDate: date, DailyBudget: service.LotteryDailyBudget, NextEffectiveDate: next.Format("2006-01-02"), Distribution: make([]int, 7), Records: []service.LotteryAdminDraw{}}
-	if err := tx.QueryRowContext(ctx, `SELECT enabled FROM lottery_settings WHERE id=1`).Scan(&out.Enabled); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT enabled,admin_repeat_enabled FROM lottery_settings WHERE id=1`).Scan(&out.Enabled, &out.AdminRepeatEnabled); err != nil {
 		return nil, err
 	}
 	if out.Weights, err = lotteryWeights(ctx, tx, date); err != nil {
@@ -332,8 +390,8 @@ func (r *lotteryRepository) UpdateConfig(ctx context.Context, actor int64, c ser
 		return err
 	}
 	defer tx.Rollback()
-	var enabled bool
-	if err = tx.QueryRowContext(ctx, `SELECT enabled FROM lottery_settings WHERE id=1 FOR UPDATE`).Scan(&enabled); err != nil {
+	var enabled, adminEnabled bool
+	if err = tx.QueryRowContext(ctx, `SELECT enabled,admin_repeat_enabled FROM lottery_settings WHERE id=1 FOR UPDATE`).Scan(&enabled, &adminEnabled); err != nil {
 		return err
 	}
 	now, err := r.clock(ctx, tx)
@@ -346,7 +404,7 @@ func (r *lotteryRepository) UpdateConfig(ctx context.Context, actor int64, c ser
 	if err != nil {
 		return err
 	}
-	before, err := json.Marshal(map[string]any{"enabled": enabled, "effective_date": nextDate, "weights": weights})
+	before, err := json.Marshal(map[string]any{"enabled": enabled, "admin_repeat_enabled": adminEnabled, "effective_date": nextDate, "weights": weights})
 	if err != nil {
 		return err
 	}
@@ -367,7 +425,13 @@ ON CONFLICT(effective_date) DO UPDATE SET weights=EXCLUDED.weights,updated_by=EX
 			return err
 		}
 	}
-	after, err := json.Marshal(map[string]any{"enabled": enabled, "effective_date": nextDate, "weights": weights})
+	if c.AdminRepeatEnabled != nil {
+		adminEnabled = *c.AdminRepeatEnabled
+		if _, err = tx.ExecContext(ctx, `UPDATE lottery_settings SET admin_repeat_enabled=$1 WHERE id=1`, adminEnabled); err != nil {
+			return err
+		}
+	}
+	after, err := json.Marshal(map[string]any{"enabled": enabled, "admin_repeat_enabled": adminEnabled, "effective_date": nextDate, "weights": weights})
 	if err != nil {
 		return err
 	}

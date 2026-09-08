@@ -13,6 +13,10 @@
           <div><h3 class="font-semibold">{{ t('lottery.enabled') }}</h3><p class="mt-1 text-sm text-gray-500">{{ t('lottery.enableHint') }}</p></div>
           <input type="checkbox" role="switch" :aria-label="t('lottery.enabled')" :checked="status.enabled" :disabled="busy" class="h-6 w-6 accent-rose-600" @change="toggle" />
         </section>
+        <section class="card flex items-center justify-between gap-4 p-6">
+          <div><h3 class="font-semibold">{{ t('lottery.adminRepeatSwitch') }}</h3><p class="mt-1 text-sm text-gray-500">{{ t('lottery.adminRepeatSwitchHint') }}</p></div>
+          <input type="checkbox" role="switch" :aria-label="t('lottery.adminRepeatSwitch')" :checked="status.admin_repeat_enabled" :disabled="busy" class="h-6 w-6 shrink-0 accent-rose-600" @change="toggleAdminRepeat" />
+        </section>
         <dl class="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div v-for="item in summaries" :key="item.label" class="card p-6"><dt class="text-sm text-gray-500">{{ item.label }}</dt><dd class="mt-3 text-3xl font-semibold tabular-nums">{{ item.value }}</dd></div>
         </dl>
@@ -71,7 +75,7 @@ async function load() {
   busy.value = true; error.value = ''; success.value = ''
   try { await refreshData() } catch { error.value = t('lottery.adminError') } finally { busy.value = false }
 }
-async function configure(config: { enabled?: boolean; weights?: number[] }) {
+async function configure(config: { enabled?: boolean; admin_repeat_enabled?: boolean; weights?: number[] }) {
   if (busy.value) return
   busy.value = true; error.value = ''; success.value = ''
   try { await lotteryAdminAPI.configure(config); await refreshData(); success.value = t('lottery.saved') }
@@ -83,6 +87,12 @@ function toggle(event: Event) {
   const enabled = input.checked
   input.checked = status.value?.enabled ?? false
   void configure({ enabled })
+}
+function toggleAdminRepeat(event: Event) {
+  const input = event.target as HTMLInputElement
+  const enabled = input.checked
+  input.checked = status.value?.admin_repeat_enabled ?? false
+  void configure({ admin_repeat_enabled: enabled })
 }
 function saveWeights() {
   success.value = ''

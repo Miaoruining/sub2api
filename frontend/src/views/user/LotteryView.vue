@@ -3,10 +3,10 @@
     <div class="mx-auto max-w-6xl space-y-6">
       <header class="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p class="mb-2 text-xs font-semibold tracking-wide text-rose-700 dark:text-rose-300">{{ t('lottery.schedule') }}</p>
+          <p class="mb-2 text-xs font-semibold tracking-wide text-rose-700 dark:text-rose-300">{{ t(status?.admin_repeat ? 'lottery.adminSchedule' : 'lottery.schedule') }}</p>
           <h2 class="text-3xl font-semibold tracking-tight text-gray-900 dark:text-white">{{ t('lottery.title') }}</h2>
         </div>
-        <span class="rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{{ t('lottery.free') }}</span>
+        <span class="rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{{ t(status?.admin_repeat ? 'lottery.adminFree' : 'lottery.free') }}</span>
       </header>
 
       <p v-if="error" role="alert" class="rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{{ error }}</p>
@@ -26,7 +26,7 @@
           </div>
           <div class="mt-3 flex items-center justify-between gap-3 rounded-xl bg-white/60 px-4 py-3 text-sm dark:bg-dark-900/40">
             <span class="font-medium text-gray-700 dark:text-dark-200">{{ t('lottery.noPrize') }}</span>
-            <span class="text-xs text-gray-500 dark:text-dark-400">{{ t('lottery.noPrizeHint') }}</span>
+            <span class="text-xs text-gray-500 dark:text-dark-400">{{ noPrizeHint }}</span>
           </div>
         </div>
 
@@ -34,13 +34,13 @@
           <Icon name="gift" size="xl" class="mb-5 text-rose-600 dark:text-rose-400" />
           <h3 class="text-lg font-semibold text-gray-900 dark:text-white" role="status">{{ stateText }}</h3>
           <p v-if="status.state === 'not_open'" class="mt-4 font-mono text-3xl font-semibold tabular-nums text-rose-700 dark:text-rose-300">{{ countdown }}</p>
-          <p class="mt-3 text-sm leading-6 text-gray-500 dark:text-dark-400">{{ t('lottery.qualification') }}</p>
+          <p class="mt-3 text-sm leading-6 text-gray-500 dark:text-dark-400">{{ t(status.admin_repeat ? 'lottery.adminQualification' : 'lottery.qualification') }}</p>
           <p class="mt-3 text-xs font-medium" :class="status.eligible ? 'text-emerald-700 dark:text-emerald-300' : 'text-gray-500 dark:text-dark-400'">
             {{ t(status.eligible ? 'lottery.eligible' : 'lottery.ineligible') }}
           </p>
           <div class="mt-auto space-y-3 pt-7">
-            <button class="draw-button" :disabled="drawing || status.state !== 'ready' || loading" @click="draw">
-              {{ t(drawing ? 'lottery.drawing' : 'lottery.draw') }}
+            <button class="draw-button" :disabled="drawing || (!pendingDraw && status.state !== 'ready') || loading" @click="draw">
+              {{ t(drawing ? 'lottery.drawing' : pendingDraw ? 'lottery.retryDraw' : status.admin_repeat && status.today ? 'lottery.again' : 'lottery.draw') }}
             </button>
             <router-link v-if="!status.eligible" to="/purchase" class="btn btn-secondary w-full">{{ t('lottery.recharge') }}</router-link>
           </div>
@@ -48,8 +48,8 @@
       </section>
 
       <section v-if="result" class="rounded-2xl border border-rose-200 bg-rose-50 p-6 dark:border-rose-900 dark:bg-rose-950/30" role="status" aria-live="polite">
-        <p class="text-sm text-rose-700 dark:text-rose-300">{{ t('lottery.result') }}</p>
-        <h3 class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{{ result.prize > 0 ? t('lottery.won', { amount: result.prize }) : t('lottery.noPrizeHint') }}</h3>
+        <p class="text-sm text-rose-700 dark:text-rose-300">{{ t(status?.admin_repeat ? 'lottery.latestResult' : 'lottery.result') }}</p>
+        <h3 class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{{ result.prize > 0 ? t('lottery.won', { amount: result.prize }) : noPrizeHint }}</h3>
       </section>
       <div class="flex justify-end">
         <button class="btn btn-secondary" :disabled="loading || drawing" @click="load()">{{ t('lottery.refresh') }}</button>
@@ -81,8 +81,9 @@
       </section>
       <section class="rounded-xl bg-gray-50 p-5 text-sm leading-7 text-gray-600 dark:bg-dark-800/50 dark:text-dark-400">
         <h3 class="mb-2 font-medium text-gray-900 dark:text-white">{{ t('lottery.rules') }}</h3>
-        <p>{{ t('lottery.once') }}</p><p>{{ t('lottery.timeRule') }}</p>
-        <p>{{ t('lottery.qualificationNote') }}</p><p>{{ t('lottery.creditRule') }}</p>
+        <p v-if="status?.admin_repeat">{{ t('lottery.adminOnce') }}</p>
+        <template v-else><p>{{ t('lottery.once') }}</p><p>{{ t('lottery.timeRule') }}</p><p>{{ t('lottery.qualificationNote') }}</p></template>
+        <p>{{ t('lottery.creditRule') }}</p>
       </section>
     </div>
   </AppLayout>
@@ -103,12 +104,19 @@ const result = ref<LotteryDraw | null>(null)
 const loading = ref(false)
 const drawing = ref(false)
 const error = ref('')
+// 未确认的管理员请求保留同一个编号，不能因网络重试而重新开奖。
+const pendingDraw = ref<{ date: string; id: string } | null>(null)
 const now = ref(Date.now())
 let offset = 0
 let ticks = 0
 let timer: ReturnType<typeof setInterval> | undefined
 let disposed = false
-const stateText = computed(() => status.value ? t(`lottery.${status.value.state}`) : '')
+const stateText = computed(() => {
+  if (!status.value) return ''
+  const state = status.value.state
+  return t(`lottery.${status.value.admin_repeat && state === 'ready' ? 'adminReady' : status.value.admin_repeat && state === 'ended' ? 'adminEnded' : state}`)
+})
+const noPrizeHint = computed(() => t(status.value?.admin_repeat ? 'lottery.adminNoPrizeHint' : 'lottery.noPrizeHint'))
 const countdown = computed(() => {
   const seconds = Math.max(0, Math.ceil((Date.parse(status.value?.opens_at || '') - now.value) / 1000)) || 0
   return [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map(n => String(n).padStart(2, '0')).join(':')
@@ -130,19 +138,26 @@ async function load(background = false) {
   } finally { loading.value = false }
 }
 async function draw() {
-  if (drawing.value || loading.value || status.value?.state !== 'ready') return
-  const activityDate = status.value.activity_date
+  if (drawing.value || loading.value || !status.value || (!pendingDraw.value && status.value.state !== 'ready')) return
+  const activityDate = pendingDraw.value?.date || status.value.activity_date
+  const adminAttempt = !!pendingDraw.value || !!status.value.admin_repeat
   drawing.value = true
   error.value = ''
   try {
-    result.value = await lotteryAPI.draw(activityDate)
+    if (adminAttempt && !pendingDraw.value) pendingDraw.value = { date: activityDate, id: crypto.randomUUID() }
+    result.value = pendingDraw.value ? await lotteryAPI.draw(activityDate, pendingDraw.value.id) : await lotteryAPI.draw(activityDate)
+    pendingDraw.value = null
     // 先锁定本地状态，后续刷新失败也不能让按钮重新可点。
     if (status.value) { status.value.today = result.value; status.value.state = 'drawn' }
     await auth.refreshUser().catch(() => undefined)
     await load(true)
-  } catch {
+  } catch (cause) {
+    // 明确拒绝的请求未发奖；未知网络或服务端结果则保留编号供安全重试。
+    const code = (cause as { status?: number })?.status
+    if (code && code >= 400 && code < 500) pendingDraw.value = null
     await load(true)
-    if (!status.value?.today) error.value = t('lottery.drawError')
+    if (adminAttempt) error.value = t(pendingDraw.value ? 'lottery.adminDrawError' : 'lottery.drawError')
+    else if (!status.value?.today) error.value = t('lottery.drawError')
     else if (status.value.today.prize > 0) await auth.refreshUser().catch(() => undefined)
   } finally { drawing.value = false }
 }

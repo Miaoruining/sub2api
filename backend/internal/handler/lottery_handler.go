@@ -34,12 +34,13 @@ func (h *LotteryHandler) Draw(c *gin.Context) {
 	}
 	var req struct {
 		ActivityDate string `json:"activity_date" binding:"required"`
+		RequestID    string `json:"request_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid activity date")
 		return
 	}
-	out, err := h.lottery.Draw(c.Request.Context(), subject.UserID, req.ActivityDate)
+	out, err := h.lottery.Draw(c.Request.Context(), subject.UserID, req.ActivityDate, req.RequestID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

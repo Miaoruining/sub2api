@@ -11,7 +11,7 @@ vi.mock('vue-i18n', async importOriginal => ({ ...await importOriginal<typeof im
     return text.replace(/\{(\w+)\}/g, (_, name: string) => String(params[name] ?? ''))
   },
 }) }))
-const current = () => ({ enabled: false, activity_date: '2026-09-08', daily_budget: 100, spent: 6, draw_count: 40, weights: [9552, 400, 30, 10, 5, 2, 1], next_weights: [9552, 400, 30, 10, 5, 2, 1], next_effective_date: '2026-09-09', distribution: [38, 1, 1, 0, 0, 0, 0], records: [] })
+const current = () => ({ enabled: false, admin_repeat_enabled: true, activity_date: '2026-09-08', daily_budget: 100, spent: 6, draw_count: 40, weights: [9552, 400, 30, 10, 5, 2, 1], next_weights: [9552, 400, 30, 10, 5, 2, 1], next_effective_date: '2026-09-09', distribution: [38, 1, 1, 0, 0, 0, 0], records: [] })
 function render() { return mount(LotteryView, { global: { stubs: { AppLayout: { template: '<main><slot /></main>' } } } }) }
 describe('Admin lottery configuration', () => {
   beforeEach(() => { vi.clearAllMocks(); api.status.mockResolvedValue(current()); api.configure.mockResolvedValue(undefined) })
@@ -38,5 +38,19 @@ describe('Admin lottery configuration', () => {
     expect(api.configure).toHaveBeenCalledWith({ enabled: true })
     expect((w.get('input[role="switch"]').element as HTMLInputElement).checked).toBe(false)
     expect(w.get('[role="alert"]').exists()).toBe(true); w.unmount()
+  })
+  it('keeps the default administrator switch independent and restores it after a failed change', async () => {
+    const w = render(); await flushPromises()
+    const input = w.get('input[aria-label="允许管理员随时重复抽奖"]')
+    expect((input.element as HTMLInputElement).checked).toBe(true)
+    api.configure.mockRejectedValueOnce(new Error('network'))
+    await input.setValue(false); await flushPromises()
+    expect(api.configure).toHaveBeenCalledWith({ admin_repeat_enabled: false })
+    expect((input.element as HTMLInputElement).checked).toBe(true)
+    api.status.mockResolvedValue({ ...current(), admin_repeat_enabled: false })
+    await input.setValue(false); await flushPromises()
+    expect((input.element as HTMLInputElement).checked).toBe(false)
+    expect((w.get('input[aria-label="开放抽奖活动"]').element as HTMLInputElement).checked).toBe(false)
+    w.unmount()
   })
 })

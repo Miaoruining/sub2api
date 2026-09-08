@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
+
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 )
@@ -14,6 +16,7 @@ var (
 	ErrLotteryClosed     = infraerrors.Conflict("LOTTERY_CLOSED", "今日活动暂未开放或已结束")
 	ErrLotteryIneligible = infraerrors.Forbidden("LOTTERY_INELIGIBLE", "累计有效人民币实付充值满 10 元后可参与")
 	ErrLotteryConfig     = infraerrors.BadRequest("LOTTERY_CONFIG_INVALID", "七档概率权重必须为非负整数且合计 10000")
+	ErrLotteryRequest    = infraerrors.BadRequest("LOTTERY_REQUEST_INVALID", "管理员抽奖需要有效的唯一请求编号，请刷新后重试")
 )
 
 // 固定北京时间，不受操作系统或应用的展示时区设置影响。
@@ -77,6 +80,7 @@ type LotteryStatus struct {
 	ActivityDate string        `json:"activity_date"`
 	State        string        `json:"state"`
 	Eligible     bool          `json:"eligible"`
+	AdminRepeat  bool          `json:"admin_repeat,omitempty"`
 	ServerTime   time.Time     `json:"server_time"`
 	OpensAt      time.Time     `json:"opens_at"`
 	NextOpensAt  time.Time     `json:"next_opens_at"`
@@ -86,8 +90,9 @@ type LotteryStatus struct {
 }
 
 type LotteryConfigUpdate struct {
-	Enabled *bool `json:"enabled"`
-	Weights []int `json:"weights,omitempty"`
+	Enabled            *bool `json:"enabled"`
+	AdminRepeatEnabled *bool `json:"admin_repeat_enabled"`
+	Weights            []int `json:"weights,omitempty"`
 }
 
 type LotteryAdminDraw struct {
@@ -97,21 +102,22 @@ type LotteryAdminDraw struct {
 }
 
 type LotteryAdminStatus struct {
-	Enabled           bool               `json:"enabled"`
-	ActivityDate      string             `json:"activity_date"`
-	DailyBudget       int                `json:"daily_budget"`
-	Spent             int                `json:"spent"`
-	DrawCount         int                `json:"draw_count"`
-	Weights           []int              `json:"weights"`
-	NextWeights       []int              `json:"next_weights"`
-	NextEffectiveDate string             `json:"next_effective_date"`
-	Distribution      []int              `json:"distribution"`
-	Records           []LotteryAdminDraw `json:"records"`
+	Enabled            bool               `json:"enabled"`
+	AdminRepeatEnabled bool               `json:"admin_repeat_enabled"`
+	ActivityDate       string             `json:"activity_date"`
+	DailyBudget        int                `json:"daily_budget"`
+	Spent              int                `json:"spent"`
+	DrawCount          int                `json:"draw_count"`
+	Weights            []int              `json:"weights"`
+	NextWeights        []int              `json:"next_weights"`
+	NextEffectiveDate  string             `json:"next_effective_date"`
+	Distribution       []int              `json:"distribution"`
+	Records            []LotteryAdminDraw `json:"records"`
 }
 
 type LotteryRepository interface {
 	Status(context.Context, int64) (*LotteryStatus, error)
-	Draw(context.Context, int64, string) (*LotteryDraw, error)
+	Draw(context.Context, int64, string, ...string) (*LotteryDraw, error)
 	AdminStatus(context.Context, string) (*LotteryAdminStatus, error)
 	UpdateConfig(context.Context, int64, LotteryConfigUpdate) error
 }
@@ -133,7 +139,7 @@ func (s *LotteryService) AdminStatus(ctx context.Context, date string) (*Lottery
 	return s.repo.AdminStatus(ctx, date)
 }
 func (s *LotteryService) UpdateConfig(ctx context.Context, uid int64, c LotteryConfigUpdate) error {
-	if c.Enabled == nil && c.Weights == nil {
+	if c.Enabled == nil && c.Weights == nil && c.AdminRepeatEnabled == nil {
 		return ErrLotteryConfig
 	}
 	if c.Weights != nil {
@@ -143,11 +149,16 @@ func (s *LotteryService) UpdateConfig(ctx context.Context, uid int64, c LotteryC
 	}
 	return s.repo.UpdateConfig(ctx, uid, c)
 }
-func (s *LotteryService) Draw(ctx context.Context, uid int64, date string) (*LotteryDraw, error) {
+func (s *LotteryService) Draw(ctx context.Context, uid int64, date string, requestIDs ...string) (*LotteryDraw, error) {
 	if _, err := time.Parse("2006-01-02", date); err != nil {
 		return nil, ErrLotteryClosed
 	}
-	draw, err := s.repo.Draw(ctx, uid, date)
+	if len(requestIDs) > 0 && requestIDs[0] != "" {
+		if _, err := uuid.Parse(requestIDs[0]); err != nil {
+			return nil, ErrLotteryRequest
+		}
+	}
+	draw, err := s.repo.Draw(ctx, uid, date, requestIDs...)
 	if err != nil {
 		return nil, err
 	}
