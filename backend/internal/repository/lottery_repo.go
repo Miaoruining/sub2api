@@ -18,7 +18,7 @@ type lotteryRepository struct {
 	db *sql.DB
 	// 仅供包内测试注入；运行时使用数据库时钟和 crypto/rand。
 	clock  func(context.Context, lotteryQuery) (time.Time, error)
-	ticket func() (int, error)
+	ticket func(int) (int, error)
 }
 
 type lotteryQuery interface {
@@ -30,8 +30,8 @@ func NewLotteryRepository(db *sql.DB) service.LotteryRepository {
 		var now time.Time
 		err := q.QueryRowContext(ctx, "SELECT clock_timestamp()").Scan(&now)
 		return now, err
-	}, ticket: func() (int, error) {
-		n, err := rand.Int(rand.Reader, big.NewInt(10000))
+	}, ticket: func(scale int) (int, error) {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(scale)))
 		if err != nil {
 			return 0, err
 		}
@@ -277,11 +277,27 @@ func (r *lotteryRepository) Draw(ctx context.Context, uid int64, requestedDate s
 	if lockedDate != date || (!service.LotteryIsOpen(now) && !adminRepeat) {
 		return nil, service.ErrLotteryClosed
 	}
-	ticket, err := r.ticket()
+	// 用户行已锁定：跨日、管理员不同请求并发也不能重复领取前三次加成。
+	// 历史记录（含上线前记录及无奖）全部计入，只查询前三条，避免长历史计数。
+	var previousDraws int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM (SELECT 1 FROM lottery_draws WHERE user_id=$1 LIMIT $2) previous`, uid, service.LotteryIntroDrawLimit).Scan(&previousDraws); err != nil {
+		return nil, err
+	}
+	introNumber, scale := 0, 10000
+	if previousDraws < service.LotteryIntroDrawLimit {
+		introNumber, scale = previousDraws+1, service.LotteryIntroTicketCount
+		weights = service.LotteryIntroWeights()
+	}
+	ticket, err := r.ticket(scale)
 	if err != nil {
 		return nil, fmt.Errorf("lottery random source: %w", err)
 	}
-	prize, err := service.LotteryPrizeForTicket(weights, ticket, service.LotteryDailyBudget-spent)
+	var prize int
+	if introNumber > 0 {
+		prize, err = service.LotteryIntroPrizeForTicket(ticket, service.LotteryDailyBudget-spent)
+	} else {
+		prize, err = service.LotteryPrizeForTicket(weights, ticket, service.LotteryDailyBudget-spent)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -292,8 +308,12 @@ func (r *lotteryRepository) Draw(ctx context.Context, uid int64, requestedDate s
 		}
 	}
 	d := &service.LotteryDraw{ActivityDate: date, Prize: prize}
-	if err := tx.QueryRowContext(ctx, `INSERT INTO lottery_draws(user_id,activity_date,prize,ticket,budget_before,balance_before,balance_after,created_at,admin_repeat,request_id)
-VALUES ($1,$2::date,$3,$4,$5,$6::numeric,$7::numeric,$8,$9,NULLIF($10,'')::uuid) RETURNING id,created_at`, uid, date, prize, ticket, service.LotteryDailyBudget-spent, before, after, now, adminRepeat, requestID).Scan(&d.ID, &d.CreatedAt); err != nil {
+	weightSnapshot, err := json.Marshal(weights)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.QueryRowContext(ctx, `INSERT INTO lottery_draws(user_id,activity_date,prize,ticket,budget_before,balance_before,balance_after,created_at,admin_repeat,request_id,intro_draw_number,probability_weights)
+VALUES ($1,$2::date,$3,$4,$5,$6::numeric,$7::numeric,$8,$9,NULLIF($10,'')::uuid,$11,$12::jsonb) RETURNING id,created_at`, uid, date, prize, ticket, service.LotteryDailyBudget-spent, before, after, now, adminRepeat, requestID, introNumber, string(weightSnapshot)).Scan(&d.ID, &d.CreatedAt); err != nil {
 		return nil, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE lottery_days SET spent=spent+$2,draw_count=draw_count+1 WHERE activity_date=$1::date`, date, prize); err != nil {
@@ -323,6 +343,7 @@ func (r *lotteryRepository) AdminStatus(ctx context.Context, requestedDate strin
 		date = requestedDate
 	}
 	out := &service.LotteryAdminStatus{ActivityDate: date, DailyBudget: service.LotteryDailyBudget, NextEffectiveDate: next.Format("2006-01-02"), Distribution: make([]int, 7), Records: []service.LotteryAdminDraw{}}
+	out.IntroWeights, out.IntroDrawLimit = service.LotteryIntroWeights(), service.LotteryIntroDrawLimit
 	if err := tx.QueryRowContext(ctx, `SELECT enabled,admin_repeat_enabled FROM lottery_settings WHERE id=1`).Scan(&out.Enabled, &out.AdminRepeatEnabled); err != nil {
 		return nil, err
 	}
@@ -363,14 +384,14 @@ func (r *lotteryRepository) AdminStatus(ctx context.Context, requestedDate strin
 	if err != nil {
 		return nil, err
 	}
-	rows, err = tx.QueryContext(ctx, `SELECT id,activity_date::text,prize,created_at,user_id,balance_after FROM lottery_draws WHERE activity_date=$1::date ORDER BY id DESC LIMIT 100`, date)
+	rows, err = tx.QueryContext(ctx, `SELECT id,activity_date::text,prize,created_at,user_id,balance_after,intro_draw_number FROM lottery_draws WHERE activity_date=$1::date ORDER BY id DESC LIMIT 100`, date)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var d service.LotteryAdminDraw
-		if err = rows.Scan(&d.ID, &d.ActivityDate, &d.Prize, &d.CreatedAt, &d.UserID, &d.BalanceAfter); err != nil {
+		if err = rows.Scan(&d.ID, &d.ActivityDate, &d.Prize, &d.CreatedAt, &d.UserID, &d.BalanceAfter, &d.IntroDrawNumber); err != nil {
 			return nil, err
 		}
 		out.Records = append(out.Records, d)

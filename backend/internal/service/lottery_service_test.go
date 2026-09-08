@@ -33,6 +33,31 @@ func TestLotteryProbabilityEveryTicket(t *testing.T) {
 	require.Zero(t, p)
 }
 
+func TestLotteryIntroEveryTicketAndBudget(t *testing.T) {
+	counts := map[int]int{}
+	for ticket := 0; ticket < LotteryIntroTicketCount; ticket++ {
+		p, err := LotteryIntroPrizeForTicket(ticket, 100)
+		require.NoError(t, err)
+		counts[p]++
+		p, err = LotteryIntroPrizeForTicket(ticket, 4)
+		require.NoError(t, err)
+		require.Contains(t, []int{0, 1}, p)
+	}
+	for i, p := range LotteryPrizes() {
+		require.Equal(t, LotteryIntroWeights()[i], counts[p])
+	}
+	require.Equal(t, 60000, counts[1])
+	require.Equal(t, 10000, counts[5])
+	require.Equal(t, 5, counts[100])
+	for _, ticket := range []int{-1, LotteryIntroTicketCount} {
+		_, err := LotteryIntroPrizeForTicket(ticket, 100)
+		require.Error(t, err)
+	}
+	w := LotteryIntroWeights()
+	w[0] = 0
+	require.Equal(t, 29900, LotteryIntroWeights()[0])
+}
+
 func TestLotteryRejectsInvalidRulesAndTickets(t *testing.T) {
 	for _, w := range [][]int{nil, {10000}, {9553, 400, 30, 10, 5, 2, 1}, {-1, 10001, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0}} {
 		require.Error(t, ValidateLotteryWeights(w))
@@ -70,7 +95,7 @@ func TestLotteryWindowUsesBeijingIndependentOfServerZone(t *testing.T) {
 func TestLotteryUserDTOHasNoInternalFields(t *testing.T) {
 	raw, err := json.Marshal(LotteryStatus{Today: &LotteryDraw{Prize: 100}, History: []LotteryDraw{{Prize: 1}}})
 	require.NoError(t, err)
-	for _, field := range []string{"weights", "budget", "spent", "ticket", "distribution", "balance_after", "user_id"} {
+	for _, field := range []string{"weights", "budget", "spent", "ticket", "distribution", "balance_after", "user_id", "intro_draw_number", "intro_draw_limit"} {
 		require.NotContains(t, string(raw), field)
 	}
 }

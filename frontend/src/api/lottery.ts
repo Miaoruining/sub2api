@@ -28,9 +28,11 @@ export interface LotteryAdminStatus {
   draw_count: number
   weights: number[]
   next_weights: number[]
+  intro_weights: number[]
+  intro_draw_limit: number
   next_effective_date: string
   distribution: number[]
-  records: (LotteryDraw & { user_id: number; balance_after: number })[]
+  records: (LotteryDraw & { user_id: number; balance_after: number; intro_draw_number: number })[]
 }
 export const lotteryAPI = {
   async status(): Promise<LotteryStatus> {

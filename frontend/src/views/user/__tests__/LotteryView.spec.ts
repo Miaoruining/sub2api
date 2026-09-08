@@ -22,8 +22,11 @@ function render() {
   } })
 }
 describe('LotteryView', () => {
-  beforeEach(() => { vi.useFakeTimers(); vi.clearAllMocks(); api.status.mockResolvedValue(state()); api.refreshUser.mockResolvedValue(undefined) })
-  afterEach(() => { vi.useRealTimers() })
+  beforeEach(() => {
+    vi.useFakeTimers(); vi.clearAllMocks(); api.status.mockResolvedValue(state()); api.refreshUser.mockResolvedValue(undefined)
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })))
+  })
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
   it('shows rewards and rules without probabilities or budget', async () => {
     const w = render(); await flushPromises()
     expect(w.findAll('.prize-tile')).toHaveLength(6)
@@ -47,6 +50,9 @@ describe('LotteryView', () => {
     const today = { id: 1, activity_date: '2026-09-08', prize: 5, created_at: '2026-09-08T02:00:00Z' }
     api.status.mockResolvedValue(state({ state: 'drawn', today, history: [today] }))
     resolveDraw(today); await flushPromises()
+    expect(w.find('.lottery-result').exists()).toBe(false)
+    expect(w.get('.draw-button').attributes('disabled')).toBeDefined()
+    await vi.advanceTimersByTimeAsync(6000); await flushPromises()
     expect(w.text()).toContain('5 额度已到账'); expect(api.refreshUser).toHaveBeenCalledTimes(1)
     expect(w.get('.draw-button').attributes('disabled')).toBeDefined(); w.unmount()
   })
@@ -101,11 +107,13 @@ describe('LotteryView', () => {
     api.draw.mockResolvedValue(first)
     api.status.mockResolvedValue(state({ admin_repeat: true, today: first, history: [first] }))
     await w.get('.draw-button').trigger('click'); await flushPromises()
+    await vi.advanceTimersByTimeAsync(6000); await flushPromises()
     expect(w.get('.draw-button').text()).toBe('再抽一次')
     expect(w.get('.draw-button').attributes('disabled')).toBeUndefined()
     const firstKey = api.draw.mock.calls[0][1]
     expect(firstKey).toMatch(/^[0-9a-f-]{36}$/)
     await w.get('.draw-button').trigger('click'); await flushPromises()
+    await vi.advanceTimersByTimeAsync(6000); await flushPromises()
     expect(api.draw.mock.calls[1][1]).not.toBe(firstKey)
     expect(api.refreshUser).toHaveBeenCalledTimes(2); w.unmount()
   })
@@ -122,8 +130,39 @@ describe('LotteryView', () => {
     api.draw.mockResolvedValue(result)
     api.status.mockResolvedValue(state({ admin_repeat: true, state: 'ended', today: result, history: [result] }))
     await w.get('.draw-button').trigger('click'); await flushPromises()
+    await vi.advanceTimersByTimeAsync(6000); await flushPromises()
     expect(api.draw.mock.calls[1]).toEqual(firstCall)
     expect(w.get('.draw-button').attributes('disabled')).toBeDefined()
     expect(w.text()).toContain('100 额度已到账'); w.unmount()
+  })
+  it('cycles while the server is pending, then settles on the actual zero prize', async () => {
+    let resolveDraw!: (value: unknown) => void
+    api.draw.mockImplementation(() => new Promise(resolve => { resolveDraw = resolve }))
+    const w = render(); await flushPromises()
+    await w.get('.draw-button').trigger('click')
+    expect(w.get('.active').attributes('data-prize')).toBe('1')
+    await vi.advanceTimersByTimeAsync(90)
+    expect(w.get('.active').attributes('data-prize')).toBe('5')
+    await vi.advanceTimersByTimeAsync(6000)
+    expect(w.find('.lottery-result').exists()).toBe(false)
+    expect(w.get('.draw-button').attributes('disabled')).toBeDefined()
+    const today = { id: 90, activity_date: '2026-09-08', prize: 0, created_at: '2026-09-08T02:00:00Z' }
+    api.status.mockResolvedValue(state({ state: 'drawn', today, history: [today] }))
+    resolveDraw(today); await flushPromises()
+    await vi.advanceTimersByTimeAsync(6000); await flushPromises()
+    expect(w.get('.selected').attributes('data-prize')).toBe('0')
+    expect(w.find('.active').exists()).toBe(false)
+    expect(w.find('.lottery-result').exists()).toBe(true)
+    expect(api.draw).toHaveBeenCalledTimes(1); w.unmount()
+  })
+  it('cleans up the reveal if the view unmounts before the response arrives', async () => {
+    let resolveDraw!: (value: unknown) => void
+    api.draw.mockImplementation(() => new Promise(resolve => { resolveDraw = resolve }))
+    const w = render(); await flushPromises()
+    await w.get('.draw-button').trigger('click'); w.unmount()
+    resolveDraw({ id: 91, activity_date: '2026-09-08', prize: 1, created_at: '2026-09-08T02:00:00Z' })
+    await flushPromises(); await vi.advanceTimersByTimeAsync(6000)
+    expect(api.refreshUser).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(0)
   })
 })

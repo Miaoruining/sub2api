@@ -12,6 +12,8 @@ import (
 
 const LotteryDailyBudget = 100
 const LotteryWindowDuration = time.Hour
+const LotteryIntroDrawLimit = 3
+const LotteryIntroTicketCount = 100000
 
 var (
 	ErrLotteryClosed     = infraerrors.Conflict("LOTTERY_CLOSED", "今日活动暂未开放或已结束")
@@ -37,18 +39,26 @@ func LotteryIsOpen(now time.Time) bool {
 
 func LotteryPrizes() []int { return []int{0, 1, 5, 10, 20, 50, 100} }
 
+// 账号历史前三次使用独立规则，十万分之一精度保留 0.015% 和 0.005%。
+// 不受管理员普通概率次日配置影响；每次返回新切片，避免意外修改全局规则。
+func LotteryIntroWeights() []int { return []int{29900, 60000, 10000, 50, 30, 15, 5} }
+
 func ValidateLotteryWeights(weights []int) error {
+	return validateLotteryWeightsTotal(weights, 10000)
+}
+
+func validateLotteryWeightsTotal(weights []int, scale int) error {
 	if len(weights) != 7 {
 		return ErrLotteryConfig
 	}
 	total := 0
 	for _, w := range weights {
-		if w < 0 || w > 10000 {
+		if w < 0 || w > scale {
 			return ErrLotteryConfig
 		}
 		total += w
 	}
-	if total != 10000 {
+	if total != scale {
 		return ErrLotteryConfig
 	}
 	return nil
@@ -56,10 +66,18 @@ func ValidateLotteryWeights(weights []int) error {
 
 // 超过剩余预算的结果变为无奖，不能重新抽取以免扭曲其他奖项权重。
 func LotteryPrizeForTicket(weights []int, ticket, remaining int) (int, error) {
-	if err := ValidateLotteryWeights(weights); err != nil {
+	return lotteryPrizeForTicket(weights, ticket, remaining, 10000)
+}
+
+func LotteryIntroPrizeForTicket(ticket, remaining int) (int, error) {
+	return lotteryPrizeForTicket(LotteryIntroWeights(), ticket, remaining, LotteryIntroTicketCount)
+}
+
+func lotteryPrizeForTicket(weights []int, ticket, remaining, scale int) (int, error) {
+	if err := validateLotteryWeightsTotal(weights, scale); err != nil {
 		return 0, err
 	}
-	if ticket < 0 || ticket >= 10000 || remaining < 0 || remaining > LotteryDailyBudget {
+	if ticket < 0 || ticket >= scale || remaining < 0 || remaining > LotteryDailyBudget {
 		return 0, ErrLotteryConfig
 	}
 	for i, w := range weights {
@@ -105,8 +123,9 @@ type LotteryConfigUpdate struct {
 
 type LotteryAdminDraw struct {
 	LotteryDraw
-	UserID       int64   `json:"user_id"`
-	BalanceAfter float64 `json:"balance_after"`
+	UserID          int64   `json:"user_id"`
+	BalanceAfter    float64 `json:"balance_after"`
+	IntroDrawNumber int     `json:"intro_draw_number"`
 }
 
 type LotteryAdminStatus struct {
@@ -118,6 +137,8 @@ type LotteryAdminStatus struct {
 	DrawCount          int                `json:"draw_count"`
 	Weights            []int              `json:"weights"`
 	NextWeights        []int              `json:"next_weights"`
+	IntroWeights       []int              `json:"intro_weights"`
+	IntroDrawLimit     int                `json:"intro_draw_limit"`
 	NextEffectiveDate  string             `json:"next_effective_date"`
 	Distribution       []int              `json:"distribution"`
 	Records            []LotteryAdminDraw `json:"records"`

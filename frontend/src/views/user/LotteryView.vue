@@ -17,14 +17,14 @@
       <section v-if="status" class="grid gap-6 lg:grid-cols-3">
         <div class="lottery-stage rounded-2xl p-5 sm:p-8 lg:col-span-2" :class="{ 'is-drawing': drawing }" :aria-busy="drawing">
           <h3 class="text-xl font-semibold text-gray-900 dark:text-white">{{ t('lottery.prizeTitle') }}</h3>
-          <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('lottery.prizeSubtitle') }}</p>
+          <p class="mt-1 text-sm text-gray-500 dark:text-dark-400" role="status">{{ t(drawing ? revealPhase === 'settling' ? 'lottery.settling' : 'lottery.spinning' : 'lottery.prizeSubtitle') }}</p>
           <div class="mt-7 grid grid-cols-3 gap-3">
-            <div v-for="prize in status.prizes.filter(p => p > 0)" :key="prize" class="prize-tile" :class="{ selected: status.today?.prize === prize }">
+            <div v-for="prize in status.prizes.filter(p => p > 0)" :key="prize" class="prize-tile" :data-prize="prize" :class="{ active: drawing && activePrize === prize, selected: !drawing && result?.prize === prize }">
               <span class="text-3xl font-semibold tabular-nums sm:text-4xl">{{ prize }}</span>
               <span class="mt-2 text-xs text-gray-500 dark:text-dark-400">{{ t('lottery.quota') }}</span>
             </div>
           </div>
-          <div class="mt-3 flex items-center justify-between gap-3 rounded-xl bg-white/60 px-4 py-3 text-sm dark:bg-dark-900/40">
+          <div class="no-prize-tile mt-3 flex items-center justify-between gap-3 rounded-xl bg-white/60 px-4 py-3 text-sm dark:bg-dark-900/40" data-prize="0" :class="{ active: drawing && activePrize === 0, selected: !drawing && result?.prize === 0 }">
             <span class="font-medium text-gray-700 dark:text-dark-200">{{ t('lottery.noPrize') }}</span>
             <span class="text-xs text-gray-500 dark:text-dark-400">{{ noPrizeHint }}</span>
           </div>
@@ -47,10 +47,12 @@
         </div>
       </section>
 
-      <section v-if="result" class="rounded-2xl border border-rose-200 bg-rose-50 p-6 dark:border-rose-900 dark:bg-rose-950/30" role="status" aria-live="polite">
+      <Transition name="result-reveal">
+      <section v-if="result && !drawing" class="lottery-result rounded-2xl border border-rose-200 bg-rose-50 p-6 dark:border-rose-900 dark:bg-rose-950/30" role="status" aria-live="polite">
         <p class="text-sm text-rose-700 dark:text-rose-300">{{ t(status?.admin_repeat ? 'lottery.latestResult' : 'lottery.result') }}</p>
         <h3 class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{{ result.prize > 0 ? t('lottery.won', { amount: result.prize }) : noPrizeHint }}</h3>
       </section>
+      </Transition>
       <div class="flex justify-end">
         <button class="btn btn-secondary" :disabled="loading || drawing" @click="load()">{{ t('lottery.refresh') }}</button>
       </div>
@@ -96,6 +98,7 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { lotteryAPI, type LotteryDraw, type LotteryStatus } from '@/api/lottery'
 import { useAuthStore } from '@/stores/auth'
+import { useLotteryReveal } from '@/composables/useLotteryReveal'
 
 const { t } = useI18n()
 const auth = useAuthStore()
@@ -103,6 +106,7 @@ const status = ref<LotteryStatus | null>(null)
 const result = ref<LotteryDraw | null>(null)
 const loading = ref(false)
 const drawing = ref(false)
+const { phase: revealPhase, activePrize, start: startReveal, finish: finishReveal, cancel: cancelReveal } = useLotteryReveal()
 const error = ref('')
 // 未确认的管理员请求保留同一个编号，不能因网络重试而重新开奖。
 const pendingDraw = ref<{ date: string; id: string } | null>(null)
@@ -115,6 +119,7 @@ const windowEnded = computed(() => !!status.value && !status.value.admin_repeat 
 const effectiveState = computed(() => status.value?.state === 'ready' && windowEnded.value ? 'ended' : status.value?.state)
 const stateText = computed(() => {
   if (!status.value) return ''
+  if (drawing.value) return t('lottery.drawing')
   const state = effectiveState.value
   return t(`lottery.${status.value.admin_repeat && state === 'ready' ? 'adminReady' : status.value.admin_repeat && state === 'ended' ? 'adminEnded' : state}`)
 })
@@ -144,16 +149,23 @@ async function draw() {
   const activityDate = pendingDraw.value?.date || status.value.activity_date
   const adminAttempt = !!pendingDraw.value || !!status.value.admin_repeat
   drawing.value = true
+  result.value = null
+  startReveal()
   error.value = ''
   try {
     if (adminAttempt && !pendingDraw.value) pendingDraw.value = { date: activityDate, id: crypto.randomUUID() }
-    result.value = pendingDraw.value ? await lotteryAPI.draw(activityDate, pendingDraw.value.id) : await lotteryAPI.draw(activityDate)
+    const confirmed = pendingDraw.value ? await lotteryAPI.draw(activityDate, pendingDraw.value.id) : await lotteryAPI.draw(activityDate)
+    if (disposed) return
     pendingDraw.value = null
     // 先锁定本地状态，后续刷新失败也不能让按钮重新可点。
-    if (status.value) { status.value.today = result.value; status.value.state = 'drawn' }
+    if (status.value) { status.value.today = confirmed; status.value.state = 'drawn' }
+    if (!await finishReveal(confirmed.prize) || disposed) return
+    result.value = confirmed
     await auth.refreshUser().catch(() => undefined)
     await load(true)
   } catch (cause) {
+    cancelReveal()
+    if (disposed) return
     // 明确拒绝的请求未发奖；未知网络或服务端结果则保留编号供安全重试。
     const code = (cause as { status?: number })?.status
     if (code && code >= 400 && code < 500) pendingDraw.value = null
@@ -180,13 +192,20 @@ onUnmounted(() => { disposed = true; if (timer) clearInterval(timer) })
 :global(.dark .lottery-stage) { background: radial-gradient(ellipse at top right, #43212b, #201a20 70%); border-color: #52313b; }
 .prize-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 7.5rem; border-radius: .9rem; background: #fff; color: #b42a3c; border: 1px solid #f3e2e5; }
 :global(.dark .lottery-stage .prize-tile) { background: #2b2229; color: #fda4af; border-color: #4e303a; }
-.prize-tile.selected { outline: 2px solid #c72d40; outline-offset: 2px; }
+.prize-tile, .no-prize-tile { position: relative; transition: transform .15s ease, box-shadow .15s ease; }
+.prize-tile::after, .no-prize-tile::after { content: ''; position: absolute; inset: -2px; border: 2px solid #e55368; border-radius: inherit; opacity: 0; pointer-events: none; transition: opacity .12s ease; }
+.prize-tile.active, .no-prize-tile.active { transform: translateY(-3px) scale(1.025); box-shadow: 0 6px 22px #c72d4033; }
+.prize-tile.active::after, .no-prize-tile.active::after, .prize-tile.selected::after, .no-prize-tile.selected::after { opacity: 1; }
+.prize-tile.selected, .no-prize-tile.selected { box-shadow: 0 0 0 4px #e553681a; }
+.result-reveal-enter-active { transition: opacity .45s ease, transform .45s cubic-bezier(.2,.8,.2,1); }
+.result-reveal-enter-from { opacity: 0; transform: translateY(12px) scale(.98); }
 .draw-button { width: 100%; min-height: 3rem; padding: .75rem 1rem; border-radius: .75rem; background: #c72d40; color: white; font-size: .875rem; font-weight: 600; transition: background .2s, transform .2s; }
 .draw-button:hover:not(:disabled) { background: #ae2435; }
 .draw-button:active:not(:disabled) { transform: scale(.98); }
 .draw-button:focus-visible { outline: 3px solid #fb7185; outline-offset: 3px; }
 .draw-button:disabled { opacity: .45; cursor: not-allowed; }
-.is-drawing .prize-tile { animation: reveal-pulse 1.4s ease-in-out infinite; }
-@keyframes reveal-pulse { 50% { opacity: .55; transform: translateY(-2px); } }
-@media (prefers-reduced-motion: reduce) { .is-drawing .prize-tile { animation: none; } .draw-button { transition: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .prize-tile, .no-prize-tile, .prize-tile::after, .no-prize-tile::after, .draw-button, .result-reveal-enter-active { transition: none; }
+  .prize-tile.active, .no-prize-tile.active, .result-reveal-enter-from { transform: none; }
+}
 </style>

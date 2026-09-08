@@ -20,6 +20,16 @@
         <dl class="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div v-for="item in summaries" :key="item.label" class="card p-6"><dt class="text-sm text-gray-500">{{ item.label }}</dt><dd class="mt-3 text-3xl font-semibold tabular-nums">{{ item.value }}</dd></div>
         </dl>
+        <section v-if="status.intro_weights?.length" class="card p-5 sm:p-6">
+          <h3 class="text-lg font-semibold">{{ t('lottery.introTitle', { count: status.intro_draw_limit }) }}</h3>
+          <p class="mt-2 max-w-3xl text-sm leading-6 text-gray-500">{{ t('lottery.introHint') }}</p>
+          <dl class="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+            <div v-for="(prize, i) in prizes" :key="prize" class="rounded-lg bg-rose-50/70 p-3 dark:bg-rose-950/20">
+              <dt class="text-xs text-gray-500">{{ prize ? `${prize} ${t('lottery.quota')}` : t('lottery.noPrize') }}</dt>
+              <dd class="mt-2 text-lg font-semibold tabular-nums text-rose-700 dark:text-rose-300">{{ (status.intro_weights[i] / 1000).toFixed(3) }}%</dd>
+            </div>
+          </dl>
+        </section>
         <form class="card p-5 sm:p-6" @submit.prevent="saveWeights">
           <h3 class="text-lg font-semibold">{{ t('lottery.configuration') }}</h3>
           <p class="mt-2 text-sm text-gray-500">{{ t('lottery.effective', { date: status.next_effective_date }) }}</p>
@@ -35,9 +45,9 @@
         <section class="card overflow-hidden">
           <div class="p-5"><h3 class="font-semibold">{{ t('lottery.audit') }}</h3><p class="mt-1 text-xs text-gray-500">{{ t('lottery.auditNote') }}</p></div>
           <div class="overflow-x-auto"><table class="w-full text-left text-sm"><thead class="bg-gray-50 dark:bg-dark-800"><tr>
-            <th class="p-4">ID</th><th class="p-4">{{ t('lottery.userId') }}</th><th class="p-4">{{ t('lottery.recordPrize') }}</th><th class="p-4">{{ t('lottery.balanceAfter') }}</th><th class="p-4">{{ t('lottery.time') }}</th>
+            <th class="p-4">ID</th><th class="p-4">{{ t('lottery.userId') }}</th><th class="p-4">{{ t('lottery.recordPrize') }}</th><th class="p-4">{{ t('lottery.appliedRule') }}</th><th class="p-4">{{ t('lottery.balanceAfter') }}</th><th class="p-4">{{ t('lottery.time') }}</th>
           </tr></thead><tbody><tr v-for="record in status.records" :key="record.id" class="border-t border-gray-100 dark:border-dark-700">
-            <td class="p-4">{{ record.id }}</td><td class="p-4">{{ record.user_id }}</td><td class="p-4">{{ record.prize }}</td><td class="p-4 tabular-nums">{{ record.balance_after.toFixed(2) }}</td><td class="p-4">{{ new Date(record.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) }}</td>
+            <td class="p-4">{{ record.id }}</td><td class="p-4">{{ record.user_id }}</td><td class="p-4">{{ record.prize }}</td><td class="p-4">{{ t(record.intro_draw_number ? 'lottery.introRecord' : 'lottery.regularRecord', { count: record.intro_draw_number }) }}</td><td class="p-4 tabular-nums">{{ record.balance_after.toFixed(2) }}</td><td class="p-4">{{ new Date(record.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) }}</td>
           </tr></tbody></table></div>
           <p v-if="!status.records.length" class="p-8 text-center text-sm text-gray-500">{{ t('lottery.empty') }}</p>
         </section>

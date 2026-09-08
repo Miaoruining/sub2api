@@ -11,13 +11,15 @@ vi.mock('vue-i18n', async importOriginal => ({ ...await importOriginal<typeof im
     return text.replace(/\{(\w+)\}/g, (_, name: string) => String(params[name] ?? ''))
   },
 }) }))
-const current = () => ({ enabled: false, admin_repeat_enabled: true, activity_date: '2026-09-08', daily_budget: 100, spent: 6, draw_count: 40, weights: [9552, 400, 30, 10, 5, 2, 1], next_weights: [9552, 400, 30, 10, 5, 2, 1], next_effective_date: '2026-09-09', distribution: [38, 1, 1, 0, 0, 0, 0], records: [] })
+const current = () => ({ enabled: false, admin_repeat_enabled: true, activity_date: '2026-09-08', daily_budget: 100, spent: 6, draw_count: 40, weights: [9552, 400, 30, 10, 5, 2, 1], next_weights: [9552, 400, 30, 10, 5, 2, 1], intro_weights: [29900, 60000, 10000, 50, 30, 15, 5], intro_draw_limit: 3, next_effective_date: '2026-09-09', distribution: [38, 1, 1, 0, 0, 0, 0], records: [] })
 function render() { return mount(LotteryView, { global: { stubs: { AppLayout: { template: '<main><slot /></main>' } } } }) }
 describe('Admin lottery configuration', () => {
   beforeEach(() => { vi.clearAllMocks(); api.status.mockResolvedValue(current()); api.configure.mockResolvedValue(undefined) })
   it('keeps internal budget and audit details on the admin page', async () => {
     const w = render(); await flushPromises()
     expect(w.text()).toContain('每日发放上限'); expect(w.text()).toContain('仅管理员可见')
+    expect(w.text()).toContain('账号前 3 次专属概率')
+    expect(w.text()).toContain('60.000%'); expect(w.text()).toContain('0.005%')
     expect(w.findAll('input[type="number"]')).toHaveLength(7); w.unmount()
   })
   it('rejects an invalid total without submitting configuration', async () => {

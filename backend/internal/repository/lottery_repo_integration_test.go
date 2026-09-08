@@ -4,6 +4,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -23,7 +24,7 @@ func lotteryFixture(t *testing.T, n int) (*lotteryRepository, []int64, string) {
 	now := time.Date(2038, 1, 2, 2, 0, 0, 0, time.UTC)
 	r := NewLotteryRepository(integrationDB).(*lotteryRepository)
 	r.clock = func(context.Context, lotteryQuery) (time.Time, error) { return now, nil }
-	r.ticket = func() (int, error) { return 9552, nil } // 1 额度。
+	r.ticket = lotteryOneTicket // 两套概率都固定抽中 1 额度。
 	_, err := integrationDB.ExecContext(ctx, `UPDATE lottery_settings SET enabled=true,admin_repeat_enabled=true WHERE id=1`)
 	require.NoError(t, err)
 	rows, err := integrationDB.QueryContext(ctx, `INSERT INTO users(email,password_hash,balance)
@@ -55,6 +56,13 @@ SELECT $1 || '-' || n || '@example.test','test-hash',3.125 FROM generate_series(
 		require.NoError(t, e)
 	})
 	return r, uids, date
+}
+
+func lotteryOneTicket(scale int) (int, error) {
+	if scale == service.LotteryIntroTicketCount {
+		return 29900, nil
+	}
+	return 9552, nil
 }
 
 func lotteryPaid(t *testing.T, uids []int64) {
@@ -192,11 +200,11 @@ func TestLotteryBudgetOverflowBecomesNoPrizeAndZeroPrizeConsumesAttempt(t *testi
 	d, err := r.Draw(ctx, uids[0], date)
 	require.NoError(t, err)
 	require.Equal(t, 1, d.Prize)
-	r.ticket = func() (int, error) { return 9999, nil }
+	r.ticket = func(scale int) (int, error) { return scale - 1, nil }
 	d, err = r.Draw(ctx, uids[1], date)
 	require.NoError(t, err)
 	require.Zero(t, d.Prize)
-	r.ticket = func() (int, error) { return 9552, nil }
+	r.ticket = lotteryOneTicket
 	replay, err := r.Draw(ctx, uids[1], date)
 	require.NoError(t, err)
 	require.Equal(t, d.ID, replay.ID)
@@ -223,13 +231,13 @@ func TestLotteryTimeGatesAndRandomFailureRollback(t *testing.T) {
 	r.clock = func(context.Context, lotteryQuery) (time.Time, error) {
 		return time.Date(2038, 1, 2, 2, 0, 0, 0, time.UTC), nil
 	}
-	r.ticket = func() (int, error) { return 0, errors.New("entropy unavailable") }
+	r.ticket = func(int) (int, error) { return 0, errors.New("entropy unavailable") }
 	_, err := r.Draw(ctx, uids[0], date)
 	require.ErrorContains(t, err, "entropy unavailable")
 	var count int
 	require.NoError(t, integrationDB.QueryRow(`SELECT count(*) FROM lottery_draws WHERE user_id=$1`, uids[0]).Scan(&count))
 	require.Zero(t, count)
-	r.ticket = func() (int, error) { return 9552, nil }
+	r.ticket = lotteryOneTicket
 	d, err := r.Draw(ctx, uids[0], date)
 	require.NoError(t, err)
 	require.Equal(t, 1, d.Prize)
@@ -275,6 +283,14 @@ func TestLotteryAdminNextDayRulesAndAudit(t *testing.T) {
 	}
 	d, err = r.Draw(ctx, uids[0], "2038-01-03")
 	require.NoError(t, err)
+	require.Equal(t, 1, d.Prize) // 前三次独立规则不受次日普通概率影响。
+	_, err = integrationDB.Exec(`UPDATE users SET role='admin' WHERE id=$1`, uids[0])
+	require.NoError(t, err)
+	d, err = r.Draw(ctx, uids[0], "2038-01-03", uuid.NewString())
+	require.NoError(t, err)
+	require.Equal(t, 1, d.Prize)
+	d, err = r.Draw(ctx, uids[0], "2038-01-03", uuid.NewString())
+	require.NoError(t, err)
 	require.Zero(t, d.Prize)
 	var count int
 	require.NoError(t, integrationDB.QueryRow(`SELECT count(*) FROM lottery_config_audits WHERE actor_id=$1`, uids[0]).Scan(&count))
@@ -303,7 +319,7 @@ func TestLotteryAdminRepeatBypassesPublicGatesButKeepsSharedBudget(t *testing.T)
 	_, err = r.Draw(ctx, uids[1], date, uuid.NewString())
 	require.ErrorIs(t, err, service.ErrLotteryClosed)
 	// 多次无奖也产生不同流水，中奖走真实余额和相同预算。
-	r.ticket = func() (int, error) { return 0, nil }
+	r.ticket = func(int) (int, error) { return 0, nil }
 	d1, err := r.Draw(ctx, uids[0], date, uuid.NewString())
 	require.NoError(t, err)
 	require.Zero(t, d1.Prize)
@@ -321,15 +337,15 @@ func TestLotteryAdminRepeatBypassesPublicGatesButKeepsSharedBudget(t *testing.T)
 	_, err = integrationDB.Exec(`UPDATE lottery_settings SET enabled=true WHERE id=1`)
 	require.NoError(t, err)
 	lotteryPaid(t, []int64{uids[1]})
-	r.ticket = func() (int, error) { return 9552, nil }
+	r.ticket = lotteryOneTicket
 	_, err = r.Draw(ctx, uids[1], date)
 	require.NoError(t, err)
-	r.ticket = func() (int, error) { return 9999, nil }
+	r.ticket = func(scale int) (int, error) { return scale - 1, nil }
 	d3, err := r.Draw(ctx, uids[0], date, uuid.NewString())
 	require.NoError(t, err)
 	require.Zero(t, d3.Prize)
 	// 再让管理员 120 个不同请求并发，最多只能发放剩余 99 额度。
-	r.ticket = func() (int, error) { return 9552, nil }
+	r.ticket = lotteryOneTicket
 	var wg sync.WaitGroup
 	errs := make(chan error, 120)
 	sem := make(chan struct{}, 24)
@@ -511,4 +527,122 @@ func TestLotteryCutoffRechecksTimeBeforeCreditAndAllowsReplay(t *testing.T) {
 	require.NoError(t, integrationDB.QueryRow(`SELECT draw_count,spent FROM lottery_days WHERE activity_date=$1`, date).Scan(&count, &spent))
 	require.Equal(t, 1, count)
 	require.Equal(t, 1, spent)
+}
+
+func TestLotteryIntroFirstThreeAcrossDaysAndZeroPrize(t *testing.T) {
+	r, uids, date := lotteryFixture(t, 1)
+	lotteryPaid(t, uids)
+	ctx := context.Background()
+	// 第一次无奖也消耗一次专属概率；网络重试必须返回相同记录。
+	r.ticket = func(int) (int, error) { return 0, nil }
+	first, err := r.Draw(ctx, uids[0], date)
+	require.NoError(t, err)
+	require.Zero(t, first.Prize)
+	replay, err := r.Draw(ctx, uids[0], date)
+	require.NoError(t, err)
+	require.Equal(t, first.ID, replay.ID)
+	r.clock = func(context.Context, lotteryQuery) (time.Time, error) {
+		return time.Date(2038, 1, 3, 2, 0, 0, 0, time.UTC), nil
+	}
+	// 同一个票号在专属规则中为 5，在普通规则中为无奖。
+	r.ticket = func(scale int) (int, error) {
+		if scale == service.LotteryIntroTicketCount {
+			return 89900, nil
+		}
+		return 0, nil
+	}
+	second, err := r.Draw(ctx, uids[0], "2038-01-03")
+	require.NoError(t, err)
+	require.Equal(t, 5, second.Prize)
+	// 管理员角色不会重置账号的历史次数。
+	_, err = integrationDB.Exec(`UPDATE users SET role='admin' WHERE id=$1`, uids[0])
+	require.NoError(t, err)
+	third, err := r.Draw(ctx, uids[0], "2038-01-03", uuid.NewString())
+	require.NoError(t, err)
+	require.Equal(t, 5, third.Prize)
+	fourth, err := r.Draw(ctx, uids[0], "2038-01-03", uuid.NewString())
+	require.NoError(t, err)
+	require.Zero(t, fourth.Prize)
+	for i, id := range []int64{first.ID, second.ID, third.ID, fourth.ID} {
+		var number int
+		var raw []byte
+		require.NoError(t, integrationDB.QueryRow(`SELECT intro_draw_number,probability_weights FROM lottery_draws WHERE id=$1`, id).Scan(&number, &raw))
+		var weights []int
+		require.NoError(t, json.Unmarshal(raw, &weights))
+		if i < 3 {
+			require.Equal(t, i+1, number)
+			require.Equal(t, service.LotteryIntroWeights(), weights)
+		} else {
+			require.Zero(t, number)
+			require.Equal(t, []int{9552, 400, 30, 10, 5, 2, 1}, weights)
+		}
+	}
+	a, err := r.AdminStatus(ctx, "2038-01-03")
+	require.NoError(t, err)
+	require.Equal(t, 3, a.IntroDrawLimit)
+	require.Equal(t, service.LotteryIntroWeights(), a.IntroWeights)
+}
+
+func TestLotteryIntroConcurrentAdminRequestsOnlyThreeBoosts(t *testing.T) {
+	r, uids, date := lotteryFixture(t, 1)
+	_, err := integrationDB.Exec(`UPDATE users SET role='admin' WHERE id=$1`, uids[0])
+	require.NoError(t, err)
+	r.ticket = func(scale int) (int, error) {
+		if scale == service.LotteryIntroTicketCount {
+			return 29900, nil
+		}
+		return 0, nil
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, 24)
+	for i := 0; i < 24; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, e := r.Draw(context.Background(), uids[0], date, uuid.NewString())
+			errs <- e
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for e := range errs {
+		require.NoError(t, e)
+	}
+	var count, boosted, total int
+	require.NoError(t, integrationDB.QueryRow(`SELECT count(*),count(*) FILTER (WHERE intro_draw_number>0),sum(prize) FROM lottery_draws WHERE user_id=$1`, uids[0]).Scan(&count, &boosted, &total))
+	require.Equal(t, 24, count)
+	require.Equal(t, 3, boosted)
+	require.Equal(t, 3, total)
+}
+
+func TestLotteryIntroCountsLegacyDrawsAndRetainsAttemptsAfterRollback(t *testing.T) {
+	for _, historical := range []int{0, 1, 2, 3, 4} {
+		t.Run(fmt.Sprintf("historical-%d", historical), func(t *testing.T) {
+			r, uids, date := lotteryFixture(t, 1)
+			_, err := integrationDB.Exec(`UPDATE users SET role='admin' WHERE id=$1`, uids[0])
+			require.NoError(t, err)
+			// 模拟旧版流水：没有专属序号和权重快照，但仍占用历史次数。
+			_, err = integrationDB.Exec(`INSERT INTO lottery_days(activity_date,weights) VALUES($1,'[9552,400,30,10,5,2,1]')`, date)
+			require.NoError(t, err)
+			for i := 0; i < historical; i++ {
+				_, err = integrationDB.Exec(`INSERT INTO lottery_draws(user_id,activity_date,prize,ticket,budget_before,balance_before,balance_after,admin_repeat,request_id) VALUES($1,$2,0,0,100,3.125,3.125,true,$3)`, uids[0], date, uuid.NewString())
+				require.NoError(t, err)
+			}
+			r.ticket = func(int) (int, error) { return 0, errors.New("entropy unavailable") }
+			_, err = r.Draw(context.Background(), uids[0], date, uuid.NewString())
+			require.Error(t, err)
+			r.ticket = lotteryOneTicket
+			d, err := r.Draw(context.Background(), uids[0], date, uuid.NewString())
+			require.NoError(t, err)
+			var number, count int
+			require.NoError(t, integrationDB.QueryRow(`SELECT intro_draw_number FROM lottery_draws WHERE id=$1`, d.ID).Scan(&number))
+			if historical < 3 {
+				require.Equal(t, historical+1, number)
+			} else {
+				require.Zero(t, number)
+			}
+			require.NoError(t, integrationDB.QueryRow(`SELECT count(*) FROM lottery_draws WHERE user_id=$1`, uids[0]).Scan(&count))
+			require.Equal(t, historical+1, count)
+		})
+	}
 }
