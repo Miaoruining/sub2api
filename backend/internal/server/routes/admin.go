@@ -31,6 +31,8 @@ func RegisterAdminRoutes(
 	admin.Use(gin.HandlerFunc(auditLog))
 	admin.Use(middleware.AdminComplianceGuard(settingService))
 	{
+		admin.GET("/lottery", h.Lottery.AdminStatus)
+		admin.PUT("/lottery/config", h.Lottery.UpdateConfig)
 		// 部署与运营合规确认
 		registerAdminComplianceRoutes(admin, h)
 

@@ -54,6 +54,9 @@
         <!-- Subscription Progress (for users with active subscriptions) -->
         <SubscriptionProgressMini v-if="user" />
 
+        <!-- 抽奖入口紧邻金额左侧，移动端同样保留 -->
+        <LotteryEntry v-if="user && !authStore.isSimpleMode" />
+
         <!-- Balance Display -->
         <div
           v-if="user"
@@ -255,6 +258,7 @@
 </template>
 
 <script setup lang="ts">
+import LotteryEntry from '@/components/lottery/LotteryEntry.vue'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'

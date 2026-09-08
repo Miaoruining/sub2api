@@ -265,6 +265,16 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/lottery', name: 'Lottery',
+    component: () => import('@/views/user/LotteryView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: false, title: 'Daily lucky draw', titleKey: 'lottery.title', descriptionKey: 'lottery.description' }
+  },
+  {
+    path: '/admin/lottery', name: 'AdminLottery',
+    component: () => import('@/views/admin/LotteryView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'Draw management', titleKey: 'lottery.adminTitle', descriptionKey: 'lottery.adminDescription' }
+  },
+  {
     path: '/affiliate',
     name: 'Affiliate',
     component: () => import('@/views/user/AffiliateView.vue'),
