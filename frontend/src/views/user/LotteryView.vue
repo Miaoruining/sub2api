@@ -159,9 +159,9 @@ onUnmounted(() => { disposed = true; if (timer) clearInterval(timer) })
 
 <style scoped>
 .lottery-stage { background: radial-gradient(ellipse at top right, #ffe4e6, #fff7f5 65%); border: 1px solid #f5d8db; }
-:global(.dark) .lottery-stage { background: radial-gradient(ellipse at top right, #43212b, #201a20 70%); border-color: #52313b; }
+:global(.dark .lottery-stage) { background: radial-gradient(ellipse at top right, #43212b, #201a20 70%); border-color: #52313b; }
 .prize-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 7.5rem; border-radius: .9rem; background: #fff; color: #b42a3c; border: 1px solid #f3e2e5; }
-:global(.dark) .prize-tile { background: #2b2229; color: #fda4af; border-color: #4e303a; }
+:global(.dark .lottery-stage .prize-tile) { background: #2b2229; color: #fda4af; border-color: #4e303a; }
 .prize-tile.selected { outline: 2px solid #c72d40; outline-offset: 2px; }
 .draw-button { width: 100%; min-height: 3rem; padding: .75rem 1rem; border-radius: .75rem; background: #c72d40; color: white; font-size: .875rem; font-weight: 600; transition: background .2s, transform .2s; }
 .draw-button:hover:not(:disabled) { background: #ae2435; }
