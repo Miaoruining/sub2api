@@ -111,7 +111,7 @@ func (r *lotteryRepository) Status(ctx context.Context, uid int64) (*service.Lot
 		return nil, err
 	}
 	date, open, next := service.LotteryWindow(now)
-	out := &service.LotteryStatus{ActivityDate: date, State: "ready", ServerTime: now, OpensAt: open, NextOpensAt: next, Prizes: service.LotteryPrizes(), History: []service.LotteryDraw{}}
+	out := &service.LotteryStatus{ActivityDate: date, State: "ready", ServerTime: now, OpensAt: open, ClosesAt: open.Add(service.LotteryWindowDuration), NextOpensAt: next, Prizes: service.LotteryPrizes(), History: []service.LotteryDraw{}}
 	var enabled, adminEnabled bool
 	if err := tx.QueryRowContext(ctx, `SELECT enabled,admin_repeat_enabled FROM lottery_settings WHERE id=1`).Scan(&enabled, &adminEnabled); err != nil {
 		return nil, err
@@ -153,6 +153,8 @@ func (r *lotteryRepository) Status(ctx context.Context, uid int64) (*service.Lot
 		out.State = "disabled"
 	case now.Before(open) && !out.AdminRepeat:
 		out.State = "not_open"
+	case !now.Before(out.ClosesAt) && !out.AdminRepeat:
+		out.State = "ended"
 	case spent >= service.LotteryDailyBudget:
 		out.State = "ended"
 	case !out.Eligible:
@@ -204,8 +206,8 @@ func (r *lotteryRepository) Draw(ctx context.Context, uid int64, requestedDate s
 	if err != nil {
 		return nil, err
 	}
-	date, open, _ := service.LotteryWindow(now)
-	if date != requestedDate || (now.Before(open) && !adminRepeat) {
+	date, _, _ := service.LotteryWindow(now)
+	if date != requestedDate || (!service.LotteryIsOpen(now) && !adminRepeat) {
 		return nil, service.ErrLotteryClosed
 	}
 	if adminRepeat && requestID == "" {
@@ -250,7 +252,7 @@ func (r *lotteryRepository) Draw(ctx context.Context, uid int64, requestedDate s
 		} else if d != nil {
 			return d, tx.Commit()
 		}
-		if !enabled || now.Before(open) {
+		if !enabled || !service.LotteryIsOpen(now) {
 			return nil, service.ErrLotteryClosed
 		}
 	}
@@ -272,7 +274,7 @@ func (r *lotteryRepository) Draw(ctx context.Context, uid int64, requestedDate s
 		return nil, err
 	}
 	lockedDate, _, _ := service.LotteryWindow(now)
-	if lockedDate != date || (now.Before(open) && !adminRepeat) {
+	if lockedDate != date || (!service.LotteryIsOpen(now) && !adminRepeat) {
 		return nil, service.ErrLotteryClosed
 	}
 	ticket, err := r.ticket()

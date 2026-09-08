@@ -13,6 +13,7 @@ export interface LotteryStatus {
   admin_repeat?: boolean
   server_time: string
   opens_at: string
+  closes_at: string
   next_opens_at: string
   prizes: number[]
   today: LotteryDraw | null

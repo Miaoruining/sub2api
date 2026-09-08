@@ -11,6 +11,7 @@ import (
 )
 
 const LotteryDailyBudget = 100
+const LotteryWindowDuration = time.Hour
 
 var (
 	ErrLotteryClosed     = infraerrors.Conflict("LOTTERY_CLOSED", "今日活动暂未开放或已结束")
@@ -26,6 +27,12 @@ func LotteryWindow(now time.Time) (string, time.Time, time.Time) {
 	n := now.In(lotteryZone)
 	open := time.Date(n.Year(), n.Month(), n.Day(), 10, 0, 0, 0, lotteryZone)
 	return n.Format("2006-01-02"), open, open.AddDate(0, 0, 1)
+}
+
+// 普通用户开放区间为北京时间 [10:00, 11:00)，不包含 11:00。
+func LotteryIsOpen(now time.Time) bool {
+	_, open, _ := LotteryWindow(now)
+	return !now.Before(open) && now.Before(open.Add(LotteryWindowDuration))
 }
 
 func LotteryPrizes() []int { return []int{0, 1, 5, 10, 20, 50, 100} }
@@ -83,6 +90,7 @@ type LotteryStatus struct {
 	AdminRepeat  bool          `json:"admin_repeat,omitempty"`
 	ServerTime   time.Time     `json:"server_time"`
 	OpensAt      time.Time     `json:"opens_at"`
+	ClosesAt     time.Time     `json:"closes_at"`
 	NextOpensAt  time.Time     `json:"next_opens_at"`
 	Prizes       []int         `json:"prizes"`
 	Today        *LotteryDraw  `json:"today"`

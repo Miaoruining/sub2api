@@ -74,3 +74,24 @@ func TestLotteryUserDTOHasNoInternalFields(t *testing.T) {
 		require.NotContains(t, string(raw), field)
 	}
 }
+
+func TestLotteryOpeningWindowIsTenToElevenBeijing(t *testing.T) {
+	for _, test := range []struct {
+		utc  string
+		open bool
+	}{
+		{"2026-09-08T01:59:59Z", false},
+		{"2026-09-08T02:00:00Z", true},
+		{"2026-09-08T02:59:59.999999999Z", true},
+		{"2026-09-08T03:00:00Z", false},
+		{"2026-09-08T03:00:01Z", false},
+		{"2026-09-08T15:59:59Z", false},
+		{"2026-09-08T16:00:00Z", false},
+	} {
+		now, err := time.Parse(time.RFC3339Nano, test.utc)
+		require.NoError(t, err)
+		for _, offset := range []int{-7, 0, 8} {
+			require.Equal(t, test.open, LotteryIsOpen(now.In(time.FixedZone("server", offset*3600))), test.utc)
+		}
+	}
+}

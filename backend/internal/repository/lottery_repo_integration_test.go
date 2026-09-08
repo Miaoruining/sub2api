@@ -443,3 +443,72 @@ func TestLotteryAdminRepeatRequestReplayAndRevocation(t *testing.T) {
 	require.NoError(t, integrationDB.QueryRow(`SELECT count(*) FROM lottery_config_audits WHERE actor_id=$1 AND before_config ? 'admin_repeat_enabled' AND after_config ? 'admin_repeat_enabled'`, uids[0]).Scan(&audits))
 	require.Equal(t, 2, audits)
 }
+
+func TestLotteryElevenOClockCutoffAndAdministratorException(t *testing.T) {
+	for _, test := range []struct {
+		hour, minute, second int
+		state                string
+	}{
+		{1, 59, 59, "not_open"}, {2, 0, 0, "ready"}, {2, 59, 59, "ready"},
+		{3, 0, 0, "ended"}, {3, 0, 1, "ended"}, {15, 59, 59, "ended"},
+	} {
+		t.Run(fmt.Sprintf("UTC-%02d:%02d:%02d", test.hour, test.minute, test.second), func(t *testing.T) {
+			r, uids, date := lotteryFixture(t, 2)
+			lotteryPaid(t, []int64{uids[0]})
+			ctx := context.Background()
+			_, err := integrationDB.Exec(`UPDATE users SET role='admin' WHERE id=$1`, uids[1])
+			require.NoError(t, err)
+			now := time.Date(2038, 1, 2, test.hour, test.minute, test.second, 0, time.UTC)
+			r.clock = func(context.Context, lotteryQuery) (time.Time, error) { return now, nil }
+			s, err := r.Status(ctx, uids[0])
+			require.NoError(t, err)
+			require.Equal(t, test.state, s.State)
+			require.Equal(t, time.Date(2038, 1, 2, 3, 0, 0, 0, time.UTC), s.ClosesAt.UTC())
+			_, err = r.Draw(ctx, uids[0], date)
+			if test.state == "ready" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorIs(t, err, service.ErrLotteryClosed)
+			}
+			a, err := r.Status(ctx, uids[1])
+			require.NoError(t, err)
+			require.Equal(t, "ready", a.State)
+			_, err = r.Draw(ctx, uids[1], date, uuid.NewString())
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestLotteryCutoffRechecksTimeBeforeCreditAndAllowsReplay(t *testing.T) {
+	r, uids, date := lotteryFixture(t, 2)
+	lotteryPaid(t, uids)
+	ctx := context.Background()
+	inside := time.Date(2038, 1, 2, 2, 59, 59, 0, time.UTC)
+	cutoff := time.Date(2038, 1, 2, 3, 0, 0, 0, time.UTC)
+	r.clock = func(context.Context, lotteryQuery) (time.Time, error) { return inside, nil }
+	first, err := r.Draw(ctx, uids[0], date)
+	require.NoError(t, err)
+	r.clock = func(context.Context, lotteryQuery) (time.Time, error) { return cutoff, nil }
+	replay, err := r.Draw(ctx, uids[0], date)
+	require.NoError(t, err)
+	require.Equal(t, first.ID, replay.ID)
+	// 模拟排队跨过 11:00：请求初检在窗口内，获得锁后的时钟已到截止时间。
+	calls := 0
+	r.clock = func(context.Context, lotteryQuery) (time.Time, error) {
+		calls++
+		if calls == 1 {
+			return inside, nil
+		}
+		return cutoff, nil
+	}
+	_, err = r.Draw(ctx, uids[1], date)
+	require.ErrorIs(t, err, service.ErrLotteryClosed)
+	require.Equal(t, 2, calls)
+	var balance float64
+	require.NoError(t, integrationDB.QueryRow(`SELECT balance FROM users WHERE id=$1`, uids[1]).Scan(&balance))
+	require.Equal(t, 3.125, balance)
+	var count, spent int
+	require.NoError(t, integrationDB.QueryRow(`SELECT draw_count,spent FROM lottery_days WHERE activity_date=$1`, date).Scan(&count, &spent))
+	require.Equal(t, 1, count)
+	require.Equal(t, 1, spent)
+}

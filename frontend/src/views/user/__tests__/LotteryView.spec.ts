@@ -14,7 +14,7 @@ vi.mock('vue-i18n', async (importOriginal) => ({ ...await importOriginal<typeof 
   },
 }) }))
 function state(overrides: Partial<LotteryStatus> = {}): LotteryStatus {
-  return { activity_date: '2026-09-08', state: 'ready', eligible: true, server_time: '2026-09-08T02:00:00Z', opens_at: '2026-09-08T10:00:00+08:00', next_opens_at: '2026-09-09T10:00:00+08:00', prizes: [0, 1, 5, 10, 20, 50, 100], today: null, history: [], ...overrides }
+  return { activity_date: '2026-09-08', state: 'ready', eligible: true, server_time: '2026-09-08T02:00:00Z', opens_at: '2026-09-08T10:00:00+08:00', closes_at: '2026-09-08T11:00:00+08:00', next_opens_at: '2026-09-09T10:00:00+08:00', prizes: [0, 1, 5, 10, 20, 50, 100], today: null, history: [], ...overrides }
 }
 function render() {
   return mount(LotteryView, { global: {
@@ -72,6 +72,25 @@ describe('LotteryView', () => {
     const w = render(); await flushPromises()
     expect(w.get('[role="alert"]').text()).toContain('状态加载失败')
     expect(w.find('.draw-button').exists()).toBe(false); w.unmount()
+  })
+  it('stops ordinary draws at 11:00 even if refreshing the status fails', async () => {
+    api.status.mockResolvedValueOnce(state({ server_time: '2026-09-08T02:59:59Z' }))
+    const w = render(); await flushPromises()
+    expect(w.get('.draw-button').attributes('disabled')).toBeUndefined()
+    expect(w.text()).toContain('10:00–11:00')
+    api.status.mockRejectedValue(new Error('network'))
+    await vi.advanceTimersByTimeAsync(1000); await flushPromises()
+    expect(w.get('.draw-button').attributes('disabled')).toBeDefined()
+    expect(w.text()).toContain('今日活动已结束')
+    await w.get('.draw-button').trigger('click')
+    expect(api.draw).not.toHaveBeenCalled(); w.unmount()
+  })
+  it('does not close the administrator repeat mode at 11:00', async () => {
+    api.status.mockResolvedValue(state({ admin_repeat: true, server_time: '2026-09-08T02:59:59Z' }))
+    const w = render(); await flushPromises()
+    await vi.advanceTimersByTimeAsync(1000); await flushPromises()
+    expect(w.get('.draw-button').attributes('disabled')).toBeUndefined()
+    expect(w.text()).toContain('管理员抽奖已就绪'); w.unmount()
   })
   it('lets administrators draw again using a new request id after each confirmed result', async () => {
     api.status.mockResolvedValue(state({ admin_repeat: true }))

@@ -39,7 +39,7 @@
             {{ t(status.eligible ? 'lottery.eligible' : 'lottery.ineligible') }}
           </p>
           <div class="mt-auto space-y-3 pt-7">
-            <button class="draw-button" :disabled="drawing || (!pendingDraw && status.state !== 'ready') || loading" @click="draw">
+            <button class="draw-button" :disabled="drawing || (!pendingDraw && effectiveState !== 'ready') || loading" @click="draw">
               {{ t(drawing ? 'lottery.drawing' : pendingDraw ? 'lottery.retryDraw' : status.admin_repeat && status.today ? 'lottery.again' : 'lottery.draw') }}
             </button>
             <router-link v-if="!status.eligible" to="/purchase" class="btn btn-secondary w-full">{{ t('lottery.recharge') }}</router-link>
@@ -111,9 +111,11 @@ let offset = 0
 let ticks = 0
 let timer: ReturnType<typeof setInterval> | undefined
 let disposed = false
+const windowEnded = computed(() => !!status.value && !status.value.admin_repeat && now.value >= Date.parse(status.value.closes_at))
+const effectiveState = computed(() => status.value?.state === 'ready' && windowEnded.value ? 'ended' : status.value?.state)
 const stateText = computed(() => {
   if (!status.value) return ''
-  const state = status.value.state
+  const state = effectiveState.value
   return t(`lottery.${status.value.admin_repeat && state === 'ready' ? 'adminReady' : status.value.admin_repeat && state === 'ended' ? 'adminEnded' : state}`)
 })
 const noPrizeHint = computed(() => t(status.value?.admin_repeat ? 'lottery.adminNoPrizeHint' : 'lottery.noPrizeHint'))
@@ -138,7 +140,7 @@ async function load(background = false) {
   } finally { loading.value = false }
 }
 async function draw() {
-  if (drawing.value || loading.value || !status.value || (!pendingDraw.value && status.value.state !== 'ready')) return
+  if (drawing.value || loading.value || !status.value || (!pendingDraw.value && effectiveState.value !== 'ready')) return
   const activityDate = pendingDraw.value?.date || status.value.activity_date
   const adminAttempt = !!pendingDraw.value || !!status.value.admin_repeat
   drawing.value = true
@@ -164,9 +166,10 @@ async function draw() {
 onMounted(() => {
   void load()
   timer = setInterval(() => {
+    const wasEnded = windowEnded.value
     now.value = Date.now() + offset
     ticks++
-    if (!drawing.value && document.visibilityState === 'visible' && (ticks % 30 === 0 || (status.value?.state === 'not_open' && countdown.value === '00:00:00'))) void load(true)
+    if (!drawing.value && document.visibilityState === 'visible' && (ticks % 30 === 0 || (!wasEnded && windowEnded.value) || (status.value?.state === 'not_open' && countdown.value === '00:00:00'))) void load(true)
   }, 1000)
 })
 onUnmounted(() => { disposed = true; if (timer) clearInterval(timer) })
