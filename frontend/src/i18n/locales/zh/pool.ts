@@ -1,5 +1,6 @@
 export default {
   "pool": {
+    "subscriptionShare": "相当于 1/{seats} {plan}",
     "pricingTitle": "拼团计费标准",
     "pricingBanner": "拼团 $ 额度按 OpenAI 官方 API 标准价扣减",
     "pricingBannerHint": "输入、输出与缓存分别计量，查看模型价格和扣额说明。",

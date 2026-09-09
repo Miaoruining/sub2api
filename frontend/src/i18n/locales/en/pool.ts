@@ -1,5 +1,6 @@
 export default {
   "pool": {
+    "subscriptionShare": "Equivalent to 1/{seats} {plan}",
     "pricingTitle": "Group billing rates",
     "pricingBanner": "Group credits use official OpenAI API Standard rates",
     "pricingBannerHint": "Input, output and cache usage are metered separately. See model rates and billing details.",

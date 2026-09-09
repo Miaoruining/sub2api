@@ -1,6 +1,7 @@
 <template>
  <div class="space-y-3" data-testid="pool-credit-summary">
   <div class="flex items-center justify-between text-sm"><span class="font-medium">{{ plan === 'pro' ? 'Pro' : 'Plus' }} · {{ t('pool.creditQuota') }}</span><span class="text-gray-500">{{ t('pool.perSeat') }}</span></div>
+  <span v-if="seats > 0" class="inline-flex rounded-full bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 dark:bg-primary-950/30 dark:text-primary-300">{{ t('pool.subscriptionShare', { seats, plan: plan === 'pro' ? 'Pro' : 'Plus' }) }}</span>
   <dl class="grid grid-cols-2 gap-3 rounded-xl bg-gray-50 p-4 text-sm dark:bg-dark-800">
    <div><dt class="text-gray-500">{{ t('pool.total_credit') }}</dt><dd class="mt-1 font-semibold">{{ money(config.total_credit) }}</dd></div>
    <div><dt class="text-gray-500">{{ t('pool.personalCredit') }}</dt><dd class="mt-1 font-semibold">{{ money(limit) }}</dd></div>
