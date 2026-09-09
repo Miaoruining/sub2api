@@ -14,7 +14,7 @@ vi.mock('vue-i18n', async original => ({ ...await original<typeof import('vue-i1
 function order(overrides: Partial<PoolOrder> = {}): PoolOrder { return { id: 1, title: '测试拼单', group_id: 10, seats: 4, price: 10, duration_hours: 720, total_tokens: 4000000, total_requests: 4000, concurrency: 1, join_deadline: '2030-01-01T00:00:00Z', starts_at: null, expires_at: null, status: 'forming', joined: 1, tokens_used: 0, requests_used: 0, reserved_tokens: 0, mine: null, shared_account: null, ...overrides } }
 function render(admin = false) { return mount(PoolOrdersView, { props: {admin}, global: { stubs: { AppLayout: { template: '<main><slot/></main>' }, BaseDialog: { props: ['show', 'title'], template: '<section v-if="show" role="dialog"><h2>{{title}}</h2><slot/><slot name="footer"/></section>' }, RouterLink: { template: '<a><slot/></a>' } } } }) }
 describe('拼单席位和个人额度', () => {
- beforeEach(() => { vi.clearAllMocks(); api.list.mockResolvedValue([order()]); api.products.mockResolvedValue([]); api.act.mockResolvedValue(undefined); api.refreshUser.mockResolvedValue(undefined) })
+ beforeEach(() => { vi.clearAllMocks(); vi.spyOn(window, 'scrollTo').mockImplementation(() => {}); api.list.mockResolvedValue([order()]); api.products.mockResolvedValue([]); api.act.mockResolvedValue(undefined); api.refreshUser.mockResolvedValue(undefined) })
  afterEach(() => vi.restoreAllMocks())
  it('发布不选择号池，待发货成员不能提前领取 Key', async () => {
   const admin = render(true); await flushPromises(); expect(admin.text()).toContain('发货后有效天数'); expect(admin.text()).not.toContain('720'); expect(api.resources).not.toHaveBeenCalled(); admin.unmount()
@@ -25,7 +25,7 @@ describe('拼单席位和个人额度', () => {
   const product={id:5,title:'Plus 2 人团',description:'共享套餐',seats:2,price:10,duration_days:30,formation_days:2,total_tokens:2000000,total_requests:2000,concurrency:1,status:'active',version:1}
   api.products.mockResolvedValue([product]);api.purchase.mockRejectedValueOnce(new Error('网络错误')).mockResolvedValueOnce({order_id:10})
   const w=render();await flushPromises();expect(api.purchase).not.toHaveBeenCalled();expect(w.text()).toContain('30 天')
-  await w.findAll('button').find(b=>b.text()==='购买并发起拼团')!.trigger('click')
+  await w.findAll('button').find(b=>b.text()==='发起拼团')!.trigger('click')
   const confirm=()=>w.get('[role="dialog"]').findAll('button').find(b=>b.text()==='确认')!
   await confirm().trigger('click');await flushPromises();expect(w.get('[role="alert"]').text()).toBe('网络错误')
   const requestId=api.purchase.mock.calls[0][1];await confirm().trigger('click');await flushPromises();expect(api.purchase.mock.calls[1][1]).toBe(requestId);expect(w.text()).toContain('拼单 #10 已创建');expect(w.text()).toContain('Plus 2 人团');w.unmount()
@@ -37,7 +37,7 @@ describe('拼单席位和个人额度', () => {
  it('确认席位金额后购买，重复点击不会重复发送请求', async () => {
   let resolve!: () => void; api.act.mockImplementation(() => new Promise<void>(r => { resolve = r }))
   const w = render(); await flushPromises()
-  await w.findAll('button').find(b => b.text() === '购买席位')!.trigger('click')
+  await w.findAll('button').find(b => b.text() === '立即参团')!.trigger('click')
   expect(w.get('[role="dialog"]').text()).toContain('将扣除 10 站内额度')
   const confirm = w.get('[role="dialog"]').findAll('button').find(b => b.text() === '确认')!
   await confirm.trigger('click'); await confirm.trigger('click'); expect(api.act).toHaveBeenCalledTimes(1); expect(api.act).toHaveBeenCalledWith(1, 'join')
@@ -45,7 +45,7 @@ describe('拼单席位和个人额度', () => {
  })
  it('显示整车和个人配额及预占，并隐藏其他成员 Key', async () => {
   api.list.mockResolvedValue([order({ status: 'active', mine: { id: 2, status: 'joined', key_id: 8, paid: 10, refunded: 0, tokens_used: 100, requests_used: 2, reserved_tokens: 900, inflight: 1 }, shared_account: { id: 0, group_id: 0, name: '', type: 'oauth', status: 'active', used_5h: null, used_7d: 25 } })])
-  const w = render(); await flushPromises(); expect(w.text()).toContain('我的已用 / Token 配额'); expect(w.text()).toContain('进行中预占 900'); expect(w.text()).toContain('未知'); expect(w.text()).toContain('75%'); expect(w.text()).toContain('查看专属 Key #8'); expect(w.findAll('button').some(b => b.text() === '购买席位')).toBe(false); w.unmount()
+  const w = render(); await flushPromises(); expect(w.text()).toContain('我的已用 / Token 配额'); expect(w.text()).toContain('进行中预占 900'); expect(w.text()).toContain('未知'); expect(w.text()).toContain('75%'); expect(w.text()).toContain('查看专属 Key #8'); expect(w.findAll('button').some(b => b.text() === '立即参团')).toBe(false); w.unmount()
  })
  it('失败时展示错误并恢复按钮，空列表可刷新', async () => {
   api.list.mockRejectedValueOnce(new Error('暂不可用')); const w = render(); await flushPromises(); expect(w.get('[role="alert"]').text()).toContain('暂不可用')
@@ -100,6 +100,39 @@ describe('拼单席位和个人额度', () => {
  it('Pro 动态账号返回窗口时展示窗口而非无限承诺', async()=>{
   api.list.mockResolvedValue([order({status:'active',quota_mode:'dynamic',plan_type:'pro',mine:{id:2,status:'joined',key_id:8,paid:10,refunded:0,tokens_used:0,requests_used:0,reserved_tokens:0,inflight:0,dynamic_quota:{status:'ready',shadow:false,windows:[{key:'5h',account_remaining_percent:80,used_percent:20,reserved_percent:0,remaining_percent:40,entitlement_percent:40,reset_at:'2030-01-01T00:00:00Z',observed_at:'2029-12-31T00:00:00Z',status:'ready'}]}}})])
   const w=render();await flushPromises();expect(w.text()).toContain('Pro');expect(w.text()).toContain('5 小时窗口');expect(w.text()).toContain('40 pp');expect(w.text()).not.toContain('Pro 不设置 5 小时和周额度');w.unmount()
+ })
+
+ it('首屏先展示商品，更多商品可展开，拼团列表保持独立', async()=>{
+  api.products.mockResolvedValue([1,2,3].map(id=>({id,title:`商品 ${id}`,description:'',seats:2,price:10,duration_days:30,formation_days:2,total_tokens:2000000,total_requests:2000,concurrency:1,status:'active',version:1})))
+  const w=render();await flushPromises()
+  const products=w.get('[data-test="lobby-products"]')
+  expect(products.findAll('article').length).toBe(2)
+  expect(w.html().indexOf('lobby-products')).toBeLessThan(w.html().indexOf('lobby-forming'))
+  await w.get('[data-test="toggle-products"]').trigger('click')
+  expect(products.text()).toContain('商品 3')
+  await w.get('[data-test="toggle-products"]').trigger('click')
+  expect(products.text()).not.toContain('商品 3');w.unmount()
+ })
+ it('已参加的团保留退出入口，截止或满员的团不能再次参团', async()=>{
+  api.list.mockResolvedValue([
+   order({mine:{id:2,status:'joined',key_id:null,paid:10,refunded:0,tokens_used:0,requests_used:0,reserved_tokens:0,inflight:0}}),
+   order({id:2,join_deadline:'2020-01-01T00:00:00Z'}),order({id:3,joined:4})
+  ])
+  const w=render();await flushPromises();const rows=w.findAll('[data-test="lobby-order-row"]')
+  expect(rows[0].find('[data-test="lobby-join"]').exists()).toBe(false)
+  await rows[0].get('[data-test="lobby-leave"]').trigger('click')
+  expect(w.get('[role="dialog"]').text()).toContain('全额退回余额')
+  expect(rows[1].get('[data-test="lobby-join"]').attributes('disabled')).toBeDefined()
+  expect(rows[2].get('[data-test="lobby-join"]').attributes('disabled')).toBeDefined();w.unmount()
+ })
+
+ it('已退款成员不能重新加入同一团，订单详情可单独查看', async()=>{
+  api.list.mockResolvedValue([order({mine:{id:2,status:'refunded',key_id:null,paid:10,refunded:10,tokens_used:7,requests_used:1,reserved_tokens:0,inflight:0}})])
+  const w=render();await flushPromises();const row=w.get('[data-test="lobby-order-row"]')
+  expect(row.find('[data-test="lobby-join"]').exists()).toBe(false)
+  expect(row.get('[data-test="lobby-left"]').text()).toContain('退')
+  await row.get('[data-test="lobby-details"]').trigger('click')
+  expect(w.get('[role="dialog"]').text()).toContain('7 / 1,000,000');w.unmount()
  })
 
 })

@@ -1,17 +1,30 @@
 <template>
   <AppLayout>
-    <div class="mx-auto max-w-7xl space-y-8 pb-8">
+    <div class="mx-auto max-w-7xl space-y-6 pb-8">
       <header class="flex flex-wrap items-start justify-between gap-4">
-        <div><p class="mb-2 text-sm font-medium text-primary-600">MODELPORT / {{ t('pool.equalShare') }}</p><h1 class="text-2xl font-semibold">{{ t(admin ? 'pool.adminTitle' : 'pool.title') }}</h1><p class="mt-2 max-w-3xl text-sm leading-6 text-gray-500">{{ t('pool.description') }}</p></div>
-        <div class="flex gap-2"><router-link v-if="admin" to="/admin/pool-resources" class="btn btn-secondary">{{ t('pool.resourceTitle') }}</router-link><button class="btn btn-secondary" :disabled="busy" @click="load">{{ t('pool.refresh') }}</button></div>
+        <div>
+          <p v-if="admin" class="mb-2 text-sm font-medium text-primary-600">MODELPORT / {{ t('pool.equalShare') }}</p>
+          <h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">{{ t(admin ? 'pool.adminTitle' : 'pool.title') }}</h1>
+          <template v-if="admin">
+            <p class="mt-2 max-w-3xl text-sm leading-6 text-gray-500">{{ t('pool.description') }}</p>
+          </template>
+          <template v-else>
+            <p class="mt-2 text-base text-gray-700 dark:text-gray-200">{{ t('pool.lobby.subtitle') }}</p>
+            <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('pool.lobby.meta') }}</p>
+          </template>
+        </div>
+        <div class="flex flex-wrap items-center justify-end gap-2">
+          <router-link to="/pool-orders/pricing" class="inline-flex items-center gap-1 text-sm font-medium text-primary-600 underline-offset-4 transition hover:text-primary-500 hover:underline dark:text-primary-300 dark:hover:text-primary-200">
+            {{ t('pool.lobby.pricingEntry') }} <span aria-hidden="true">↗</span>
+          </router-link>
+          <router-link v-if="admin" to="/admin/pool-resources" class="btn btn-secondary btn-sm">{{ t('pool.resourceTitle') }}</router-link>
+          <button class="btn btn-secondary btn-sm" :disabled="busy" @click="load">{{ t('pool.refresh') }}</button>
+        </div>
       </header>
-      <section class="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-primary-100 bg-primary-50/60 p-5 dark:border-primary-900 dark:bg-primary-950/20">
-        <div><h2 class="font-semibold text-primary-800 dark:text-primary-200">{{ t('pool.pricingBanner') }}</h2><p class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ t('pool.pricingBannerHint') }}</p></div>
-        <router-link to="/pool-orders/pricing" class="btn btn-secondary shrink-0">{{ t('pool.pricingLink') }} <span aria-hidden="true">→</span></router-link>
-      </section>
       <p v-if="error && !selected" role="alert" class="rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{{ error }}</p>
       <p v-if="success" role="status" class="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">{{ success }}</p>
-      <form v-if="admin" class="card space-y-4 p-6" @submit.prevent="saveProduct">
+      <template v-if="admin">
+      <form class="card space-y-4 p-6" @submit.prevent="saveProduct">
         <h2 class="font-semibold">{{ t(form.id ? 'pool.editProduct' : 'pool.publishProduct') }}</h2>
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <label class="text-sm">{{ t('pool.productName') }}<input v-model="form.title" required maxlength="100" class="input mt-1" :placeholder="t('pool.productExample')" :disabled="busy" /></label>
@@ -57,6 +70,45 @@
       </section>
       <section v-if="managed.length" class="space-y-4"><h2 class="text-xl font-semibold">{{ t(admin ? 'pool.orderManagement' : 'pool.myOrders') }}</h2><div class="grid gap-5 lg:grid-cols-2"><PoolOrderCard v-for="o in managed" :key="o.id" :o="o" :admin="admin" :busy="busy" @act="selectOrder" /></div></section>
       <details class="rounded-xl border border-gray-200 p-4 text-sm leading-6 dark:border-dark-700"><summary class="cursor-pointer font-medium">{{ t('pool.rulesTitle') }}</summary><p class="mt-3 text-gray-500">{{ t('pool.rules') }}</p></details>
+      </template>
+      <template v-else>
+        <p v-if="loading" role="status" class="card p-8 text-center text-gray-500">{{ t('pool.loading') }}</p>
+        <section id="pool-products" data-test="lobby-products" class="scroll-mt-24 space-y-3">
+          <div class="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 class="text-lg font-semibold">{{ t('pool.products') }} <span class="ml-2 text-sm font-normal text-gray-500">{{ t('pool.productsHint') }}</span></h2>
+            <button v-if="products.length > 2" data-test="toggle-products" class="text-sm text-primary-600 hover:underline dark:text-primary-300" @click="showAllProducts = !showAllProducts">{{ t(showAllProducts ? 'pool.lobby.showFewerProducts' : 'pool.lobby.showAllProducts', {count: products.length}) }}</button>
+          </div>
+          <p v-if="!products.length && !loading" class="card p-8 text-center text-sm text-gray-500">{{ t('pool.noProducts') }}</p>
+          <div class="grid auto-cols-[90%] grid-flow-col gap-4 overflow-x-auto pb-1 snap-x snap-mandatory sm:grid-flow-row sm:grid-cols-2 sm:overflow-visible">
+            <PoolLobbyProductCard v-for="p in visibleProducts" :key="p.id" :product="p" :busy="busy" class="snap-start" @purchase="selectProduct" />
+          </div>
+        </section>
+        <section data-test="lobby-forming" class="space-y-3">
+          <div class="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 class="text-lg font-semibold"><span class="text-red-600 dark:text-red-400">{{ t('pool.ongoing') }}</span> <span class="ml-2 text-sm font-normal text-gray-500">{{ t('pool.lobby.formingHint') }}</span></h2>
+            <span class="text-xs text-gray-500">{{ forming.length }} {{ t('pool.groupsUnit') }}</span>
+          </div>
+          <div v-if="!forming.length && !loading" class="card flex flex-wrap items-center justify-center gap-3 p-8 text-sm text-gray-500"><Icon name="search"/><span>{{ t('pool.noForming') }} · {{ t('pool.startHint') }}</span></div>
+          <div v-else-if="forming.length" class="rounded-xl border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800/40">
+            <div class="hidden grid-cols-[minmax(0,1.35fr)_minmax(0,1.2fr)_minmax(100px,.6fr)_minmax(150px,.8fr)_auto] gap-4 border-b border-gray-200 px-5 py-3 text-xs text-gray-500 lg:grid dark:border-dark-700">
+              <span>{{ t('pool.productName') }}</span><span>{{ t('pool.lobby.progressLabel') }}</span><span>{{ t('pool.lobby.priceLabel') }}</span><span>{{ t('pool.lobby.deadlineSuffix') }}</span><span class="w-[178px] text-right">{{ t('pool.lobby.actions') }}</span>
+            </div>
+            <PoolLobbyOrderRow v-for="o in forming" :key="o.id" :order="o" :busy="busy" @act="selectOrder" />
+          </div>
+        </section>
+        <details class="rounded-xl border border-gray-200 p-4 dark:border-dark-700" :open="userMine.length > 0">
+          <summary class="cursor-pointer text-sm font-medium">{{ t('pool.myOrders') }} <span class="ml-2 font-normal text-gray-500">{{ userMine.length }}</span></summary>
+          <div v-if="userMine.length" class="mt-4 grid gap-4 lg:grid-cols-2"><PoolOrderCard v-for="o in userMine" :key="o.id" :o="o" :busy="busy" @act="selectOrder" /></div>
+        </details>
+        <aside>
+          <details class="rounded-xl border border-gray-200 p-4 dark:border-dark-700">
+            <summary class="cursor-pointer text-sm font-medium">{{ t('pool.recentSuccess') }} <span class="ml-2 font-normal text-gray-500">{{ t('pool.recentHint') }} · {{ recent.length }}</span></summary>
+            <p v-if="!recent.length" class="mt-3 text-sm text-gray-500">{{ t('pool.noRecent') }}</p>
+            <ul v-else class="mt-3 grid gap-3 text-sm sm:grid-cols-2"><li v-for="o in recent" :key="o.id"><p class="font-medium">{{ o.title }}</p><p class="mt-1 text-xs text-gray-500">#{{ o.id }} · {{ o.seats }} {{ t('pool.people') }} · {{ date(o.formed_at!) }}</p><p class="mt-1 text-xs text-emerald-600">{{ t(`pool.state.${o.status}`) }}</p></li></ul>
+          </details>
+        </aside>
+        <details class="rounded-xl border border-gray-200 p-4 text-sm leading-6 dark:border-dark-700"><summary class="cursor-pointer font-medium">{{ t('pool.rulesTitle') }}</summary><p class="mt-3 text-gray-500">{{ t('pool.rules') }}</p></details>
+      </template>
       <BaseDialog :show="!!selected" :title="selected?.item.title || t('pool.confirm')" width="narrow" :show-close-button="!busy" :close-on-escape="!busy" @close="!busy && (selected = null)">
         <p v-if="error" role="alert" class="mb-3 text-sm text-red-600">{{ error }}</p>
         <p v-if="selected" class="text-sm leading-6">{{ t(`pool.confirm_${selected.action}`, { price: n(selected.item.price) }) }}</p>
@@ -72,6 +124,8 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import PoolCreditSummary from '@/components/account/PoolCreditSummary.vue'
 import PoolDynamicQuotaSummary from '@/components/account/PoolDynamicQuotaSummary.vue'
 import PoolOrderCard from '@/components/account/PoolOrderCard.vue'
+import PoolLobbyProductCard from '@/components/account/PoolLobbyProductCard.vue'
+import PoolLobbyOrderRow from '@/components/account/PoolLobbyOrderRow.vue'
 import Icon from '@/components/icons/Icon.vue'
 import {useAuthStore} from '@/stores/auth'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -80,6 +134,10 @@ const props=defineProps<{admin?:boolean}>(), {t}=useI18n(), auth=useAuthStore()
 const orders=ref<PoolOrder[]>([]), products=ref<PoolProduct[]>([]),busy=ref(false),loading=ref(true),error=ref(''),success=ref('')
 type Selection={item:PoolOrder;action:'join'|'leave'|'cancel'}|{item:PoolProduct;action:'purchase';requestId:string}
 const selected=ref<Selection|null>(null)
+const showAllProducts=ref(false)
+const visibleProducts=computed(()=>showAllProducts.value ? products.value : products.value.slice(0,2))
+const userMine=computed(()=>orders.value.filter(o=>o.mine))
+function selectProduct(product:PoolProduct){selected.value={item:product,action:'purchase',requestId:newRequestId()}}
 const newProduct=():PoolProduct=>({id:0,title:'',description:'',quota_mode:'dynamic_shadow',plan_type:'plus',total_credit:100,credit_5h:10,credit_7d:50,seats:2,price:10,duration_days:30,formation_days:2,total_tokens:0,total_requests:0,concurrency:1,status:'active',version:0})
 const form=ref(newProduct())
 type NumberKey='seats'|'price'|'duration_days'|'formation_days'|'total_tokens'|'total_requests'|'concurrency'|'total_credit'|'credit_5h'|'credit_7d'
