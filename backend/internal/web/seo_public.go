@@ -82,6 +82,7 @@ type publicSEOSnapshot struct {
 
 type publicSEOSettingsCache struct {
 	mu       sync.RWMutex
+	loadMu   sync.Mutex
 	snapshot *publicSEOSnapshot
 }
 
@@ -166,6 +167,12 @@ func (s *FrontendServer) currentPublicSEOSnapshot() *publicSEOSnapshot {
 func (s *FrontendServer) loadPublicSEOSnapshot(ctx context.Context) (*publicSEOSnapshot, error) {
 	if s == nil || s.settings == nil {
 		return s.markPublicSEOFailure(), errors.New("public settings provider is unavailable")
+	}
+	if s.seoSettings != nil {
+		// Serialize fetch-and-publish so an in-flight pre-invalidation fetch
+		// cannot overwrite a newer snapshot after InvalidateCache returns.
+		s.seoSettings.loadMu.Lock()
+		defer s.seoSettings.loadMu.Unlock()
 	}
 	if cached := s.seoSettingsFresh(); cached != nil {
 		if cached.failure {

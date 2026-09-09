@@ -81,7 +81,9 @@ func NewFrontendServer(settingsProvider PublicSettingsProvider) (*FrontendServer
 // InvalidateCache invalidates the HTML cache (call when settings change)
 func (s *FrontendServer) InvalidateCache() {
 	if s != nil && s.seoSettings != nil {
+		s.seoSettings.loadMu.Lock()
 		s.seoSettings.invalidate()
+		s.seoSettings.loadMu.Unlock()
 	}
 	if s != nil && s.cache != nil {
 		s.cache.Invalidate()
