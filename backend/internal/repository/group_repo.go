@@ -468,6 +468,7 @@ func (r *groupRepository) ListBindableWithFilters(ctx context.Context, params pa
 }
 
 func (r *groupRepository) listWithFiltersQuery(ctx context.Context, q *dbent.GroupQuery, params pagination.PaginationParams, platform, status, search string, isExclusive *bool) ([]service.Group, *pagination.PaginationResult, error) {
+	q = q.Where(excludePoolGroup)
 
 	if platform != "" {
 		q = q.Where(group.PlatformEQ(platform))
@@ -670,7 +671,7 @@ func groupListOrder(params pagination.PaginationParams) []func(*entsql.Selector)
 
 func (r *groupRepository) ListActive(ctx context.Context) ([]service.Group, error) {
 	groups, err := r.client.Group.Query().
-		Where(group.StatusEQ(service.StatusActive)).
+		Where(excludePoolGroup, group.StatusEQ(service.StatusActive)).
 		Order(dbent.Asc(group.FieldSortOrder), dbent.Asc(group.FieldID)).
 		All(ctx)
 	if err != nil {
@@ -743,7 +744,7 @@ func (r *groupRepository) ListActiveIDs(ctx context.Context) ([]int64, error) {
 
 func (r *groupRepository) ListActiveByPlatform(ctx context.Context, platform string) ([]service.Group, error) {
 	groups, err := r.client.Group.Query().
-		Where(group.StatusEQ(service.StatusActive), group.PlatformEQ(platform)).
+		Where(excludePoolGroup, group.StatusEQ(service.StatusActive), group.PlatformEQ(platform)).
 		Order(dbent.Asc(group.FieldSortOrder), dbent.Asc(group.FieldID)).
 		All(ctx)
 	if err != nil {
@@ -1191,4 +1192,11 @@ func (r *groupRepository) UpdateSortOrders(ctx context.Context, updates []servic
 		}
 	}
 	return nil
+}
+
+func excludePoolGroup(s *entsql.Selector) {
+	history := entsql.Table("pool_orders")
+	s.Where(entsql.Not(entsql.Exists(entsql.Select(history.C("group_id")).From(history).Where(entsql.ColumnsEQ(history.C("group_id"), s.C("id"))))))
+	t := entsql.Table("pool_resources")
+	s.Where(entsql.Not(entsql.Exists(entsql.Select(t.C("group_id")).From(t).Where(entsql.ColumnsEQ(t.C("group_id"), s.C("id"))))))
 }

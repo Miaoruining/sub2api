@@ -18,6 +18,9 @@ import { resolveRouteDocumentTitle } from './title'
  * Route definitions with lazy loading
  */
 const routes: RouteRecordRaw[] = [
+ { path:'/pool-orders',name:'PoolOrders',component:()=>import('@/views/user/PoolOrdersView.vue'),meta:{requiresAuth:true,titleKey:'pool.title',title:'Group orders'} },
+ { path:'/admin/pool-orders',name:'AdminPoolOrders',component:()=>import('@/views/user/PoolOrdersView.vue'),props:{admin:true},meta:{requiresAuth:true,requiresAdmin:true,titleKey:'pool.adminTitle',title:'Group orders'} },
+ { path:'/admin/pool-resources',name:'PoolResources',component:()=>import('@/views/admin/PoolResourcesView.vue'),meta:{requiresAuth:true,requiresAdmin:true,titleKey:'pool.resourceTitle',title:'Group order accounts'} },
   // ==================== Setup Routes ====================
   {
     path: '/setup',

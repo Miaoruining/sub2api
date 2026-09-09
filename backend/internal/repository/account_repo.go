@@ -915,7 +915,7 @@ func (r *accountRepository) List(ctx context.Context, params pagination.Paginati
 }
 
 func (r *accountRepository) accountListFilteredQuery(platform, accountType, status, search string, groupID int64, privacyMode string) *dbent.AccountQuery {
-	q := r.client.Account.Query()
+	q := r.client.Account.Query().Where(excludePoolAccount)
 
 	if platform != "" {
 		q = q.Where(dbaccount.PlatformEQ(platform))
@@ -2031,7 +2031,7 @@ func (r *accountRepository) ListSchedulableCapacityByGroupIDs(ctx context.Contex
 func (r *accountRepository) ListSchedulableByPlatform(ctx context.Context, platform string) ([]service.Account, error) {
 	now := time.Now()
 	accounts, err := r.client.Account.Query().
-		Where(
+		Where(excludePoolAccount,
 			dbaccount.PlatformEQ(platform),
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
@@ -2065,7 +2065,7 @@ func (r *accountRepository) ListSchedulableByPlatforms(ctx context.Context, plat
 	// 代理与分组信息统一在 accountsToService 中批量加载，避免 N+1 查询。
 	now := time.Now()
 	accounts, err := r.client.Account.Query().
-		Where(
+		Where(excludePoolAccount,
 			dbaccount.PlatformIn(platforms...),
 			dbaccount.StatusEQ(service.StatusActive),
 			dbaccount.SchedulableEQ(true),
@@ -3853,4 +3853,10 @@ func (r *accountRepository) ListShadowsByParent(ctx context.Context, parentID in
 		out = append(out, accountEntityToService(m))
 	}
 	return out, nil
+}
+
+// 拼单资源仅通过其独立分组调度，不进入普通列表或全平台候选池。
+func excludePoolAccount(s *entsql.Selector) {
+	t := entsql.Table("pool_resources")
+	s.Where(entsql.Not(entsql.Exists(entsql.Select(t.C("account_id")).From(t).Where(entsql.ColumnsEQ(t.C("account_id"), s.C("id"))))))
 }

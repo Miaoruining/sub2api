@@ -345,6 +345,7 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 	billingCtx, cancel := detachedBillingContext(ctx)
 	defer cancel()
 
+	cmd.PoolReservationID, _ = ctx.Value(PoolReservationContextKey{}).(string)
 	result, err := repo.Apply(billingCtx, cmd)
 	if err != nil {
 		return false, err

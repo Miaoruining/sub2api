@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
@@ -38,4 +39,10 @@ func TestOpenAISubmitUsageRecordTaskCopiesRequestContext(t *testing.T) {
 
 	require.Equal(t, "openai-client-request-123", gotClientRequestID)
 	require.Equal(t, "openai-request-456", gotRequestID)
+}
+
+func TestPoolUsageReservationSurvivesAsyncContext(t *testing.T) {
+	parent := context.WithValue(context.Background(), service.PoolReservationContextKey{}, "pool-reservation")
+	wrapped := usageRecordContext(parent, context.Background())
+	require.Equal(t, "pool-reservation", wrapped.Value(service.PoolReservationContextKey{}))
 }

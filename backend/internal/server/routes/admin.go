@@ -31,6 +31,14 @@ func RegisterAdminRoutes(
 	admin.Use(gin.HandlerFunc(auditLog))
 	admin.Use(middleware.AdminComplianceGuard(settingService))
 	{
+		if h.PoolOrder != nil {
+			admin.GET("/pool-resources", h.PoolOrder.Resources)
+			admin.POST("/pool-resources", h.PoolOrder.CreateResource)
+			admin.PUT("/pool-resources/:id/status", h.PoolOrder.SetResourceStatus)
+			admin.GET("/pool-orders", h.PoolOrder.AdminList)
+			admin.POST("/pool-orders", h.PoolOrder.Create)
+			admin.POST("/pool-orders/:id/cancel", h.PoolOrder.Cancel)
+		}
 		admin.GET("/lottery", h.Lottery.AdminStatus)
 		admin.PUT("/lottery/config", h.Lottery.UpdateConfig)
 		// 部署与运营合规确认

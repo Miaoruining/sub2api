@@ -1,3 +1,4 @@
+import pool from './pool'
 import landing from './landing'
 import common from './common'
 import dashboard from './dashboard'
@@ -9,6 +10,7 @@ import misc from './misc'
 import lottery from './lottery'
 
 export default {
+  ...pool,
   ...landing,
   ...common,
   ...dashboard,
