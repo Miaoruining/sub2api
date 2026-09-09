@@ -11,12 +11,11 @@
         <div class="flex flex-wrap items-center justify-between gap-3"><h2 class="font-semibold">{{ t('pool.create') }}</h2><router-link to="/admin/pool-resources" class="text-sm text-primary-600">{{ t('pool.resourceTitle') }} →</router-link></div>
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <label class="text-sm">{{ t('pool.name') }}<input v-model="form.title" required maxlength="100" class="input mt-1" :disabled="busy" /></label>
-          <label class="text-sm">{{ t('pool.resource') }}<select v-model.number="form.group_id" required class="input mt-1" :disabled="busy"><option :value="0" disabled>{{ t('pool.select') }}</option><option v-for="r in availableResources" :key="r.id" :value="r.group_id">{{ r.name }}</option></select></label>
           <label v-for="f in numberFields" :key="f.key" class="text-sm">{{ t(`pool.${f.key}`) }}<input v-model.number="form[f.key]" type="number" required :min="f.min" :max="f.max" :step="f.step || 1" class="input mt-1" :disabled="busy" /></label>
           <label class="text-sm">{{ t('pool.deadline') }}<input v-model="deadline" type="datetime-local" required class="input mt-1" :disabled="busy" /></label>
         </div>
         <p class="text-xs leading-6 text-gray-500">{{ t('pool.createHint') }}</p>
-        <button class="btn btn-primary" :disabled="busy || !availableResources.length">{{ t('pool.create') }}</button>
+        <button class="btn btn-primary" :disabled="busy">{{ t('pool.create') }}</button>
       </form>
       <section class="rounded-xl border border-gray-200 p-4 text-sm leading-6 dark:border-dark-700">{{ t('pool.rules') }}</section>
       <div v-if="loading" role="status" class="card p-10 text-center text-gray-500">{{ t('pool.loading') }}</div>
@@ -37,13 +36,17 @@
             <p class="text-xs text-gray-500">{{ t('pool.reserved') }} {{ n(o.mine.reserved_tokens) }} Tokens · {{ t('pool.concurrency') }} {{ o.mine.inflight }}/{{ o.concurrency }}</p>
           </div>
           <div v-if="o.shared_account" class="rounded-lg border border-gray-200 p-3 text-xs leading-6 dark:border-dark-700"><p>{{ t('pool.upstream') }}</p><p>5h: {{ percent(o.shared_account.used_5h) }} · 7d: {{ percent(o.shared_account.used_7d) }} · {{ o.shared_account.status }}</p><p class="text-gray-500">{{ t('pool.upstreamHint') }}</p></div>
+          <div v-if="o.status === 'awaiting_delivery'" class="rounded-lg bg-amber-50 p-3 text-sm leading-6 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+            <p>{{ t('pool.awaitingHint') }}</p><p v-if="o.delivery_deadline">{{ t('pool.deliveryDeadline') }}: {{ date(o.delivery_deadline) }} <strong v-if="new Date(o.delivery_deadline).getTime() < Date.now()"> · {{ t('pool.overdue') }}</strong></p>
+            <router-link v-if="admin" :to="{path: '/admin/pool-resources', query: {order: o.id}}" class="btn btn-primary mt-2">{{ t('pool.deliver') }} #{{ o.id }}</router-link>
+          </div>
           <p class="text-xs text-gray-500">{{ t(o.expires_at ? 'pool.expires' : 'pool.deadline') }}: {{ date(o.expires_at || o.join_deadline) }}</p>
           <p v-if="o.mine?.status === 'refunded'" class="text-sm text-emerald-700 dark:text-emerald-300">{{ t('pool.refunded') }} {{ n(o.mine.refunded) }} {{ t('pool.balanceUnit') }}</p>
           <div class="flex flex-wrap gap-2">
             <button v-if="!o.mine && o.status === 'forming' && !admin" class="btn btn-primary" :disabled="busy" @click="selected = { order: o, action: 'join' }">{{ t('pool.join') }}</button>
             <button v-if="o.mine?.status === 'joined' && ['forming', 'closed'].includes(o.status)" class="btn btn-secondary" :disabled="busy" @click="selected = { order: o, action: 'leave' }">{{ t('pool.leave') }}</button>
             <router-link v-if="o.mine?.key_id && o.status === 'active' && o.mine.status === 'joined'" to="/keys" class="btn btn-primary">{{ t('pool.getKey') }} #{{ o.mine.key_id }}</router-link>
-            <button v-if="admin && ['forming', 'closed', 'active'].includes(o.status)" class="btn btn-secondary" :disabled="busy" @click="selected = { order: o, action: 'cancel' }">{{ t('pool.cancelOrder') }}</button>
+            <button v-if="admin && ['forming', 'closed', 'active', 'awaiting_delivery'].includes(o.status)" class="btn btn-secondary" :disabled="busy" @click="selected = { order: o, action: 'cancel' }">{{ t('pool.cancelOrder') }}</button>
           </div>
         </article>
       </div>
@@ -55,28 +58,27 @@
   </AppLayout>
 </template>
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import { poolAPI, poolError, type PoolConfig, type PoolOrder, type PoolResource } from '@/api/poolOrders'
+import { poolAPI, poolError, type PoolConfig, type PoolOrder } from '@/api/poolOrders'
 const props = defineProps<{ admin?: boolean }>()
 const { t } = useI18n()
 const auth = useAuthStore()
-const orders = ref<PoolOrder[]>([]), resources = ref<PoolResource[]>([]), busy = ref(false), loading = ref(true), error = ref(''), success = ref('')
+const orders = ref<PoolOrder[]>([]), busy = ref(false), loading = ref(true), error = ref(''), success = ref('')
 const selected = ref<{ order: PoolOrder; action: 'join' | 'leave' | 'cancel' } | null>(null)
 const deadline = ref('')
-const form = ref<PoolConfig>({ title: '', group_id: 0, seats: 4, price: 10, duration_hours: 720, total_tokens: 4000000, total_requests: 4000, concurrency: 1, join_deadline: '' })
+const form = ref<PoolConfig>({ title: '', seats: 4, price: 10, duration_hours: 720, total_tokens: 4000000, total_requests: 4000, concurrency: 1, join_deadline: '' })
 type NumberKey = 'seats' | 'price' | 'duration_hours' | 'total_tokens' | 'total_requests' | 'concurrency'
 const numberFields: { key: NumberKey; min: number; max: number; step?: number }[] = [
  { key: 'seats', min: 2, max: 50 }, { key: 'price', min: 0.01, max: 1000000, step: 0.01 }, { key: 'duration_hours', min: 1, max: 8760 }, { key: 'total_tokens', min: 16384, max: 1000000000000 }, { key: 'total_requests', min: 2, max: 1000000000 }, { key: 'concurrency', min: 1, max: 10 },
 ]
-const availableResources = computed(() => resources.value.filter(r => r.status === 'active' && !orders.value.some(o => o.group_id === r.group_id && !['expired', 'cancelled'].includes(o.status))))
 const n = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 8 })
 const date = (value: string) => new Date(value).toLocaleString()
 const percent = (value: number | null) => value == null ? t('pool.unknown') : `${n(Math.max(0, 100 - value))}% ${t('pool.remaining')}`
-async function fetchData() { orders.value = await poolAPI.list(props.admin); if (props.admin) resources.value = await poolAPI.resources() }
+async function fetchData() { orders.value = await poolAPI.list(props.admin) }
 async function load() { if (busy.value) return; busy.value = true; error.value = ''; try { await fetchData() } catch (e) { error.value = poolError(e, t('pool.failed')) } finally { busy.value = false; loading.value = false } }
 async function create() { if (busy.value) return; busy.value = true; error.value = ''; success.value = ''; try { await poolAPI.create({ ...form.value, join_deadline: new Date(deadline.value).toISOString() }); success.value = t('pool.created'); await fetchData() } catch (e) { error.value = poolError(e, t('pool.failed')) } finally { busy.value = false } }
 async function act() { if (busy.value || !selected.value) return; busy.value = true; error.value = ''; success.value = ''; try { await poolAPI.act(selected.value.order.id, selected.value.action); selected.value = null; success.value = t('pool.saved'); await Promise.all([fetchData(), auth.refreshUser()]) } catch (e) { error.value = poolError(e, t('pool.failed')); selected.value = null } finally { busy.value = false } }

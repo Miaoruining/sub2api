@@ -2849,7 +2849,7 @@
       </div>
 
       <!-- Group Selection - 仅标准模式显示 -->
-      <GroupSelector
+      <GroupSelector v-if="!poolScope"
         v-model="form.group_ids"
         :groups="groups"
         :platform="account?.platform"
@@ -2993,6 +2993,7 @@ import {
 } from '@/composables/useModelWhitelist'
 
 interface Props {
+  poolScope?: boolean
   show: boolean
   account: Account | null
   proxies: Proxy[]
@@ -4674,6 +4675,7 @@ const handleClose = () => {
 const submitUpdateAccount = async (accountID: number, updatePayload: Record<string, unknown>) => {
   submitting.value = true
   try {
+    if (props.poolScope) delete updatePayload.group_ids
     const updatedAccount = await adminAPI.accounts.update(accountID, withAntigravityConfirmFlag(updatePayload))
     appStore.showSuccess(t('admin.accounts.accountUpdated'))
     emit('updated', updatedAccount)

@@ -1394,7 +1394,7 @@
       </div>
 
       <!-- Groups -->
-      <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <div v-if="!poolScope" class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div class="mb-3 flex items-center justify-between">
           <label
             id="bulk-edit-groups-label"
@@ -1412,7 +1412,7 @@
           />
         </div>
         <div id="bulk-edit-groups" :class="!enableGroups && 'pointer-events-none opacity-50'">
-          <GroupSelector
+          <GroupSelector v-if="!poolScope"
             v-model="groupIds"
             :groups="groups"
             aria-labelledby="bulk-edit-groups-label"
@@ -1517,6 +1517,7 @@ import {
 } from '@/utils/openaiWsMode'
 import type { OpenAIWSMode } from '@/utils/openaiWsMode'
 interface Props {
+  poolScope?: boolean
   show: boolean
   accountIds: number[]
   selectedPlatforms: AccountPlatform[]
@@ -1963,7 +1964,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     updates.status = status.value
   }
 
-  if (enableGroups.value) {
+  if (enableGroups.value && !props.poolScope) {
     updates.group_ids = groupIds.value
   }
 

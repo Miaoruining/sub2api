@@ -68,7 +68,7 @@
       </div>
 
       <!-- Platform Selection - Segmented Control Style -->
-      <div>
+      <div v-if="!poolScope">
         <label class="input-label">{{ t('admin.accounts.platform') }}</label>
         <div class="mt-2 flex flex-wrap rounded-lg bg-gray-100 p-1 dark:bg-dark-700" data-tour="account-form-platform">
           <button
@@ -3439,7 +3439,7 @@
         </div>
 
         <!-- Group Selection - 仅标准模式显示 -->
-        <GroupSelector
+        <GroupSelector v-if="!poolScope"
           v-model="form.group_ids"
           :groups="groups"
           :platform="form.platform"
@@ -3467,9 +3467,9 @@
         :show-mobile-refresh-token-option="form.platform === 'openai'"
         :show-session-token-option="false"
         :show-access-token-option="false"
-        :show-codex-session-import-option="form.platform === 'openai'"
+        :show-codex-session-import-option=" form.platform === 'openai'"
         :show-agent-identity-option="form.platform === 'openai'"
-        :show-codex-pat-option="form.platform === 'openai'"
+        :show-codex-pat-option=" form.platform === 'openai'"
         :show-sso-option="form.platform === 'grok'"
         :show-email-password-option="false"
         :show-manual-option="true"
@@ -3975,12 +3975,14 @@ const apiKeyValuePlaceholder = computed(() => {
 })
 
 interface Props {
+  poolScope?: boolean
   show: boolean
   proxies: Proxy[]
   groups: AdminGroup[]
 }
 
 const props = defineProps<Props>()
+const createAccount = (payload: CreateAccountRequest) => adminAPI.accounts.create(props.poolScope ? {...payload, pool_scope: true} : payload)
 const emit = defineEmits<{
   close: []
   created: []
@@ -4571,7 +4573,7 @@ const tempUnschedPresets = computed(() => [
 const form = reactive({
   name: '',
   notes: '',
-  platform: 'anthropic' as AccountPlatform,
+  platform: props.poolScope ? 'openai' : 'anthropic' as AccountPlatform,
   type: 'oauth' as AccountType, // Will be 'oauth', 'setup-token', or 'apikey'
   credentials: {} as Record<string, unknown>,
   proxy_id: null as number | null,
@@ -5091,7 +5093,7 @@ const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<v
 const submitCreateAccount = async (payload: CreateAccountRequest) => {
   submitting.value = true
   try {
-    const account = await adminAPI.accounts.create(withAntigravityConfirmFlag(payload))
+    const account = await createAccount(withAntigravityConfirmFlag(payload))
     const modelMapping = payload.credentials.model_mapping
     const hasConcreteMappedTarget = payload.type === 'apikey' &&
       typeof modelMapping === 'object' &&
@@ -5147,7 +5149,7 @@ const resetForm = () => {
   step.value = 1
   form.name = ''
   form.notes = ''
-  form.platform = 'anthropic'
+  form.platform = props.poolScope ? 'openai' : 'anthropic'
   form.type = 'oauth'
   form.credentials = {}
   form.proxy_id = null
@@ -5897,7 +5899,7 @@ const handleGrokValidateRT = async (refreshTokenInput: string) => {
           return
         }
 
-        await adminAPI.accounts.create({
+        await createAccount({
           name: accountName,
           notes: form.notes,
           platform: 'grok',
@@ -6074,7 +6076,7 @@ const handleGrokAuthorizePassword = async (emailPasswordInput: string) => {
           return
         }
 
-        await adminAPI.accounts.create({
+        await createAccount({
           name: accountName,
           notes: form.notes,
           platform: 'grok',
@@ -6173,7 +6175,7 @@ const handleOpenAIExchange = async (authCode: string) => {
     }
 
     if (shouldCreateOpenAI) {
-      await adminAPI.accounts.create({
+      await createAccount({
         name: form.name,
         notes: form.notes,
         platform: 'openai',
@@ -6282,6 +6284,7 @@ const handleOpenAIImportCodexSession = async (content: string) => {
   try {
     const extra = buildOpenAICodexImportExtra()
     const result = await adminAPI.accounts.importCodexSession({
+      ...(props.poolScope ? {pool_scope: true} : {}),
       content: trimmed,
       name: form.name,
       notes: form.notes || null,
@@ -6360,6 +6363,7 @@ const handleOpenAIImportCodexPAT = async (accessToken: string) => {
   try {
     const extra = buildOpenAICodexImportExtra()
     await adminAPI.accounts.createOpenAICodexPAT({
+      ...(props.poolScope ? {pool_scope: true} : {}),
       access_token: trimmed,
       name: form.name,
       notes: form.notes || null,
@@ -6454,7 +6458,7 @@ const handleOpenAIBatchRT = async (refreshTokenInput: string, clientId?: string)
         const accountName = refreshTokens.length > 1 ? `${baseName} #${i + 1}` : baseName
 
         if (shouldCreateOpenAI) {
-          await adminAPI.accounts.create({
+          await createAccount({
             name: accountName,
             notes: form.notes,
             platform: 'openai',
@@ -6569,7 +6573,7 @@ const handleAntigravityValidateRT = async (refreshTokenInput: string) => {
           expires_at: form.expires_at,
           auto_pause_on_expired: autoPauseOnExpired.value
         })
-        await adminAPI.accounts.create(createPayload)
+        await createAccount(createPayload)
         successCount++
       } catch (error: any) {
         failedCount++
@@ -6934,7 +6938,7 @@ const handleCookieAuth = async (sessionKey: string) => {
           credentials.temp_unschedulable_rules = tempUnschedPayload
         }
 
-        await adminAPI.accounts.create({
+        await createAccount({
           name: accountName,
           notes: form.notes,
           platform: form.platform,

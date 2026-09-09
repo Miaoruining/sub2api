@@ -471,6 +471,15 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 }
 
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
+	if pool, _ := ctx.Value(PoolAccountCreateContextKey{}).(bool); pool {
+		if input.Platform != PlatformOpenAI || (input.Type != AccountTypeOAuth && input.Type != AccountTypeAPIKey) || len(input.GroupIDs) > 0 {
+			return nil, ErrPoolConfig
+		}
+		copyInput := *input
+		copyInput.SkipDefaultGroupBind = true
+		input = &copyInput
+	}
+
 	accountExtra, err := normalizeOpenAILongContextBillingExtra(input.Platform, input.Extra)
 	if err != nil {
 		return nil, err

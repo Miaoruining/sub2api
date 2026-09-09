@@ -170,6 +170,7 @@ type OpenAIRefreshTokenRequest struct {
 }
 
 type OpenAICodexPATCreateRequest struct {
+	PoolScope               bool           `json:"pool_scope"`
 	AccessToken             string         `json:"access_token" binding:"required"`
 	Name                    string         `json:"name"`
 	Notes                   *string        `json:"notes"`
@@ -366,6 +367,11 @@ func (h *OpenAIOAuthHandler) CreateAccountFromCodexPAT(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	if req.PoolScope {
+		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), service.PoolAccountCreateContextKey{}, true))
+		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), service.PoolAccountListContextKey{}, true))
+	}
+
 	if err := service.ValidateOpenAILongContextBillingExtra(service.PlatformOpenAI, req.Extra); err != nil {
 		response.ErrorFrom(c, err)
 		return

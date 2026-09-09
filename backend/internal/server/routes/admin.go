@@ -35,6 +35,7 @@ func RegisterAdminRoutes(
 			admin.GET("/pool-resources", h.PoolOrder.Resources)
 			admin.POST("/pool-resources", h.PoolOrder.CreateResource)
 			admin.PUT("/pool-resources/:id/status", h.PoolOrder.SetResourceStatus)
+			admin.POST("/pool-orders/:id/deliver", h.PoolOrder.Deliver)
 			admin.GET("/pool-orders", h.PoolOrder.AdminList)
 			admin.POST("/pool-orders", h.PoolOrder.Create)
 			admin.POST("/pool-orders/:id/cancel", h.PoolOrder.Cancel)

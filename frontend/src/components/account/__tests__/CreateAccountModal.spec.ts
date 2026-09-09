@@ -133,9 +133,9 @@ const ModelWhitelistSelectorStub = defineComponent({
   >models</button>`,
 })
 
-function mountModal(groups: any[] = []) {
+function mountModal(groups: any[] = [], poolScope = false) {
   return mount(CreateAccountModal, {
-    props: { show: true, proxies: [], groups },
+    props: { show: true, proxies: [], groups, poolScope },
     global: {
       stubs: {
         BaseDialog: BaseDialogStub,
@@ -213,6 +213,17 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
   })
 
   afterEach(() => vi.useRealTimers())
+
+  it('拼单模式沿用原创建流程并传递独立号池范围，不选择普通分组', async () => {
+    const wrapper = mountModal([], true)
+    await selectButtonByText(wrapper, 'API Key')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('独立账号')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('test-only-key')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(createAccountMock).toHaveBeenCalledWith(expect.objectContaining({pool_scope:true, platform:'openai', group_ids:[]}))
+    wrapper.unmount()
+  })
 
   it('sets month and year expiry presets without submitting the account form', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })

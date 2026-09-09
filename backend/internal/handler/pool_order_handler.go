@@ -63,16 +63,17 @@ func (h *PoolOrderHandler) Create(c *gin.Context) {
 	}
 	response.Success(c, gin.H{"id": id})
 }
-func (h *PoolOrderHandler) Join(c *gin.Context)   { h.mutate(c, "join") }
-func (h *PoolOrderHandler) Leave(c *gin.Context)  { h.mutate(c, "leave") }
-func (h *PoolOrderHandler) Cancel(c *gin.Context) { h.mutate(c, "cancel") }
+func (h *PoolOrderHandler) Join(c *gin.Context)    { h.mutate(c, "join") }
+func (h *PoolOrderHandler) Leave(c *gin.Context)   { h.mutate(c, "leave") }
+func (h *PoolOrderHandler) Deliver(c *gin.Context) { h.mutate(c, "deliver") }
+func (h *PoolOrderHandler) Cancel(c *gin.Context)  { h.mutate(c, "cancel") }
 func (h *PoolOrderHandler) mutate(c *gin.Context, action string) {
 	subject, ok := middleware.GetAuthSubjectFromContext(c)
 	if !ok {
 		response.Unauthorized(c, "请先登录")
 		return
 	}
-	if action == "cancel" && !poolAdmin(c) {
+	if (action == "cancel" || action == "deliver") && !poolAdmin(c) {
 		return
 	}
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -82,6 +83,15 @@ func (h *PoolOrderHandler) mutate(c *gin.Context, action string) {
 	}
 	var affected []int64
 	switch action {
+	case "deliver":
+		var req struct {
+			ResourceID int64 `json:"resource_id"`
+		}
+		if c.ShouldBindJSON(&req) != nil || req.ResourceID <= 0 {
+			response.BadRequest(c, "请选择拼单账号")
+			return
+		}
+		affected, err = h.Repo.Deliver(c.Request.Context(), id, req.ResourceID)
 	case "join":
 		affected, err = h.Repo.Join(c.Request.Context(), id, subject.UserID)
 	case "leave":
@@ -161,4 +171,32 @@ func (h *PoolOrderHandler) SetResourceStatus(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"saved": true})
+}
+
+func (h *PoolOrderHandler) Notifications(c *gin.Context) {
+	subject, ok := middleware.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "请先登录")
+		return
+	}
+	role, _ := middleware.GetUserRoleFromContext(c)
+	if c.Request.Method == "POST" {
+		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		if err != nil {
+			response.BadRequest(c, "通知编号无效")
+			return
+		}
+		if err = h.Repo.ReadNotification(c.Request.Context(), id, subject.UserID, role == service.RoleAdmin); err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		response.Success(c, gin.H{"saved": true})
+		return
+	}
+	out, err := h.Repo.Notifications(c.Request.Context(), subject.UserID, role == service.RoleAdmin)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, out)
 }

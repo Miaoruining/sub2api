@@ -123,6 +123,9 @@ func newAccountRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor, schedul
 }
 
 func (r *accountRepository) Create(ctx context.Context, account *service.Account) error {
+	if pool, _ := ctx.Value(service.PoolAccountCreateContextKey{}).(bool); pool {
+		return r.CreateWithAccountGroups(ctx, account, nil)
+	}
 	if err := createAccountRecord(ctx, r.client, account); err != nil {
 		return err
 	}
@@ -221,6 +224,17 @@ func (r *accountRepository) CreateWithAccountGroups(ctx context.Context, account
 		// Reuse a caller-owned transaction when this repository is already transactional.
 		txClient = r.client
 	}
+	pool, _ := ctx.Value(service.PoolAccountCreateContextKey{}).(bool)
+	if pool {
+		if account.Platform != "openai" || (account.Type != "oauth" && account.Type != "apikey") || len(groups) > 0 {
+			return service.ErrPoolConfig
+		}
+		group, err := txClient.Group.Create().SetName("拼单 / " + account.Name).SetPlatform("openai").SetSubscriptionType("subscription").SetIsExclusive(true).SetAllowMessagesDispatch(true).Save(ctx)
+		if err != nil {
+			return err
+		}
+		groups = []service.AccountGroup{{GroupID: group.ID, Priority: 1}}
+	}
 	groupIDs := make([]int64, 0, len(groups))
 	for i := range groups {
 		groupIDs = append(groupIDs, groups[i].GroupID)
@@ -231,6 +245,11 @@ func (r *accountRepository) CreateWithAccountGroups(ctx context.Context, account
 
 	if err := createAccountRecord(ctx, txClient, account); err != nil {
 		return err
+	}
+	if pool {
+		if _, err := txClient.ExecContext(ctx, `INSERT INTO pool_resources(account_id,group_id) VALUES($1,$2)`, account.ID, groupIDs[0]); err != nil {
+			return err
+		}
 	}
 	if len(groups) > 0 {
 		builders := make([]*dbent.AccountGroupCreate, 0, len(groups))
@@ -914,8 +933,16 @@ func (r *accountRepository) List(ctx context.Context, params pagination.Paginati
 	return r.ListWithFilters(ctx, params, "", "", "", "", 0, "")
 }
 
-func (r *accountRepository) accountListFilteredQuery(platform, accountType, status, search string, groupID int64, privacyMode string) *dbent.AccountQuery {
-	q := r.client.Account.Query().Where(excludePoolAccount)
+func (r *accountRepository) accountListFilteredQuery(ctx context.Context, platform, accountType, status, search string, groupID int64, privacyMode string) *dbent.AccountQuery {
+	q := r.client.Account.Query()
+	if pool, _ := ctx.Value(service.PoolAccountListContextKey{}).(bool); pool {
+		q = q.Where(func(s *entsql.Selector) {
+			t := entsql.Table("pool_resources")
+			s.Where(entsql.Exists(entsql.Select(t.C("account_id")).From(t).Where(entsql.ColumnsEQ(t.C("account_id"), s.C("id")))))
+		})
+	} else {
+		q = q.Where(excludePoolAccount)
+	}
 
 	if platform != "" {
 		q = q.Where(dbaccount.PlatformEQ(platform))
@@ -1011,7 +1038,7 @@ func (r *accountRepository) accountListFilteredQuery(platform, accountType, stat
 }
 
 func (r *accountRepository) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode string) ([]service.Account, *pagination.PaginationResult, error) {
-	q := r.accountListFilteredQuery(platform, accountType, status, search, groupID, privacyMode)
+	q := r.accountListFilteredQuery(ctx, platform, accountType, status, search, groupID, privacyMode)
 	// Clone before Count so interceptor-appended predicates (SoftDeleteMixin's
 	// deleted_at IS NULL) don't accumulate on the shared builder and pollute the
 	// subsequent list query. Same pattern used in group_repo/promo_code_repo/user_repo
@@ -1041,7 +1068,7 @@ func (r *accountRepository) ListWithFilters(ctx context.Context, params paginati
 }
 
 func (r *accountRepository) ListAllWithFilters(ctx context.Context, platform, accountType, status, search string, groupID int64, privacyMode string) ([]service.Account, error) {
-	accounts, err := r.accountListFilteredQuery(platform, accountType, status, search, groupID, privacyMode).All(ctx)
+	accounts, err := r.accountListFilteredQuery(ctx, platform, accountType, status, search, groupID, privacyMode).All(ctx)
 	if err != nil {
 		return nil, err
 	}

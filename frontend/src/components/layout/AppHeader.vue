@@ -37,6 +37,7 @@
 
         <!-- Announcement Bell -->
         <AnnouncementBell v-if="user" />
+        <PoolNotificationBell v-if="user" />
 
         <!-- Model Plaza Entry -->
         <router-link
@@ -258,6 +259,7 @@
 </template>
 
 <script setup lang="ts">
+import PoolNotificationBell from "@/components/common/PoolNotificationBell.vue"
 import LotteryEntry from '@/components/lottery/LotteryEntry.vue'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'

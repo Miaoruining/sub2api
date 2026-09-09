@@ -12,10 +12,15 @@ vi.mock('vue-i18n', async original => ({ ...await original<typeof import('vue-i1
  return String(value || key).replace(/\{(\w+)\}/g, (_, name: string) => String(params[name] ?? ''))
 } }) }))
 function order(overrides: Partial<PoolOrder> = {}): PoolOrder { return { id: 1, title: '测试拼单', group_id: 10, seats: 4, price: 10, duration_hours: 720, total_tokens: 4000000, total_requests: 4000, concurrency: 1, join_deadline: '2030-01-01T00:00:00Z', starts_at: null, expires_at: null, status: 'forming', joined: 1, tokens_used: 0, requests_used: 0, reserved_tokens: 0, mine: null, shared_account: null, ...overrides } }
-function render() { return mount(PoolOrdersView, { global: { stubs: { AppLayout: { template: '<main><slot/></main>' }, BaseDialog: { props: ['show', 'title'], template: '<section v-if="show" role="dialog"><h2>{{title}}</h2><slot/><slot name="footer"/></section>' }, RouterLink: { template: '<a><slot/></a>' } } } }) }
+function render(admin = false) { return mount(PoolOrdersView, { props: {admin}, global: { stubs: { AppLayout: { template: '<main><slot/></main>' }, BaseDialog: { props: ['show', 'title'], template: '<section v-if="show" role="dialog"><h2>{{title}}</h2><slot/><slot name="footer"/></section>' }, RouterLink: { template: '<a><slot/></a>' } } } }) }
 describe('拼单席位和个人额度', () => {
  beforeEach(() => { vi.clearAllMocks(); api.list.mockResolvedValue([order()]); api.act.mockResolvedValue(undefined); api.refreshUser.mockResolvedValue(undefined) })
  afterEach(() => vi.restoreAllMocks())
+ it('发布不选择号池，待发货成员不能提前领取 Key', async () => {
+  const admin = render(true); await flushPromises(); expect(admin.find('select').exists()).toBe(false); expect(api.resources).not.toHaveBeenCalled(); admin.unmount()
+  api.list.mockResolvedValue([order({status:'awaiting_delivery',delivery_deadline:'2030-01-01T00:00:00Z',mine:{id:2,status:'joined',key_id:null,paid:10,refunded:0,tokens_used:0,requests_used:0,reserved_tokens:0,inflight:0}})])
+  const member=render(); await flushPromises(); expect(member.text()).toContain('等待管理员绑定账号发货'); expect(member.text()).not.toContain('查看专属 Key'); member.unmount()
+ })
  it('确认席位金额后购买，重复点击不会重复发送请求', async () => {
   let resolve!: () => void; api.act.mockImplementation(() => new Promise<void>(r => { resolve = r }))
   const w = render(); await flushPromises()

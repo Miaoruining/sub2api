@@ -114,6 +114,7 @@ func NewAccountHandler(
 
 // CreateAccountRequest represents create account request
 type CreateAccountRequest struct {
+	PoolScope               bool           `json:"pool_scope"`
 	Name                    string         `json:"name" binding:"required"`
 	Notes                   *string        `json:"notes"`
 	Platform                string         `json:"platform" binding:"required"`
@@ -634,6 +635,9 @@ func (h *AccountHandler) listAccountSchedulerScoreFilterPool(
 // List handles listing all accounts with pagination
 // GET /api/v1/admin/accounts
 func (h *AccountHandler) List(c *gin.Context) {
+	if c.Query("pool_scope") == "1" {
+		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), service.PoolAccountListContextKey{}, true))
+	}
 	page, pageSize := response.ParsePagination(c)
 	platform := c.Query("platform")
 	accountType := c.Query("type")
@@ -998,6 +1002,11 @@ func (h *AccountHandler) Create(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	if req.PoolScope {
+		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), service.PoolAccountCreateContextKey{}, true))
+		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), service.PoolAccountListContextKey{}, true))
+	}
+
 	if err := service.ValidateOpenAILongContextBillingExtra(req.Platform, req.Extra); err != nil {
 		response.ErrorFrom(c, err)
 		return

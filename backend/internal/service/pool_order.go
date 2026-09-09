@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	ErrPoolConfig  = infraerrors.BadRequest("POOL_CONFIG", "请检查人数、价格、有效期和额度；资源组必须是独立的 OpenAI 专属订阅组")
+	ErrPoolConfig  = infraerrors.BadRequest("POOL_CONFIG", "请检查拼单参数；发布时无需绑定账号，发货账号必须来自可用的独立拼单号池")
 	ErrPoolClosed  = infraerrors.Conflict("POOL_CLOSED", "拼单已满员、结束或超过截止时间")
 	ErrPoolBalance = infraerrors.Conflict("POOL_BALANCE", "站内余额不足，请先充值")
 	ErrPoolAccess  = infraerrors.Forbidden("POOL_ACCESS", "仅限本车成员使用自己的拼单专属 Key")
@@ -31,7 +31,7 @@ type PoolCreate struct {
 }
 
 func (p PoolCreate) Validate(now time.Time) error {
-	if strings.TrimSpace(p.Title) == "" || len([]rune(p.Title)) > 100 || p.GroupID <= 0 || p.Seats < 2 || p.Seats > 50 || math.IsNaN(p.Price) || math.IsInf(p.Price, 0) || p.Price < 0.00000001 || p.Price > 1000000 || p.DurationHours < 1 || p.DurationHours > 8760 || p.TotalTokens < int64(p.Seats)*8192 || p.TotalTokens > 1000000000000 || p.TotalRequests < int64(p.Seats) || p.TotalRequests > 1000000000 || p.Concurrency < 1 || p.Concurrency > 10 || !p.JoinDeadline.After(now) || p.JoinDeadline.After(now.Add(90*24*time.Hour)) {
+	if strings.TrimSpace(p.Title) == "" || len([]rune(p.Title)) > 100 || p.GroupID != 0 || p.Seats < 2 || p.Seats > 50 || math.IsNaN(p.Price) || math.IsInf(p.Price, 0) || p.Price < 0.00000001 || p.Price > 1000000 || p.DurationHours < 1 || p.DurationHours > 8760 || p.TotalTokens < int64(p.Seats)*8192 || p.TotalTokens > 1000000000000 || p.TotalRequests < int64(p.Seats) || p.TotalRequests > 1000000000 || p.Concurrency < 1 || p.Concurrency > 10 || !p.JoinDeadline.After(now) || p.JoinDeadline.After(now.Add(90*24*time.Hour)) {
 		return ErrPoolConfig
 	}
 	return nil
@@ -52,14 +52,17 @@ type PoolOrder struct {
 	SharedAccount *PoolResource `json:"shared_account"`
 	ID            int64         `json:"id"`
 	PoolCreate
-	Status         string      `json:"status"`
-	Joined         int         `json:"joined"`
-	StartsAt       *time.Time  `json:"starts_at"`
-	ExpiresAt      *time.Time  `json:"expires_at"`
-	TokensUsed     int64       `json:"tokens_used"`
-	RequestsUsed   int64       `json:"requests_used"`
-	ReservedTokens int64       `json:"reserved_tokens"`
-	Mine           *PoolMember `json:"mine"`
+	FormedAt         *time.Time  `json:"formed_at"`
+	DeliveryDeadline *time.Time  `json:"delivery_deadline"`
+	ResourceID       *int64      `json:"resource_id"`
+	Status           string      `json:"status"`
+	Joined           int         `json:"joined"`
+	StartsAt         *time.Time  `json:"starts_at"`
+	ExpiresAt        *time.Time  `json:"expires_at"`
+	TokensUsed       int64       `json:"tokens_used"`
+	RequestsUsed     int64       `json:"requests_used"`
+	ReservedTokens   int64       `json:"reserved_tokens"`
+	Mine             *PoolMember `json:"mine"`
 }
 type PoolGate struct {
 	OrderID         int64
@@ -69,22 +72,45 @@ type PoolGate struct {
 }
 type PoolReservationContextKey struct{}
 
+type PoolAccountListContextKey struct{}
+type PoolAccountCreateContextKey struct{}
+type PoolNotification struct {
+	ID       int64      `json:"id"`
+	OrderID  int64      `json:"order_id"`
+	Title    string     `json:"title"`
+	Kind     string     `json:"kind"`
+	Deadline *time.Time `json:"deadline"`
+	Read     bool       `json:"read"`
+}
 type PoolResourceCreate struct {
-	Name        string          `json:"name"`
-	Type        string          `json:"type"`
-	Credentials json.RawMessage `json:"credentials"`
-	Concurrency int             `json:"concurrency"`
+	Platform           string          `json:"platform"`
+	RateMultiplier     *float64        `json:"rate_multiplier"`
+	LoadFactor         *int            `json:"load_factor"`
+	ExpiresAt          *int64          `json:"expires_at"`
+	AutoPauseOnExpired *bool           `json:"auto_pause_on_expired"`
+	Extra              json.RawMessage `json:"extra"`
+	ProxyID            *int64          `json:"proxy_id"`
+	Notes              *string         `json:"notes"`
+	Priority           int             `json:"priority"`
+	Name               string          `json:"name"`
+	Type               string          `json:"type"`
+	Credentials        json.RawMessage `json:"credentials"`
+	Concurrency        int             `json:"concurrency"`
 }
 type PoolResource struct {
-	ID      int64    `json:"id"`
-	GroupID int64    `json:"group_id"`
-	Name    string   `json:"name"`
-	Type    string   `json:"type"`
-	Status  string   `json:"status"`
-	Used5h  *float64 `json:"used_5h"`
-	Used7d  *float64 `json:"used_7d"`
+	AccountID int64    `json:"account_id"`
+	ID        int64    `json:"id"`
+	GroupID   int64    `json:"group_id"`
+	Name      string   `json:"name"`
+	Type      string   `json:"type"`
+	Status    string   `json:"status"`
+	Used5h    *float64 `json:"used_5h"`
+	Used7d    *float64 `json:"used_7d"`
 }
 type PoolRepository interface {
+	Deliver(context.Context, int64, int64) ([]int64, error)
+	Notifications(context.Context, int64, bool) ([]PoolNotification, error)
+	ReadNotification(context.Context, int64, int64, bool) error
 	Resources(context.Context) ([]PoolResource, error)
 	CreateResource(context.Context, PoolResourceCreate) (int64, error)
 	SetResourceStatus(context.Context, int64, string) error

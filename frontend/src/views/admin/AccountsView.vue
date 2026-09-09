@@ -1,5 +1,6 @@
 <template>
   <AppLayout>
+    <PoolDeliveryPanel v-if="poolScope" :revision="poolRevision" @delivered="reload" />
     <TablePageLayout>
       <template #filters>
         <div class="flex flex-wrap-reverse items-start justify-between gap-3">
@@ -63,7 +64,7 @@
               </div>
 
               <!-- More Tools Dropdown -->
-              <div class="relative" ref="accountToolsDropdownRef">
+              <div v-if="!poolScope" class="relative" ref="accountToolsDropdownRef">
                 <button
                   ref="accountToolsTriggerRef"
                   @click="toggleAccountToolsDropdown"
@@ -450,16 +451,16 @@
       </template>
       <template #pagination><Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" /></template>
     </TablePageLayout>
-    <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="groups" @close="showCreate = false" @created="reload" />
-    <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
+    <CreateAccountModal :pool-scope="poolScope" :show="showCreate" :proxies="proxies" :groups="groups" @close="showCreate = false" @created="poolRevision++; reload()" />
+    <EditAccountModal :pool-scope="poolScope" :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
-    <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
+    <AccountActionMenu :pool-scope="poolScope" :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
     <ImportDataModal :show="showImportData" @close="showImportData = false" @imported="handleDataImported" />
-    <BulkEditAccountModal
+    <BulkEditAccountModal :pool-scope="poolScope"
       :show="showBulkEdit"
       :account-ids="selIds"
       :selected-platforms="selPlatforms"
@@ -486,6 +487,9 @@
 </template>
 
 <script setup lang="ts">
+import PoolDeliveryPanel from "@/components/account/PoolDeliveryPanel.vue"
+const props = defineProps<{poolScope?: boolean}>()
+const poolRevision = ref(0)
 import { ref, reactive, computed, onMounted, onUnmounted, toRaw, watch } from 'vue'
 import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
@@ -1063,6 +1067,7 @@ const shouldIncludeSchedulerScore = () => isColumnVisible('scheduler_score')
 const syncAccountListDerivedParams = () => {
   // Keep every load path, including auto-refresh and sorting, aligned with the current column visibility.
   const requestParams = params as any
+  requestParams.pool_scope = props.poolScope ? "1" : undefined
   requestParams.include_scheduler_score = shouldIncludeSchedulerScore() ? '1' : '0'
 }
 
@@ -1079,6 +1084,7 @@ const {
 } = useTableLoader<AccountListItem, any>({
   fetchFn: adminAPI.accounts.list,
   initialParams: {
+    pool_scope: props.poolScope ? "1" : undefined,
     platform: '',
     type: '',
     status: '',
@@ -1155,6 +1161,7 @@ type AccountLoadOptions = {
 
 const load = async (options: AccountLoadOptions = {}) => {
   const requestParams = params as any
+  requestParams.pool_scope = props.poolScope ? "1" : undefined
   syncAccountListDerivedParams()
   hasPendingListSync.value = false
   resetAutoRefreshCache()
@@ -1316,6 +1323,7 @@ const handleSort = (key: string, order: AccountSortOrder) => {
   sortState.sort_by = key
   sortState.sort_order = order
   const requestParams = params as any
+  requestParams.pool_scope = props.poolScope ? "1" : undefined
   requestParams.sort_by = key
   requestParams.sort_order = order
   syncAccountListDerivedParams()
@@ -2109,7 +2117,7 @@ const handleSelectAllResults = async () => {
   selectingAllResults.value = true
   try {
     const ids = await fetchAllAccountIds(
-      (page, pageSize, requestFilters) => adminAPI.accounts.list(page, pageSize, requestFilters),
+      (page, pageSize, requestFilters) => adminAPI.accounts.list(page, pageSize, {...requestFilters, pool_scope: props.poolScope ? "1" : undefined}),
       filters
     )
     if (requestVersion !== selectionRequestVersion.value) return
@@ -2144,6 +2152,7 @@ const openBulkEditSelected = () => {
 }
 
 const openBulkEditFiltered = async () => {
+  if (props.poolScope) {await handleSelectAllResults(); if (selIds.value.length) openBulkEditSelected(); return}
   const filters = buildBulkEditFilterSnapshot()
   const preview = await adminAPI.accounts.list(1, 100, filters)
   const { selectedPlatforms, selectedTypes } = collectSelectionMetadata(preview.items)

@@ -40,6 +40,7 @@ export async function list(
   page: number = 1,
   pageSize: number = 20,
   filters?: {
+    pool_scope?: string
     platform?: string
     type?: string
     status?: string
@@ -178,7 +179,7 @@ export async function getById(id: number): Promise<Account> {
  * @param accountData - Account data
  * @returns Created account
  */
-export async function create(accountData: CreateAccountRequest): Promise<Account> {
+export async function create(accountData: CreateAccountRequest & {pool_scope?: boolean}): Promise<Account> {
   const { data } = await apiClient.post<Account>('/admin/accounts', accountData)
   return data
 }
@@ -736,14 +737,14 @@ export async function importData(payload: {
   return data
 }
 
-export async function importCodexSession(payload: CodexSessionImportRequest): Promise<CodexSessionImportResult> {
+export async function importCodexSession(payload: CodexSessionImportRequest & {pool_scope?: boolean}): Promise<CodexSessionImportResult> {
   const { data } = await apiClient.post<CodexSessionImportResult>('/admin/accounts/import/codex-session', payload, {
     timeout: 120000 // 120s timeout for large session imports
   })
   return data
 }
 
-export async function createOpenAICodexPAT(payload: OpenAICodexPATCreateRequest): Promise<Account> {
+export async function createOpenAICodexPAT(payload: OpenAICodexPATCreateRequest & {pool_scope?: boolean}): Promise<Account> {
   const { data } = await apiClient.post<Account>('/admin/openai/create-from-codex-pat', payload)
   return data
 }

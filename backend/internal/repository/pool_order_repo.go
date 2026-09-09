@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"strings"
 	"time"
@@ -21,9 +22,9 @@ type poolRepository struct{ db *sql.DB }
 func NewPoolRepository(db *sql.DB) service.PoolRepository { return &poolRepository{db: db} }
 
 func (r *poolRepository) List(ctx context.Context, uid int64, admin bool) ([]service.PoolOrder, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT p.id,p.title,p.group_id,p.seats,p.price,p.duration_hours,p.total_tokens,p.total_requests,p.concurrency,p.join_deadline,
+	rows, err := r.db.QueryContext(ctx, `SELECT p.id,p.title,COALESCE(p.group_id,0),p.seats,p.price,p.duration_hours,p.total_tokens,p.total_requests,p.concurrency,p.join_deadline,
  CASE WHEN p.status='active' AND p.expires_at<=NOW() THEN 'expired' WHEN p.status='forming' AND p.join_deadline<=NOW() THEN 'closed' ELSE p.status END,
- p.starts_at,p.expires_at,
+ p.starts_at,p.expires_at,p.formed_at,p.delivery_deadline,p.resource_id,
  (SELECT COUNT(*) FROM pool_members WHERE order_id=p.id AND status='joined'),
  COALESCE((SELECT SUM(tokens_used) FROM pool_members WHERE order_id=p.id),0),
  COALESCE((SELECT SUM(requests_used) FROM pool_members WHERE order_id=p.id),0),
@@ -37,7 +38,7 @@ func (r *poolRepository) List(ctx context.Context, uid int64, admin bool) ([]ser
 	out := []service.PoolOrder{}
 	for rows.Next() {
 		var p service.PoolOrder
-		if err = rows.Scan(&p.ID, &p.Title, &p.GroupID, &p.Seats, &p.Price, &p.DurationHours, &p.TotalTokens, &p.TotalRequests, &p.Concurrency, &p.JoinDeadline, &p.Status, &p.StartsAt, &p.ExpiresAt, &p.Joined, &p.TokensUsed, &p.RequestsUsed, &p.ReservedTokens); err != nil {
+		if err = rows.Scan(&p.ID, &p.Title, &p.GroupID, &p.Seats, &p.Price, &p.DurationHours, &p.TotalTokens, &p.TotalRequests, &p.Concurrency, &p.JoinDeadline, &p.Status, &p.StartsAt, &p.ExpiresAt, &p.FormedAt, &p.DeliveryDeadline, &p.ResourceID, &p.Joined, &p.TokensUsed, &p.RequestsUsed, &p.ReservedTokens); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -67,6 +68,7 @@ func (r *poolRepository) List(ctx context.Context, uid int64, admin bool) ([]ser
 				if res.GroupID == out[i].GroupID {
 					safe := res
 					safe.ID = 0
+					safe.AccountID = 0
 					safe.GroupID = 0
 					safe.Name = ""
 					out[i].SharedAccount = &safe
@@ -80,78 +82,9 @@ func (r *poolRepository) Create(ctx context.Context, p service.PoolCreate) (int6
 	if err := p.Validate(time.Now()); err != nil {
 		return 0, err
 	}
-	tx, err := r.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback()
-
-	// 账号可在旧车到期/终止后继续开新车。为新周期分配新组，保留旧 Key 与账本。
-	var aid, rid int64
-	err = tx.QueryRowContext(ctx, `SELECT id,account_id FROM pool_resources WHERE group_id=$1 FOR UPDATE`, p.GroupID).Scan(&rid, &aid)
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, service.ErrPoolConfig
-	}
-	if err != nil {
-		return 0, err
-	}
-	var previous int64
-	var ended bool
-	err = tx.QueryRowContext(ctx, `SELECT id,status='cancelled' OR (status='active' AND expires_at<=NOW()) FROM pool_orders WHERE group_id=$1 FOR UPDATE`, p.GroupID).Scan(&previous, &ended)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return 0, err
-	}
-	if err == nil {
-		if !ended {
-			return 0, service.ErrPoolClosed
-		}
-		var pending bool
-		if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pool_requests q JOIN pool_members m ON m.id=q.member_id WHERE m.order_id=$1 AND q.status='pending')`, previous).Scan(&pending); err != nil {
-			return 0, err
-		}
-		if pending {
-			return 0, service.ErrPoolLimit
-		}
-		oldGroup := p.GroupID
-		err = tx.QueryRowContext(ctx, `INSERT INTO groups(name,platform,subscription_type,is_exclusive,allow_messages_dispatch) VALUES($1,'openai','subscription',true,true) RETURNING id`, "拼单 / "+uuid.NewString()).Scan(&p.GroupID)
-		if err != nil {
-			return 0, err
-		}
-		if _, err = tx.ExecContext(ctx, `UPDATE pool_resources SET group_id=$2 WHERE id=$1`, rid, p.GroupID); err != nil {
-			return 0, err
-		}
-		if _, err = tx.ExecContext(ctx, `DELETE FROM account_groups WHERE account_id=$1`, aid); err != nil {
-			return 0, err
-		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO account_groups(account_id,group_id) VALUES($1,$2)`, aid, p.GroupID); err != nil {
-			return 0, err
-		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO scheduler_outbox(event_type,group_id) VALUES('group_changed',$1),('group_changed',$2)`, oldGroup, p.GroupID); err != nil {
-			return 0, err
-		}
-	}
-	var valid bool
-	err = tx.QueryRowContext(ctx, `SELECT platform='openai' AND subscription_type='subscription' AND is_exclusive AND status='active'
- AND fallback_group_id IS NULL AND fallback_group_id_on_invalid_request IS NULL AND EXISTS(SELECT 1 FROM pool_resources WHERE group_id=g.id) AND NOT EXISTS(SELECT 1 FROM api_keys WHERE group_id=g.id AND deleted_at IS NULL)
- AND NOT EXISTS(SELECT 1 FROM user_subscriptions WHERE group_id=g.id AND deleted_at IS NULL)
- AND EXISTS(SELECT 1 FROM account_groups ag JOIN accounts a ON a.id=ag.account_id WHERE ag.group_id=g.id AND a.deleted_at IS NULL AND a.status='active')
- FROM groups g WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, p.GroupID).Scan(&valid)
-	if errors.Is(err, sql.ErrNoRows) || err == nil && !valid {
-		return 0, service.ErrPoolConfig
-	}
-	if err != nil {
-		return 0, err
-	}
 	var id int64
-	err = tx.QueryRowContext(ctx, `INSERT INTO pool_orders(title,group_id,seats,price,duration_hours,total_tokens,total_requests,concurrency,join_deadline)
- VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(group_id) DO NOTHING RETURNING id`, p.Title, p.GroupID, p.Seats, p.Price, p.DurationHours, p.TotalTokens, p.TotalRequests, p.Concurrency, p.JoinDeadline).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, service.ErrPoolConfig
-	}
-	if err != nil {
-		return 0, err
-	}
-	return id, tx.Commit()
+	err := r.db.QueryRowContext(ctx, `INSERT INTO pool_orders(title,seats,price,duration_hours,total_tokens,total_requests,concurrency,join_deadline) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`, p.Title, p.Seats, p.Price, p.DurationHours, p.TotalTokens, p.TotalRequests, p.Concurrency, p.JoinDeadline).Scan(&id)
+	return id, err
 }
 func (r *poolRepository) Join(ctx context.Context, oid, uid int64) ([]int64, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
@@ -160,10 +93,9 @@ func (r *poolRepository) Join(ctx context.Context, oid, uid int64) ([]int64, err
 	}
 	defer tx.Rollback()
 	var status string
-	var gid int64
-	var seats, hours int
+	var seats int
 	var open bool
-	err = tx.QueryRowContext(ctx, `SELECT status,group_id,seats,duration_hours,join_deadline>NOW() FROM pool_orders WHERE id=$1 FOR UPDATE`, oid).Scan(&status, &gid, &seats, &hours, &open)
+	err = tx.QueryRowContext(ctx, `SELECT status,seats,join_deadline>NOW() FROM pool_orders WHERE id=$1 FOR UPDATE`, oid).Scan(&status, &seats, &open)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, service.ErrPoolClosed
 	}
@@ -178,14 +110,6 @@ func (r *poolRepository) Join(ctx context.Context, oid, uid int64) ([]int64, err
 		return []int64{uid}, nil
 	} // 重试不重复扣款；已退出者不重新购买同车。
 	if status != "forming" || !open {
-		return nil, service.ErrPoolClosed
-	}
-	var ready bool
-	err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pool_resources pr JOIN accounts a ON a.id=pr.account_id JOIN groups g ON g.id=pr.group_id WHERE pr.group_id=$1 AND a.status='active' AND a.deleted_at IS NULL AND g.status='active' AND g.deleted_at IS NULL)`, gid).Scan(&ready)
-	if err != nil {
-		return nil, err
-	}
-	if !ready {
 		return nil, service.ErrPoolClosed
 	}
 	var count int
@@ -213,52 +137,14 @@ func (r *poolRepository) Join(ctx context.Context, oid, uid int64) ([]int64, err
 	}
 	affected := []int64{uid}
 	if count+1 == seats {
-		if _, err = tx.ExecContext(ctx, `UPDATE pool_orders SET status='active',starts_at=NOW(),expires_at=NOW()+duration_hours*INTERVAL '1 hour' WHERE id=$1`, oid); err != nil {
+		if _, err = tx.ExecContext(ctx, `UPDATE pool_orders SET status='awaiting_delivery',formed_at=NOW(),delivery_deadline=NOW()+INTERVAL '24 hours' WHERE id=$1`, oid); err != nil {
 			return nil, err
 		}
-		rows, e := tx.QueryContext(ctx, `SELECT id,user_id FROM pool_members WHERE order_id=$1 AND status='joined' ORDER BY user_id`, oid)
-		if e != nil {
-			return nil, e
-		}
-		type member struct{ id, uid int64 }
-		members := []member{}
-		for rows.Next() {
-			var m member
-			if e = rows.Scan(&m.id, &m.uid); e != nil {
-				rows.Close()
-				return nil, e
-			}
-			members = append(members, m)
-		}
-		e = rows.Err()
-		rows.Close()
-		if e != nil {
-			return nil, e
-		}
-		affected = nil
-		for _, m := range members {
-			b := make([]byte, 24)
-			if _, err = rand.Read(b); err != nil {
-				return nil, err
-			}
-			key := "sk-pool-" + hex.EncodeToString(b)
-			var kid int64
-			err = tx.QueryRowContext(ctx, `INSERT INTO api_keys(user_id,key,name,group_id,expires_at) SELECT $1,$2,$3,group_id,expires_at FROM pool_orders WHERE id=$4 RETURNING id`, m.uid, key, fmt.Sprintf("拼单 #%d 专属 Key", oid), oid).Scan(&kid)
-			if err != nil {
-				return nil, err
-			}
-			if _, err = tx.ExecContext(ctx, `INSERT INTO user_allowed_groups(user_id,group_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, m.uid, gid); err != nil {
-				return nil, err
-			}
-			if _, err = tx.ExecContext(ctx, `INSERT INTO user_subscriptions(user_id,group_id,starts_at,expires_at,notes) SELECT $1,$2,starts_at,expires_at,'拼单自动开通' FROM pool_orders WHERE id=$3`, m.uid, gid, oid); err != nil {
-				return nil, err
-			}
-			if _, err = tx.ExecContext(ctx, `UPDATE pool_members SET api_key_id=$1 WHERE id=$2`, kid, m.id); err != nil {
-				return nil, err
-			}
-			affected = append(affected, m.uid)
+		if _, err = tx.ExecContext(ctx, `INSERT INTO pool_notifications(order_id,kind) VALUES($1,'delivery_required')`, oid); err != nil {
+			return nil, err
 		}
 	}
+
 	return affected, tx.Commit()
 }
 
@@ -471,7 +357,7 @@ func settlePoolRequest(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillin
 }
 
 func (r *poolRepository) Resources(ctx context.Context) ([]service.PoolResource, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT pr.id,pr.group_id,a.name,a.type,a.status,(a.extra->>'codex_5h_used_percent')::float8,(a.extra->>'codex_7d_used_percent')::float8 FROM pool_resources pr JOIN accounts a ON a.id=pr.account_id WHERE a.deleted_at IS NULL ORDER BY pr.id DESC`)
+	rows, err := r.db.QueryContext(ctx, `SELECT pr.id,pr.group_id,pr.account_id,a.name,a.type,a.status,(a.extra->>'codex_5h_used_percent')::float8,(a.extra->>'codex_7d_used_percent')::float8 FROM pool_resources pr JOIN accounts a ON a.id=pr.account_id WHERE a.deleted_at IS NULL ORDER BY pr.id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -479,7 +365,7 @@ func (r *poolRepository) Resources(ctx context.Context) ([]service.PoolResource,
 	out := []service.PoolResource{}
 	for rows.Next() {
 		var p service.PoolResource
-		if err = rows.Scan(&p.ID, &p.GroupID, &p.Name, &p.Type, &p.Status, &p.Used5h, &p.Used7d); err != nil {
+		if err = rows.Scan(&p.ID, &p.GroupID, &p.AccountID, &p.Name, &p.Type, &p.Status, &p.Used5h, &p.Used7d); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -487,6 +373,18 @@ func (r *poolRepository) Resources(ctx context.Context) ([]service.PoolResource,
 	return out, rows.Err()
 }
 func (r *poolRepository) CreateResource(ctx context.Context, p service.PoolResourceCreate) (int64, error) {
+	if p.Platform != "" && p.Platform != "openai" {
+		return 0, service.ErrPoolConfig
+	}
+	if p.RateMultiplier != nil && (*p.RateMultiplier < 0 || math.IsNaN(*p.RateMultiplier) || math.IsInf(*p.RateMultiplier, 0)) {
+		return 0, service.ErrPoolConfig
+	}
+	var expires *time.Time
+	if p.ExpiresAt != nil {
+		v := time.Unix(*p.ExpiresAt, 0)
+		expires = &v
+	}
+
 	var cred map[string]any
 	if strings.TrimSpace(p.Name) == "" || len([]rune(p.Name)) > 80 || p.Concurrency < 1 || p.Concurrency > 50 || len(p.Credentials) > 65536 || json.Unmarshal(p.Credentials, &cred) != nil {
 		return 0, service.ErrPoolConfig
@@ -506,6 +404,12 @@ func (r *poolRepository) CreateResource(ctx context.Context, p service.PoolResou
 			return 0, service.ErrPoolConfig
 		}
 	}
+	if len(p.Extra) == 0 {
+		p.Extra = json.RawMessage(`{}`)
+	}
+	if !json.Valid(p.Extra) || len(p.Extra) > 65536 {
+		return 0, service.ErrPoolConfig
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -516,7 +420,7 @@ func (r *poolRepository) CreateResource(ctx context.Context, p service.PoolResou
 	if err != nil {
 		return 0, err
 	}
-	err = tx.QueryRowContext(ctx, `INSERT INTO accounts(name,platform,type,credentials,concurrency) VALUES($1,'openai',$2,$3,$4) RETURNING id`, p.Name, p.Type, []byte(p.Credentials), p.Concurrency).Scan(&aid)
+	err = tx.QueryRowContext(ctx, `INSERT INTO accounts(name,platform,type,credentials,concurrency,extra,proxy_id,notes,priority,rate_multiplier,load_factor,expires_at,auto_pause_on_expired) VALUES($1,'openai',$2,$3,$4,$5,$6,$7,$8,COALESCE($9,1),$10,$11,COALESCE($12,true)) RETURNING id`, p.Name, p.Type, []byte(p.Credentials), p.Concurrency, []byte(p.Extra), p.ProxyID, p.Notes, p.Priority, p.RateMultiplier, p.LoadFactor, expires, p.AutoPauseOnExpired).Scan(&aid)
 	if err != nil {
 		return 0, err
 	}
@@ -545,4 +449,160 @@ func (r *poolRepository) SetResourceStatus(ctx context.Context, id int64, status
 		return service.ErrPoolConfig
 	}
 	return nil
+}
+
+// 订单行锁串行化发货、取消与重试；资源锁确保一个账号同时只服务一车。
+func (r *poolRepository) Deliver(ctx context.Context, oid, resourceID int64) ([]int64, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	var status string
+	var assigned sql.NullInt64
+	err = tx.QueryRowContext(ctx, `SELECT status,resource_id FROM pool_orders WHERE id=$1 FOR UPDATE`, oid).Scan(&status, &assigned)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, service.ErrPoolClosed
+	}
+	if err != nil {
+		return nil, err
+	}
+	if status == "active" && assigned.Valid && assigned.Int64 == resourceID {
+		return []int64{}, nil
+	}
+	if status != "awaiting_delivery" {
+		return nil, service.ErrPoolClosed
+	}
+	p := service.PoolCreate{}
+	// 账号可在旧车到期/终止后继续开新车。为新周期分配新组，保留旧 Key 与账本。
+	var aid, rid int64
+	err = tx.QueryRowContext(ctx, `SELECT id,account_id,group_id FROM pool_resources WHERE id=$1 FOR UPDATE`, resourceID).Scan(&rid, &aid, &p.GroupID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, service.ErrPoolConfig
+	}
+	if err != nil {
+		return nil, err
+	}
+	var previous int64
+	var ended bool
+	err = tx.QueryRowContext(ctx, `SELECT id,status='cancelled' OR (status='active' AND expires_at<=NOW()) FROM pool_orders WHERE group_id=$1 FOR UPDATE`, p.GroupID).Scan(&previous, &ended)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
+	}
+	if err == nil {
+		if !ended {
+			return nil, service.ErrPoolClosed
+		}
+		var pending bool
+		if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pool_requests q JOIN pool_members m ON m.id=q.member_id WHERE m.order_id=$1 AND q.status='pending')`, previous).Scan(&pending); err != nil {
+			return nil, err
+		}
+		if pending {
+			return nil, service.ErrPoolLimit
+		}
+		oldGroup := p.GroupID
+		err = tx.QueryRowContext(ctx, `INSERT INTO groups(name,platform,subscription_type,is_exclusive,allow_messages_dispatch) VALUES($1,'openai','subscription',true,true) RETURNING id`, "拼单 / "+uuid.NewString()).Scan(&p.GroupID)
+		if err != nil {
+			return nil, err
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE pool_resources SET group_id=$2 WHERE id=$1`, rid, p.GroupID); err != nil {
+			return nil, err
+		}
+		if _, err = tx.ExecContext(ctx, `DELETE FROM account_groups WHERE account_id=$1`, aid); err != nil {
+			return nil, err
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO account_groups(account_id,group_id) VALUES($1,$2)`, aid, p.GroupID); err != nil {
+			return nil, err
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO scheduler_outbox(event_type,group_id) VALUES('group_changed',$1),('group_changed',$2)`, oldGroup, p.GroupID); err != nil {
+			return nil, err
+		}
+	}
+	var valid bool
+	err = tx.QueryRowContext(ctx, `SELECT platform='openai' AND subscription_type='subscription' AND is_exclusive AND status='active'
+ AND fallback_group_id IS NULL AND fallback_group_id_on_invalid_request IS NULL AND EXISTS(SELECT 1 FROM pool_resources WHERE group_id=g.id) AND NOT EXISTS(SELECT 1 FROM api_keys WHERE group_id=g.id AND deleted_at IS NULL)
+ AND NOT EXISTS(SELECT 1 FROM user_subscriptions WHERE group_id=g.id AND deleted_at IS NULL)
+ AND EXISTS(SELECT 1 FROM account_groups ag JOIN accounts a ON a.id=ag.account_id WHERE ag.group_id=g.id AND a.deleted_at IS NULL AND a.status='active')
+ FROM groups g WHERE id=$1 AND deleted_at IS NULL FOR UPDATE`, p.GroupID).Scan(&valid)
+	if errors.Is(err, sql.ErrNoRows) || err == nil && !valid {
+		return nil, service.ErrPoolConfig
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err = tx.ExecContext(ctx, `UPDATE pool_orders SET group_id=$2,resource_id=$3 WHERE id=$1`, oid, p.GroupID, resourceID); err != nil {
+		return nil, err
+	}
+	gid := p.GroupID
+	if _, err = tx.ExecContext(ctx, `UPDATE pool_orders SET status='active',starts_at=NOW(),expires_at=NOW()+duration_hours*INTERVAL '1 hour' WHERE id=$1`, oid); err != nil {
+		return nil, err
+	}
+	rows, e := tx.QueryContext(ctx, `SELECT id,user_id FROM pool_members WHERE order_id=$1 AND status='joined' ORDER BY user_id`, oid)
+	if e != nil {
+		return nil, e
+	}
+	type member struct{ id, uid int64 }
+	members := []member{}
+	for rows.Next() {
+		var m member
+		if e = rows.Scan(&m.id, &m.uid); e != nil {
+			rows.Close()
+			return nil, e
+		}
+		members = append(members, m)
+	}
+	e = rows.Err()
+	rows.Close()
+	if e != nil {
+		return nil, e
+	}
+	affected := []int64{}
+	for _, m := range members {
+		b := make([]byte, 24)
+		if _, err = rand.Read(b); err != nil {
+			return nil, err
+		}
+		key := "sk-pool-" + hex.EncodeToString(b)
+		var kid int64
+		err = tx.QueryRowContext(ctx, `INSERT INTO api_keys(user_id,key,name,group_id,expires_at) SELECT $1,$2,$3,group_id,expires_at FROM pool_orders WHERE id=$4 RETURNING id`, m.uid, key, fmt.Sprintf("拼单 #%d 专属 Key", oid), oid).Scan(&kid)
+		if err != nil {
+			return nil, err
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO user_allowed_groups(user_id,group_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, m.uid, gid); err != nil {
+			return nil, err
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO user_subscriptions(user_id,group_id,starts_at,expires_at,notes) SELECT $1,$2,starts_at,expires_at,'拼单自动开通' FROM pool_orders WHERE id=$3`, m.uid, gid, oid); err != nil {
+			return nil, err
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE pool_members SET api_key_id=$1 WHERE id=$2`, kid, m.id); err != nil {
+			return nil, err
+		}
+		affected = append(affected, m.uid)
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO pool_notifications(order_id,user_id,kind) SELECT order_id,user_id,'delivered' FROM pool_members WHERE order_id=$1 AND status='joined'`, oid); err != nil {
+		return nil, err
+	}
+	return affected, tx.Commit()
+}
+
+func (r *poolRepository) Notifications(ctx context.Context, uid int64, admin bool) ([]service.PoolNotification, error) {
+	rows, err := r.db.QueryContext(ctx, `SELECT n.id,n.order_id,p.title,n.kind,p.delivery_deadline,EXISTS(SELECT 1 FROM pool_notification_reads WHERE notification_id=n.id AND user_id=$1) FROM pool_notifications n JOIN pool_orders p ON p.id=n.order_id WHERE (n.user_id=$1 OR ($2 AND n.user_id IS NULL AND p.status='awaiting_delivery')) ORDER BY n.id DESC LIMIT 100`, uid, admin)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []service.PoolNotification{}
+	for rows.Next() {
+		var n service.PoolNotification
+		if err = rows.Scan(&n.ID, &n.OrderID, &n.Title, &n.Kind, &n.Deadline, &n.Read); err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}
+func (r *poolRepository) ReadNotification(ctx context.Context, id, uid int64, admin bool) error {
+	_, err := r.db.ExecContext(ctx, `INSERT INTO pool_notification_reads(notification_id,user_id) SELECT id,$2 FROM pool_notifications WHERE id=$1 AND (user_id=$2 OR ($3 AND user_id IS NULL)) ON CONFLICT DO NOTHING`, id, uid, admin)
+	return err
 }

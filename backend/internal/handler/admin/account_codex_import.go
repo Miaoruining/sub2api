@@ -22,6 +22,7 @@ import (
 const codexImportClockSkewSeconds int64 = 120
 
 type CodexSessionImportRequest struct {
+	PoolScope               bool           `json:"pool_scope"`
 	Content                 string         `json:"content"`
 	Contents                []string       `json:"contents"`
 	Name                    string         `json:"name"`
@@ -121,6 +122,11 @@ func (h *AccountHandler) ImportCodexSession(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	if req.PoolScope {
+		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), service.PoolAccountCreateContextKey{}, true))
+		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), service.PoolAccountListContextKey{}, true))
+	}
+
 	if err := service.ValidateOpenAILongContextBillingExtra(service.PlatformOpenAI, req.Extra); err != nil {
 		response.ErrorFrom(c, err)
 		return
