@@ -53,7 +53,11 @@ func RegisterGatewayRoutes(
 	if h.PoolOrder != nil {
 		poolRepo = h.PoolOrder.Repo
 	}
-	poolQuota := middleware.PoolQuota(poolRepo)
+	var poolEstimator middleware.PoolCreditEstimator
+	if h.OpenAIGateway != nil {
+		poolEstimator = h.OpenAIGateway.EstimatePoolCredit
+	}
+	poolQuota := middleware.PoolQuota(poolRepo, poolEstimator)
 	bodyLimit := middleware.RequestBodyLimit(cfg.Gateway.MaxBodySize)
 	textBodyLimit := middleware.RequestBodyLimit(cfg.Gateway.TextMaxBodySize)
 	clientRequestID := middleware.ClientRequestID()

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import UsageView from '../UsageView.vue'
+vi.mock('vue-router',()=>({useRoute:()=>({query:{}})}))
 import Select, { type SelectOption } from '@/components/common/Select.vue'
 
 const {
@@ -390,8 +391,8 @@ describe('user UsageView', () => {
     expect(showSuccess).toHaveBeenCalled()
     expect(csvContent.startsWith('\uFEFF')).toBe(true)
     expect(csvContent.slice(1)).toBe([
-      'Time,API Key Name,Model,Reasoning Effort,Inbound Endpoint,IP Address,Type,Billing Mode,Input Tokens,Output Tokens,Cache Read Tokens,Cache Creation Tokens,Rate Multiplier,Billed Cost,Original Cost,First Token (ms),Duration (ms)',
-      '2026-03-08T00:00:00Z,demo-key,gpt-5.4,"\'-",,203.0.113.10,Sync,Token,4057,101,278272,4,1,0.09288300,0.09288300,12,345',
+      'Time,API Key Name,Model,Reasoning Effort,Inbound Endpoint,IP Address,Type,Billing Mode,Usage Source,Pool Order,Input Tokens,Output Tokens,Cache Read Tokens,Cache Creation Tokens,Rate Multiplier,Billed Cost,Original Cost,First Token (ms),Duration (ms)',
+      '2026-03-08T00:00:00Z,demo-key,gpt-5.4,"\'-",,203.0.113.10,Sync,Token,pool.standardUsage,,4057,101,278272,4,1,0.09288300,0.09288300,12,345',
     ].join('\n'))
     expect(csvContent).toContain('IP Address')
     expect(csvContent).toContain('203.0.113.10')
@@ -459,4 +460,15 @@ describe('user UsageView', () => {
     vi.unstubAllGlobals()
     clickSpy.mockRestore()
   })
+  it('applies the group purchase source to records and every summary', async()=>{
+    const wrapper=mountUsageView();await flushPromises()
+    ;(wrapper.vm as any).filters.usage_source='pool'
+    ;(wrapper.vm as any).filters.api_key_id=7
+    await (wrapper.vm as any).applyFilters();await flushPromises()
+    expect(query).toHaveBeenLastCalledWith(expect.objectContaining({usage_source:'pool',api_key_id:7}),expect.anything())
+    expect(getStats).toHaveBeenLastCalledWith(expect.objectContaining({usage_source:'pool',api_key_id:7}))
+    expect(getDashboardSnapshotV2).toHaveBeenLastCalledWith(expect.objectContaining({usage_source:'pool',api_key_id:7}))
+    wrapper.unmount()
+  })
+
 })

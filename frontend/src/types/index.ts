@@ -1680,6 +1680,7 @@ export type ImageSizeSource = 'output' | 'input' | 'default' | 'legacy'
 export type ImageSizeBreakdown = Record<string, number>
 
 export interface UsageLog {
+ pool_order_id?: number | null
   id: number
   user_id: number
   api_key_id: number
@@ -2139,6 +2140,7 @@ export interface UserErrorListParams {
 }
 
 export interface UsageQueryParams {
+ usage_source?: 'pool' | 'standard' | null
   page?: number
   page_size?: number
   api_key_id?: number

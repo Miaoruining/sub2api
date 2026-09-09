@@ -51,4 +51,20 @@ describe('拼单席位和个人额度', () => {
   api.list.mockRejectedValueOnce(new Error('暂不可用')); const w = render(); await flushPromises(); expect(w.get('[role="alert"]').text()).toContain('暂不可用')
   api.list.mockResolvedValue([]); await w.findAll('button').find(b => b.text() === '刷新')!.trigger('click'); await flushPromises(); expect(w.text()).toContain('暂时没有正在拼团的团'); expect(w.find('[role="alert"]').exists()).toBe(false); w.unmount()
  })
+ it('Plus 显示美元窗口额度，Pro 隐藏窗口且可直达拼单使用记录',async()=>{
+  const mine={id:2,status:'joined',key_id:8,paid:10,refunded:0,tokens_used:100,requests_used:2,reserved_tokens:0,inflight:0,credit_used:3,reserved_credit:1,credit_used_5h:1,credit_used_7d:4}
+  api.list.mockResolvedValue([order({status:'active',quota_mode:'credits',plan_type:'plus',total_credit:100,credit_5h:10,credit_7d:50,mine})])
+  const w=render();await flushPromises();expect(w.text()).toContain('每席 5 小时额度');expect(w.text()).toContain('$25.00');expect(w.text()).toContain('$21.00');expect(w.text()).not.toContain('我的已用 / Token 配额');expect(w.text()).toContain('查看使用记录 #1');w.unmount()
+  api.list.mockResolvedValue([order({status:'active',quota_mode:'credits',plan_type:'pro',total_credit:100,credit_5h:0,credit_7d:0,mine})])
+  const pro=render();await flushPromises();expect(pro.text()).toContain('Pro 不设置 5 小时和周额度');expect(pro.text()).not.toContain('每席 5 小时额度');expect(pro.text()).not.toContain('每席每周额度');pro.unmount()
+ })
+ it('发布商品切换 Pro 会移除两个窗口，保存仍保留周期美元额度',async()=>{
+  api.saveProduct.mockResolvedValue(undefined)
+  const w=render(true);await flushPromises()
+  const plan=w.findAll('select').find(s=>s.findAll('option').some(o=>o.text()==='Pro'))!
+  await plan.setValue('pro');expect(w.text()).not.toContain('整车 5 小时额度（$）');expect(w.text()).not.toContain('整车每周额度（$）')
+  await w.get('input[maxlength="100"]').setValue('Pro 3 人团');await w.get('form').trigger('submit');await flushPromises()
+  expect(api.saveProduct).toHaveBeenCalledWith(expect.objectContaining({quota_mode:'credits',plan_type:'pro',total_credit:100,credit_5h:0,credit_7d:0}));w.unmount()
+ })
+
 })

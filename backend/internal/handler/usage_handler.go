@@ -203,8 +203,14 @@ func (h *UsageHandler) parseUserUsageFilters(c *gin.Context, requireRange bool) 
 		}
 	}
 
+	usageSource := strings.TrimSpace(c.Query("usage_source"))
+	if usageSource != "" && usageSource != "pool" && usageSource != "standard" {
+		response.BadRequest(c, "无效的使用来源")
+		return nil, false
+	}
 	return &userUsageFilters{
 		Filters: usagestats.UsageLogFilters{
+			UsageSource:        usageSource,
 			UserID:             subject.UserID,
 			APIKeyID:           apiKeyID,
 			GroupID:            groupID,

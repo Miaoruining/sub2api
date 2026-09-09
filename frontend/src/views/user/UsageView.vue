@@ -98,6 +98,7 @@
             <div class="w-full sm:w-auto sm:min-w-[220px]">
               <label class="input-label">{{ t('usage.apiKeyFilter') }}</label>
               <Select v-model="filters.api_key_id" :options="apiKeyOptions" @change="applyFilters" />
+ </div><div><label class="mb-1 block text-sm text-gray-500">{{ t('pool.usageSource') }}</label><Select v-model="filters.usage_source" :options="usageSourceOptions" @change="applyFilters" />
             </div>
             <div class="w-full sm:w-auto sm:min-w-[220px]">
               <label class="input-label">{{ t('usage.model') }}</label>
@@ -177,6 +178,7 @@
       </div>
 
       <template v-if="activeTab === 'usage'">
+ <PoolCreditHolds v-if="filters.usage_source === 'pool'" :key-id="filters.api_key_id" />
         <UsageTable
           :data="usageLogs"
           :loading="loading"
@@ -220,6 +222,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { keysAPI, usageAPI, userGroupsAPI } from '@/api'
@@ -228,6 +231,7 @@ import Pagination from '@/components/common/Pagination.vue'
 import Select, { type SelectOption } from '@/components/common/Select.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import UsageStatsCards from '@/components/admin/usage/UsageStatsCards.vue'
+import PoolCreditHolds from '@/components/account/PoolCreditHolds.vue'
 import UsageTable from '@/components/admin/usage/UsageTable.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import GroupDistributionChart from '@/components/charts/GroupDistributionChart.vue'
@@ -357,7 +361,10 @@ const endpointDistributionSource = ref<EndpointSource>('inbound')
 const activeTab = ref<'usage' | 'errors'>('usage')
 const errorViewEnabled = computed(() => appStore.cachedPublicSettings?.allow_user_view_error_requests ?? false)
 
+const route = useRoute()
 const filters = ref<UsageQueryParams>({
+ usage_source: route?.query.usage_source === 'pool' ? 'pool' : null,
+ api_key_id: Number(route?.query.api_key_id) > 0 ? Number(route?.query.api_key_id) : undefined,
   start_date: startDate.value,
   end_date: endDate.value,
   request_type: undefined,
@@ -404,6 +411,7 @@ const billingModeOptions = computed<SelectOption[]>(() => [
   { value: 'video', label: t('admin.usage.billingModeVideo') },
 ])
 
+const usageSourceOptions = computed<SelectOption[]>(()=>[{value:null,label:t('pool.allUsage')},{value:'pool',label:t('pool.poolUsage')},{value:'standard',label:t('pool.standardUsage')}])
 const apiKeys = ref<ApiKey[]>([])
 const groups = ref<Group[]>([])
 const modelOptionValues = ref<string[]>([])
@@ -656,6 +664,8 @@ const exportToCSV = async () => {
       'IP Address',
       'Type',
       'Billing Mode',
+ 'Usage Source',
+ 'Pool Order',
       'Input Tokens',
       'Output Tokens',
       'Cache Read Tokens',
@@ -675,6 +685,8 @@ const exportToCSV = async () => {
       log.ip_address || '',
       getRequestTypeExportText(log),
       getBillingModeLabel(getDisplayBillingMode(log), t),
+ log.pool_order_id ? t('pool.poolUsage') : t('pool.standardUsage'),
+ log.pool_order_id || '',
       log.input_tokens,
       log.output_tokens,
       log.cache_read_tokens,

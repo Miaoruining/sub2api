@@ -269,3 +269,17 @@ func (h *PoolOrderHandler) PurchaseProduct(c *gin.Context) {
 	}
 	response.Success(c, gin.H{"order_id": oid})
 }
+
+func (h *PoolOrderHandler) CreditHolds(c *gin.Context) {
+	subject, ok := middleware.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "请先登录")
+		return
+	}
+	rows, err := h.Repo.CreditHolds(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, rows)
+}

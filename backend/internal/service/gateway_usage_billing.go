@@ -336,6 +336,17 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 		return false, nil
 	}
 
+	poolID, _ := ctx.Value(PoolReservationContextKey{}).(string)
+	if poolID != "" {
+		if p.Cost == nil || p.Cost.TotalCost <= 0 || repo == nil || !p.IsSubscriptionBill || p.Subscription == nil {
+			return false, ErrPoolAccess
+		}
+		p.Cost.ActualCost = QuantizeUsageBillingAmount(p.Cost.TotalCost)
+		if usageLog != nil {
+			usageLog.ActualCost = p.Cost.ActualCost
+			usageLog.RateMultiplier = 1
+		}
+	}
 	cmd := buildUsageBillingCommand(requestID, usageLog, p)
 	if cmd == nil || cmd.RequestID == "" || repo == nil {
 		postUsageBilling(ctx, p, deps)
@@ -345,7 +356,11 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 	billingCtx, cancel := detachedBillingContext(ctx)
 	defer cancel()
 
-	cmd.PoolReservationID, _ = ctx.Value(PoolReservationContextKey{}).(string)
+	cmd.PoolReservationID = poolID
+	if poolID != "" {
+		cmd.PoolCreditCost = QuantizeUsageBillingAmount(p.Cost.TotalCost)
+		cmd.BalanceCost = 0
+	}
 	result, err := repo.Apply(billingCtx, cmd)
 	if err != nil {
 		return false, err

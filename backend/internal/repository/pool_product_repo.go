@@ -8,11 +8,11 @@ import (
 	"github.com/google/uuid"
 )
 
-const productColumns = `id,title,description,seats,price,duration_days,formation_days,total_tokens,total_requests,concurrency,status,version`
+const productColumns = `id,title,description,seats,price,duration_days,formation_days,total_tokens,total_requests,concurrency,status,version,quota_mode,plan_type,total_credit,credit_5h,credit_7d`
 
 func scanProduct(row interface{ Scan(...any) error }) (service.PoolProduct, error) {
 	var p service.PoolProduct
-	err := row.Scan(&p.ID, &p.Title, &p.Description, &p.Seats, &p.Price, &p.DurationDays, &p.FormationDays, &p.TotalTokens, &p.TotalRequests, &p.Concurrency, &p.Status, &p.Version)
+	err := row.Scan(&p.ID, &p.Title, &p.Description, &p.Seats, &p.Price, &p.DurationDays, &p.FormationDays, &p.TotalTokens, &p.TotalRequests, &p.Concurrency, &p.Status, &p.Version, &p.QuotaMode, &p.PlanType, &p.TotalCredit, &p.Credit5h, &p.Credit7d)
 	return p, err
 }
 func (r *poolRepository) Products(ctx context.Context, admin bool) ([]service.PoolProduct, error) {
@@ -32,17 +32,27 @@ func (r *poolRepository) Products(ctx context.Context, admin bool) ([]service.Po
 	return out, rows.Err()
 }
 func (r *poolRepository) SaveProduct(ctx context.Context, id int64, p service.PoolProduct) (int64, error) {
+	if p.QuotaMode == "credits" {
+		p.TotalTokens = int64(p.Seats) * 8192
+		p.TotalRequests = int64(p.Seats)
+	}
 	if err := p.Validate(); err != nil {
 		return 0, err
 	}
-	args := []any{p.Title, p.Description, p.Seats, p.Price, p.DurationDays, p.FormationDays, p.TotalTokens, p.TotalRequests, p.Concurrency, p.Status}
+	if p.QuotaMode == "" {
+		p.QuotaMode = "tokens"
+	}
+	if p.PlanType == "" {
+		p.PlanType = "plus"
+	}
+	args := []any{p.Title, p.Description, p.Seats, p.Price, p.DurationDays, p.FormationDays, p.TotalTokens, p.TotalRequests, p.Concurrency, p.Status, p.QuotaMode, p.PlanType, p.TotalCredit, p.Credit5h, p.Credit7d}
 	var saved int64
 	var err error
 	if id == 0 {
-		err = r.db.QueryRowContext(ctx, `INSERT INTO pool_products(title,description,seats,price,duration_days,formation_days,total_tokens,total_requests,concurrency,status) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`, args...).Scan(&saved)
+		err = r.db.QueryRowContext(ctx, `INSERT INTO pool_products(title,description,seats,price,duration_days,formation_days,total_tokens,total_requests,concurrency,status,quota_mode,plan_type,total_credit,credit_5h,credit_7d) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`, args...).Scan(&saved)
 	} else {
 		args = append(args, id, p.Version)
-		err = r.db.QueryRowContext(ctx, `UPDATE pool_products SET title=$1,description=$2,seats=$3,price=$4,duration_days=$5,formation_days=$6,total_tokens=$7,total_requests=$8,concurrency=$9,status=$10,version=version+1,updated_at=NOW() WHERE id=$11 AND version=$12 RETURNING id`, args...).Scan(&saved)
+		err = r.db.QueryRowContext(ctx, `UPDATE pool_products SET title=$1,description=$2,seats=$3,price=$4,duration_days=$5,formation_days=$6,total_tokens=$7,total_requests=$8,concurrency=$9,status=$10,quota_mode=$11,plan_type=$12,total_credit=$13,credit_5h=$14,credit_7d=$15,version=version+1,updated_at=NOW() WHERE id=$16 AND version=$17 RETURNING id`, args...).Scan(&saved)
 	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, service.ErrPoolProductChanged
@@ -88,7 +98,7 @@ func (r *poolRepository) PurchaseProduct(ctx context.Context, pid, uid int64, re
 	if p.Status != "active" || p.Version != version {
 		return 0, service.ErrPoolProductChanged
 	}
-	err = tx.QueryRowContext(ctx, `INSERT INTO pool_orders(product_id,title,seats,price,duration_hours,total_tokens,total_requests,concurrency,join_deadline) VALUES($1,$2,$3,$4,$5*24,$6,$7,$8,NOW()+$9*INTERVAL '1 day') RETURNING id`, p.ID, p.Title, p.Seats, p.Price, p.DurationDays, p.TotalTokens, p.TotalRequests, p.Concurrency, p.FormationDays).Scan(&oid)
+	err = tx.QueryRowContext(ctx, `INSERT INTO pool_orders(product_id,title,seats,price,duration_hours,total_tokens,total_requests,concurrency,join_deadline,quota_mode,plan_type,total_credit,credit_5h,credit_7d) VALUES($1,$2,$3,$4,$5*24,$6,$7,$8,NOW()+$9*INTERVAL '1 day',$10,$11,$12,$13,$14) RETURNING id`, p.ID, p.Title, p.Seats, p.Price, p.DurationDays, p.TotalTokens, p.TotalRequests, p.Concurrency, p.FormationDays, p.QuotaMode, p.PlanType, p.TotalCredit, p.Credit5h, p.Credit7d).Scan(&oid)
 	if err != nil {
 		return 0, err
 	}

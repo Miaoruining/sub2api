@@ -56,6 +56,7 @@ export interface UserDashboardStats {
 }
 
 export interface TrendParams {
+ usage_source?: 'pool' | 'standard' | null
   start_date?: string
   end_date?: string
   granularity?: 'day' | 'hour'

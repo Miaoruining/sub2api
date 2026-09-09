@@ -88,6 +88,7 @@ const DataTableStub = {
   template: `
     <div>
       <div v-for="row in data" :key="row.request_id">
+        <slot name="cell-api_key" :row="row" />
         <slot name="cell-model" :row="row" :value="row.model" />
         <slot name="cell-reasoning_effort" :row="row" :value="row.reasoning_effort" />
         <slot name="cell-billing_mode" :row="row" />
@@ -726,6 +727,7 @@ const DataTableStubWithUser = {
     <div>
       <div v-for="row in data" :key="row.request_id">
         <slot name="cell-user" :row="row" />
+        <slot name="cell-api_key" :row="row" />
         <slot name="cell-model" :row="row" :value="row.model" />
         <slot name="cell-reasoning_effort" :row="row" :value="row.reasoning_effort" />
         <slot name="cell-billing_mode" :row="row" />
@@ -806,4 +808,15 @@ describe('admin UsageTable deleted-user badge', () => {
     expect(wrapper.text()).not.toContain('Deleted')
     expect(wrapper.text()).toContain('active@test.com')
   })
+})
+
+describe('拼单用量标识',()=>{
+ it('显示订单号和订阅用量，同时保留原费用明细',()=>{
+  const wrapper=mount(UsageTable,{props:{data:[{...baseImageRow,image_count:0,pool_order_id:42,api_key:{name:'专属 Key'}}],loading:false,columns:[]},global:{stubs:{DataTable:DataTableStub,EmptyState:true,Icon:true,Teleport:true}}})
+  expect(wrapper.text()).toContain('pool.poolUsage #42')
+  expect(wrapper.text()).toContain('pool.subscriptionDeduction')
+  expect(wrapper.text()).toContain('专属 Key')
+  expect(wrapper.text()).toContain('$0.400000')
+  wrapper.unmount()
+ })
 })

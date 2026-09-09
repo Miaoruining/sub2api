@@ -45,6 +45,7 @@
         </template>
 
         <template #cell-api_key="{ row }">
+ <span v-if="row.pool_order_id" class="mr-2 inline-flex rounded bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" :title="t('pool.poolUsageHint')">{{ t('pool.poolUsage') }} #{{ row.pool_order_id }}</span>
           <span class="text-sm text-gray-900 dark:text-white">{{ row.api_key?.name || '-' }}</span>
         </template>
 
@@ -207,6 +208,7 @@
 
         <template #cell-cost="{ row }">
           <div class="text-sm">
+ <p v-if="row.pool_order_id" class="mb-1 text-xs text-violet-600 dark:text-violet-300">{{ t('pool.subscriptionDeduction') }}</p>
             <div class="flex items-center gap-1.5">
               <span class="font-medium text-green-600 dark:text-green-400">${{ row.actual_cost?.toFixed(6) || '0.000000' }}</span>
               <span

@@ -4271,3 +4271,8 @@ func summarizeWSCloseErrorForLog(err error) (string, string) {
 	}
 	return closeStatus, closeReason
 }
+
+// EstimatePoolCredit 复用网关定价，不包含成员个人的折扣倍率。
+func (h *OpenAIGatewayHandler) EstimatePoolCredit(ctx context.Context, key *service.APIKey, body []byte, tokens int64) (float64, error) {
+	return h.gatewayService.EstimatePoolCredit(ctx, key, body, tokens)
+}

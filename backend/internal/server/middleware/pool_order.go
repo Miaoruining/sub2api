@@ -17,7 +17,9 @@ import (
 )
 
 // PoolQuota 对全部协议入口执行。拼单只开放可预占上界的无状态 OpenAI 文本 HTTP 请求。
-func PoolQuota(repo service.PoolRepository) gin.HandlerFunc {
+type PoolCreditEstimator func(context.Context, *service.APIKey, []byte, int64) (float64, error)
+
+func PoolQuota(repo service.PoolRepository, estimators ...PoolCreditEstimator) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if repo == nil {
 			c.Next()
@@ -68,7 +70,20 @@ func PoolQuota(repo service.PoolRepository) gin.HandlerFunc {
 			}
 			return
 		}
-		id, err := repo.Reserve(c.Request.Context(), gate.MemberID, reserved)
+		var credit []float64
+		if gate.QuotaMode == "credits" {
+			if len(estimators) == 0 || estimators[0] == nil {
+				poolAbort(c, service.ErrPoolConfig)
+				return
+			}
+			cost, e := estimators[0](c.Request.Context(), key, rewritten, reserved)
+			if e != nil {
+				AbortWithError(c, 400, "POOL_PRICING", "当前模型无法计算拼单预占额度，请选择已配置价格的模型")
+				return
+			}
+			credit = []float64{cost}
+		}
+		id, err := repo.Reserve(c.Request.Context(), gate.MemberID, reserved, credit...)
 		if err != nil {
 			poolAbort(c, err)
 			return

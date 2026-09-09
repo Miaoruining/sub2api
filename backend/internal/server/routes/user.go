@@ -26,6 +26,7 @@ func RegisterUserRoutes(
 	authenticated.Use(gin.HandlerFunc(auditLog))
 	{
 		if h.PoolOrder != nil {
+			authenticated.GET("/pool-credit-holds", h.PoolOrder.CreditHolds)
 			authenticated.GET("/pool-notifications", h.PoolOrder.Notifications)
 			authenticated.POST("/pool-notifications/:id/read", h.PoolOrder.Notifications)
 			authenticated.GET("/pool-products", h.PoolOrder.Products)

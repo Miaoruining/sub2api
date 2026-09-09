@@ -24,7 +24,7 @@ func NewPoolRepository(db *sql.DB) service.PoolRepository { return &poolReposito
 func (r *poolRepository) List(ctx context.Context, uid int64, admin bool) ([]service.PoolOrder, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT p.id,p.title,COALESCE(p.group_id,0),p.seats,p.price,p.duration_hours,p.total_tokens,p.total_requests,p.concurrency,p.join_deadline,
  CASE WHEN p.status='active' AND p.expires_at<=NOW() THEN 'expired' WHEN p.status='forming' AND p.join_deadline<=NOW() THEN 'closed' ELSE p.status END,
- p.starts_at,p.expires_at,p.formed_at,p.delivery_deadline,p.resource_id,p.product_id,
+ p.starts_at,p.expires_at,p.formed_at,p.delivery_deadline,p.resource_id,p.product_id,p.quota_mode,p.plan_type,p.total_credit,p.credit_5h,p.credit_7d,
  (SELECT COUNT(*) FROM pool_members WHERE order_id=p.id AND status='joined'),
  COALESCE((SELECT SUM(tokens_used) FROM pool_members WHERE order_id=p.id),0),
  COALESCE((SELECT SUM(requests_used) FROM pool_members WHERE order_id=p.id),0),
@@ -38,7 +38,7 @@ func (r *poolRepository) List(ctx context.Context, uid int64, admin bool) ([]ser
 	out := []service.PoolOrder{}
 	for rows.Next() {
 		var p service.PoolOrder
-		if err = rows.Scan(&p.ID, &p.Title, &p.GroupID, &p.Seats, &p.Price, &p.DurationHours, &p.TotalTokens, &p.TotalRequests, &p.Concurrency, &p.JoinDeadline, &p.Status, &p.StartsAt, &p.ExpiresAt, &p.FormedAt, &p.DeliveryDeadline, &p.ResourceID, &p.ProductID, &p.Joined, &p.TokensUsed, &p.RequestsUsed, &p.ReservedTokens); err != nil {
+		if err = rows.Scan(&p.ID, &p.Title, &p.GroupID, &p.Seats, &p.Price, &p.DurationHours, &p.TotalTokens, &p.TotalRequests, &p.Concurrency, &p.JoinDeadline, &p.Status, &p.StartsAt, &p.ExpiresAt, &p.FormedAt, &p.DeliveryDeadline, &p.ResourceID, &p.ProductID, &p.QuotaMode, &p.PlanType, &p.TotalCredit, &p.Credit5h, &p.Credit7d, &p.Joined, &p.TokensUsed, &p.RequestsUsed, &p.ReservedTokens); err != nil {
 			return nil, err
 		}
 		p.DurationDays = float64(p.DurationHours) / 24
@@ -54,6 +54,11 @@ func (r *poolRepository) List(ctx context.Context, uid int64, admin bool) ([]ser
  COALESCE((SELECT SUM(reserved_tokens) FROM pool_requests WHERE member_id=m.id AND status='pending'),0),
  (SELECT COUNT(*) FROM pool_requests WHERE member_id=m.id AND status='pending') FROM pool_members m WHERE order_id=$1 AND user_id=$2`, out[i].ID, uid).Scan(&m.ID, &m.Status, &m.KeyID, &m.Paid, &m.Refunded, &m.TokensUsed, &m.RequestsUsed, &m.ReservedTokens, &m.Inflight)
 		if err == nil {
+			if out[i].QuotaMode == "credits" {
+				if err = loadPoolCreditUsage(ctx, r.db, m.ID, &m); err != nil {
+					return nil, err
+				}
+			}
 			out[i].Mine = &m
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			return nil, err
@@ -251,9 +256,15 @@ func (r *poolRepository) Gate(ctx context.Context, kid, uid, gid int64) (*servic
 	if !valid {
 		return nil, service.ErrPoolAccess
 	}
+	if err = r.db.QueryRowContext(ctx, `SELECT quota_mode FROM pool_orders WHERE id=$1`, g.OrderID).Scan(&g.QuotaMode); err != nil {
+		return nil, err
+	}
+	if g.QuotaMode == "credits" {
+		g.TokensRemaining = 2000000
+	}
 	return &g, nil
 }
-func (r *poolRepository) Reserve(ctx context.Context, mid, tokens int64) (string, error) {
+func (r *poolRepository) Reserve(ctx context.Context, mid, tokens int64, credit ...float64) (string, error) {
 	if tokens <= 0 || tokens > 2000000 {
 		return "", service.ErrPoolLimit
 	}
@@ -298,11 +309,32 @@ func (r *poolRepository) Reserve(ctx context.Context, mid, tokens int64) (string
 	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(reserved_tokens),0) FROM pool_requests WHERE member_id=$1 AND status='pending'`, mid).Scan(&pending, &reserved); err != nil {
 		return "", err
 	}
-	if used+reserved+tokens > tokenLimit || requests >= reqLimit || pending >= concurrency {
+	var mode string
+	if err = tx.QueryRowContext(ctx, `SELECT quota_mode FROM pool_orders p JOIN pool_members m ON m.order_id=p.id WHERE m.id=$1`, mid).Scan(&mode); err != nil {
+		return "", err
+	}
+	reservedCredit := 0.0
+	if mode == "credits" {
+		var recentRequests int
+		if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pool_requests WHERE member_id=$1 AND created_at>NOW()-INTERVAL '1 minute'`, mid).Scan(&recentRequests); err != nil {
+			return "", err
+		}
+		if recentRequests >= 60 {
+			return "", service.ErrPoolLimit
+		}
+		if len(credit) != 1 || math.IsNaN(credit[0]) || math.IsInf(credit[0], 0) || credit[0] <= 0 {
+			return "", service.ErrPoolConfig
+		}
+		reservedCredit = service.QuantizeUsageBillingAmount(credit[0])
+		if err = checkPoolCredit(ctx, tx, mid, reservedCredit); err != nil {
+			return "", err
+		}
+	}
+	if (mode != "credits" && (used+reserved+tokens > tokenLimit || requests >= reqLimit)) || pending >= concurrency {
 		return "", service.ErrPoolLimit
 	}
 	id := uuid.NewString()
-	if _, err = tx.ExecContext(ctx, `INSERT INTO pool_requests(id,member_id,reserved_tokens) VALUES($1,$2,$3)`, id, mid, tokens); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT INTO pool_requests(id,member_id,reserved_tokens,reserved_credit) VALUES($1,$2,$3,$4)`, id, mid, tokens, reservedCredit); err != nil {
 		return "", err
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE pool_members SET requests_used=requests_used+1 WHERE id=$1`, mid); err != nil {
@@ -353,6 +385,9 @@ func settlePoolRequest(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillin
 	if status == "settled" {
 		return nil
 	}
+	if math.IsNaN(cmd.PoolCreditCost) || math.IsInf(cmd.PoolCreditCost, 0) || cmd.PoolCreditCost < 0 {
+		return errors.New("invalid pool credit cost")
+	}
 	var actual int64
 	for _, v := range []int{cmd.InputTokens, cmd.OutputTokens, cmd.CacheCreationTokens, cmd.CacheReadTokens} {
 		if v < 0 || int64(v) > 1000000000 {
@@ -367,7 +402,7 @@ func settlePoolRequest(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillin
 	if _, err = tx.ExecContext(ctx, `UPDATE pool_members SET tokens_used=tokens_used+$2 WHERE id=$1`, mid, delta); err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE pool_requests SET status='settled',actual_tokens=$2,finished_at=NOW() WHERE id=$1`, cmd.PoolReservationID, actual)
+	_, err = tx.ExecContext(ctx, `UPDATE pool_requests SET status='settled',actual_tokens=$2,actual_credit=$3,finished_at=NOW() WHERE id=$1`, cmd.PoolReservationID, actual, cmd.PoolCreditCost)
 	return err
 }
 
@@ -497,6 +532,13 @@ func (r *poolRepository) Deliver(ctx context.Context, oid, resourceID int64) ([]
 	}
 	if err != nil {
 		return nil, err
+	}
+	var mode, plan, accountPlan string
+	if err = tx.QueryRowContext(ctx, `SELECT p.quota_mode,p.plan_type,LOWER(COALESCE(a.credentials->>'plan_type','')) FROM pool_orders p CROSS JOIN accounts a WHERE p.id=$1 AND a.id=$2`, oid, aid).Scan(&mode, &plan, &accountPlan); err != nil {
+		return nil, err
+	}
+	if mode == "credits" && (accountPlan == "plus" || accountPlan == "pro") && plan != accountPlan {
+		return nil, service.ErrPoolPlan
 	}
 	var previous int64
 	var ended bool
