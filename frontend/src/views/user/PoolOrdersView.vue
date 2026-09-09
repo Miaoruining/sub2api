@@ -1,16 +1,12 @@
 <template>
   <AppLayout>
     <div class="mx-auto max-w-7xl space-y-6 pb-8">
-      <header class="flex flex-wrap items-start justify-between gap-4">
+      <header class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div>
           <p v-if="admin" class="mb-2 text-sm font-medium text-primary-600">MODELPORT / {{ t('pool.equalShare') }}</p>
           <h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">{{ t(admin ? 'pool.adminTitle' : 'pool.title') }}</h1>
           <template v-if="admin">
             <p class="mt-2 max-w-3xl text-sm leading-6 text-gray-500">{{ t('pool.description') }}</p>
-          </template>
-          <template v-else>
-            <p class="mt-2 text-base text-gray-700 dark:text-gray-200">{{ t('pool.lobby.subtitle') }}</p>
-            <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('pool.lobby.meta') }}</p>
           </template>
         </div>
         <div class="flex flex-wrap items-center justify-end gap-2">
@@ -20,11 +16,11 @@
           <router-link v-if="admin" to="/admin/pool-resources" class="btn btn-secondary btn-sm">{{ t('pool.resourceTitle') }}</router-link>
           <button class="btn btn-secondary btn-sm" :disabled="busy" @click="load">{{ t('pool.refresh') }}</button>
         </div>
+        <p v-if="!admin" data-test="my-orders-notice" class="flex basis-full flex-wrap items-center justify-between gap-x-4 gap-y-1 text-sm leading-5 text-gray-500 dark:text-dark-400">
+          <span>{{ t('pool.lobby.meta') }}</span>
+          <router-link to="/subscriptions#pool-orders" :title="t('pool.myOrdersNotice')" class="shrink-0 font-medium text-primary-600 hover:underline dark:text-primary-300">{{ t('pool.lobby.myOrdersLink') }} →</router-link>
+        </p>
       </header>
-      <p v-if="!admin" data-test="my-orders-notice" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-500 dark:text-dark-400">
-        <Icon name="infoCircle" size="sm" />{{ t('pool.myOrdersNotice') }}
-        <router-link to="/subscriptions#pool-orders" class="font-medium text-primary-600 hover:underline dark:text-primary-300">{{ t('pool.viewMySubscriptions') }} →</router-link>
-      </p>
       <p v-if="error && !selected" role="alert" class="rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{{ error }}</p>
       <p v-if="success" role="status" class="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">{{ success }}</p>
       <template v-if="admin">

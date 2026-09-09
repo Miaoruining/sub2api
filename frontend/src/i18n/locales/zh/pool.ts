@@ -38,6 +38,7 @@ export default {
     "title": "拼单大厅",
     "adminTitle": "拼单管理",
     "lobby": {
+      "myOrdersLink": "已拼单订单：我的订阅",
       "subtitle": "加入正在拼团，或选择商品发起新团。",
       "meta": "独立 Key · 按席共享订阅 · 成团后 24 小时内发货",
       "pricingEntry": "价格说明",

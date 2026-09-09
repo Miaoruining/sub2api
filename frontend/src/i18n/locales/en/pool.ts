@@ -38,6 +38,7 @@ export default {
     "title": "Group orders",
     "adminTitle": "Group order management",
     "lobby": {
+      "myOrdersLink": "Your group orders: My Subscriptions",
       "subtitle": "Join an ongoing group or choose a product to start one.",
       "meta": "Dedicated key · Equal seat shares · Delivery within 24 hours of formation",
       "pricingEntry": "Pricing",
