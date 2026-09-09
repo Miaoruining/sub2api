@@ -13,6 +13,7 @@ import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
 import { resolveRouteDocumentTitle } from './title'
+import { isHomeRoute, isModelPortHome, syncRouteSeo } from './seo'
 
 /**
  * Route definitions with lazy loading
@@ -746,6 +747,7 @@ const routes: RouteRecordRaw[] = [
     name: 'NotFound',
     component: () => import('@/views/NotFoundView.vue'),
     meta: {
+      requiresAuth: false,
       title: '404 Not Found'
     }
   }
@@ -1000,6 +1002,33 @@ router.beforeEach(async (to, _from, next) => {
 router.afterEach((to) => {
   // 结束导航加载状态
   navigationLoading.endNavigation()
+
+  const appStore = useAppStore()
+  syncRouteSeo(to, appStore)
+
+  const deferSeoSync = () => {
+    // App.vue's settings watcher can update document.title during mount. Run
+    // one final pass on the next task so the SEO homepage title wins there,
+    // while all normal route titles remain owned by the existing logic.
+    window.setTimeout(() => {
+      if (router.currentRoute.value.fullPath === to.fullPath) {
+        syncRouteSeo(router.currentRoute.value, appStore)
+      }
+    }, 0)
+  }
+
+  // On a first load without injected settings, App.vue fetches the same
+  // public settings during mount. Re-sync after it resolves so ModelPort's
+  // homepage metadata is based on the actual site and backend-mode values.
+  if (isHomeRoute(to) && !appStore.publicSettingsLoaded) {
+    const navigatedPath = to.fullPath
+    void appStore.fetchPublicSettings().then(() => {
+      if (router.currentRoute.value.fullPath !== navigatedPath) return
+      deferSeoSync()
+    })
+  } else if (isModelPortHome(to, appStore)) {
+    deferSeoSync()
+  }
 
   // 懒初始化预加载（首次导航时创建，传入 router 实例）
   if (!routePrefetch) {
