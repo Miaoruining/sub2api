@@ -50,6 +50,8 @@ export default {
     "total_tokens": "Total tokens",
     "total_requests": "Total requests",
     "concurrency": "Concurrency per member",
+    "formationCountdown": "Time left: {days}d {hours}:{minutes}:{seconds}",
+    "formationEnded": "Joining has closed",
     "deadline": "Join deadline",
     "createHint": "No account selection at publication. Deliver an account within 24 hours after formation. Seats, price and quotas are fixed after publishing. Shares are rounded down. An account serves one active order and can be reused after expiry or cancellation; history is retained. Quotas do not reset during a cycle.",
     "rules": "Service begins after delivery. Unformed groups can refund to the wallet. Legacy $ credits use OpenAI API Standard prices without debiting the wallet again. Dynamic quotas split the actual upstream windows by seat; Standard $ is a reference. Missing windows show syncing, and stale windows wait for synchronization and pause new requests rather than appearing as zero or unlimited. Pro also follows actual upstream windows and is not an unlimited guarantee. Requests reserve estimated usage before settlement; missing usage retains the reservation. Legacy token orders retain their terms. Only stateless HTTP text requests are supported.",

@@ -50,6 +50,8 @@ export default {
     "total_tokens": "整车 Token 总量",
     "total_requests": "整车请求总次数",
     "concurrency": "每人并发上限",
+    "formationCountdown": "剩余 {days} 天 {hours}:{minutes}:{seconds}",
+    "formationEnded": "参团已截止",
     "deadline": "参团截止时间",
     "createHint": "发布时无需选择号池；成团后 24 小时内绑定账号发货。发布后人数、价格和配额锁定。额度按人数向下取整，余数不单独分配。每个账号同时仅绑定一车，到期或终止后可复用开新车，旧车记录保留。周期内不自动重置。",
     "rules": "发货后开始计算服务天数；未成团可退回站内余额。旧 $ credits 按 OpenAI 官方 API Standard 价格记录输入、输出和缓存用量，不再次扣钱包。动态额度按共享账号实际窗口和席位均分，Standard $ 仅作参考；窗口缺失时显示同步中，过期窗口等待同步并暂停新请求，不当作 0 或无限。Pro 也以实际上游窗口为准，不能承诺绝对无限。调用先预占再结算，缺少用量时保守保留预占；历史 Token 订单保留原规则。支持 HTTP 无状态纯文本，需关闭 WebSocket、服务端历史、多媒体与内置联网工具。",

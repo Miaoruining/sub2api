@@ -2,6 +2,10 @@
         <article  class="card min-w-0 space-y-5 p-6">
           <div class="flex items-start justify-between gap-3"><div><p class="text-xs text-gray-500">#{{ o.id }} · {{ o.joined }}/{{ o.seats }} {{ t('pool.people') }}</p><h2 class="mt-2 break-words text-lg font-semibold">{{ o.title }}</h2></div><span class="shrink-0 rounded-full px-3 py-1 text-xs font-semibold" :class="o.status === 'forming' ? 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300' : 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'">{{ t(`pool.state.${o.status}`) }}</span></div>
           <div class="flex items-baseline gap-2"><strong class="text-3xl tabular-nums">{{ n(o.price) }}</strong><span class="text-sm text-gray-500">{{ t('pool.balanceUnit') }} / {{ t('pool.seat') }} · {{ n(o.duration_days ?? o.duration_hours / 24) }} {{ t('pool.days') }}</span></div>
+          <div v-if="o.status === 'forming'" class="space-y-1 rounded-lg bg-red-50 p-3 text-red-600 dark:bg-red-950/30 dark:text-red-300">
+            <p class="text-sm font-semibold tabular-nums">{{ countdown }}</p>
+            <p class="text-xs">{{ t('pool.deadline') }}：<time :datetime="o.join_deadline">{{ date(o.join_deadline) }}</time></p>
+          </div>
           <PoolCreditSummary v-if="o.quota_mode === 'credits'" :config="o" :seats="o.seats" :member="o.mine" />
           <PoolDynamicQuotaSummary v-else-if="o.quota_mode === 'dynamic' || o.quota_mode === 'dynamic_shadow'" :mode="o.quota_mode" :plan="o.plan_type" :seats="o.seats" :total-credit="o.total_credit" :credit5h="o.credit_5h" :credit7d="o.credit_7d" :quota="o.mine?.dynamic_quota" :undelivered="o.status === 'awaiting_delivery'" />
  <dl v-else class="grid grid-cols-2 gap-3 rounded-xl bg-gray-50 p-4 text-sm dark:bg-dark-800">
@@ -20,10 +24,10 @@
             <p>{{ t('pool.awaitingHint') }}</p><p v-if="o.delivery_deadline">{{ t('pool.deliveryDeadline') }}: {{ date(o.delivery_deadline) }} <strong v-if="new Date(o.delivery_deadline).getTime() < Date.now()"> · {{ t('pool.overdue') }}</strong></p>
             <router-link v-if="admin" :to="{path: '/admin/pool-resources', query: {order: o.id}}" class="btn btn-primary mt-2">{{ t('pool.deliver') }} #{{ o.id }}</router-link>
           </div>
-          <p class="text-xs text-gray-500">{{ t(o.expires_at ? 'pool.expires' : 'pool.deadline') }}: {{ date(o.expires_at || o.join_deadline) }}</p>
+          <p v-if="o.status !== 'forming'" class="text-xs text-gray-500">{{ t(o.expires_at ? 'pool.expires' : 'pool.deadline') }}: {{ date(o.expires_at || o.join_deadline) }}</p>
           <p v-if="o.mine?.status === 'refunded'" class="text-sm text-emerald-700 dark:text-emerald-300">{{ t('pool.refunded') }} {{ n(o.mine.refunded) }} {{ t('pool.balanceUnit') }}</p>
           <div class="flex flex-wrap gap-2">
-            <button v-if="!o.mine && o.status === 'forming' && !admin" class="btn btn-primary" :disabled="busy" @click="$emit('act', o, 'join')">{{ t('pool.join') }}</button>
+            <button v-if="!o.mine && o.status === 'forming' && !admin" class="btn btn-primary" :disabled="busy || remainingMs <= 0" @click="$emit('act', o, 'join')">{{ t('pool.join') }}</button>
             <button v-if="o.mine?.status === 'joined' && ['forming', 'closed'].includes(o.status)" class="btn btn-secondary" :disabled="busy" @click="$emit('act', o, 'leave')">{{ t('pool.leave') }}</button>
             <router-link v-if="o.mine?.key_id && o.status === 'active' && o.mine.status === 'joined'" to="/keys" class="btn btn-primary">{{ t('pool.getKey') }} #{{ o.mine.key_id }}</router-link>
             <router-link v-if="o.mine?.key_id" :to="{path:'/usage',query:{usage_source:'pool',api_key_id:o.mine.key_id}}" class="btn btn-secondary">{{ t('pool.usageRecords') }} #{{ o.id }}</router-link>
@@ -32,13 +36,31 @@
         </article>
 </template>
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useNow } from '@vueuse/core'
 import PoolCreditSummary from './PoolCreditSummary.vue'
 import PoolDynamicQuotaSummary from './PoolDynamicQuotaSummary.vue'
 import {useI18n} from 'vue-i18n'
 import type {PoolOrder} from '@/api/poolOrders'
-defineProps<{o:PoolOrder;admin?:boolean;busy:boolean}>()
+const props = defineProps<{o:PoolOrder;admin?:boolean;busy:boolean}>()
 defineEmits<{act:[order:PoolOrder,action:'join'|'leave'|'cancel']}>()
 const {t}=useI18n()
+const now = useNow({ interval: 1000 })
+const remainingMs = computed(() => {
+  const deadline = new Date(props.o.join_deadline).getTime()
+  return Number.isFinite(deadline) ? Math.max(0, deadline - now.value.getTime()) : 0
+})
+const countdown = computed(() => {
+  if (remainingMs.value <= 0) return t('pool.formationEnded')
+  const seconds = Math.ceil(remainingMs.value / 1000)
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return t('pool.formationCountdown', {
+    days: Math.floor(seconds / 86400),
+    hours: pad(Math.floor(seconds / 3600) % 24),
+    minutes: pad(Math.floor(seconds / 60) % 60),
+    seconds: pad(seconds % 60)
+  })
+})
 const n=(v:number)=>v.toLocaleString(undefined,{maximumFractionDigits:8})
 const date=(v:string)=>new Date(v).toLocaleString()
 const percent=(v:number|null)=>v==null?t('pool.unknown'):`${n(Math.max(0,100-v))}% ${t('pool.remaining')}`
