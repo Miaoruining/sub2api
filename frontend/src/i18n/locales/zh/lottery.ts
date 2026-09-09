@@ -1,5 +1,6 @@
 export default {
   lottery: {
+    balanceSyncFailed: '奖励已计入账户，但顶部余额显示尚未同步。系统会自动重试，也可点击“刷新状态”；请勿重复抽奖。',
     makeupSchedule: '北京时间 · 今日补抽 14:00–16:00',
     makeupTimeRule: '2026 年 9 月 9 日补抽时间为北京时间 14:00–16:00；次日起每日 09:00–11:00，每人每日一次。',
     title: '每日幸运抽奖', entry: '抽奖', description: '每天 09:00–11:00，开启今日幸运',

@@ -10,6 +10,7 @@
       </header>
 
       <p v-if="error" role="alert" class="rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{{ error }}</p>
+      <p v-if="balanceSyncFailed" role="alert" class="rounded-xl bg-amber-50 p-4 text-sm text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">{{ t('lottery.balanceSyncFailed') }}</p>
       <div v-if="!status && loading" class="grid gap-6 lg:grid-cols-3" :aria-label="t('common.loading')" aria-busy="true">
         <div class="h-80 animate-pulse rounded-2xl bg-gray-100 dark:bg-dark-800 lg:col-span-2" />
         <div class="h-80 animate-pulse rounded-2xl bg-gray-100 dark:bg-dark-800" />
@@ -127,6 +128,9 @@ const sliderStyle = computed(() => {
   }
 })
 const error = ref('')
+const balanceSyncFailed = ref(false)
+let syncedDrawId: number | null = null
+let balanceSync: Promise<void> | undefined
 // 未确认的管理员请求保留同一个编号，不能因网络重试而重新开奖。
 const pendingDraw = ref<{ date: string; id: string } | null>(null)
 const now = ref(Date.now())
@@ -148,6 +152,21 @@ const countdown = computed(() => {
   return [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60].map(n => String(n).padStart(2, '0')).join(':')
 })
 function formatTime(value: string) { return new Date(value).toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false }) }
+// 只从账户接口同步真实余额，不在客户端叠加奖励；刷新失败也不能重新开奖。
+async function syncWinnerBalance(winner: LotteryDraw | null, force = false) {
+  if (!winner || disposed) return
+  if (!force && syncedDrawId === winner.id && !balanceSyncFailed.value) return
+  if (balanceSync) return balanceSync
+  balanceSync = (async () => {
+    try {
+      await auth.refreshUser()
+      if (!disposed) { syncedDrawId = winner.id; balanceSyncFailed.value = false }
+    } catch {
+      if (!disposed && winner.prize > 0) balanceSyncFailed.value = true
+    } finally { balanceSync = undefined }
+  })()
+  return balanceSync
+}
 async function load(background = false) {
   if (loading.value || disposed) return
   loading.value = true
@@ -159,6 +178,7 @@ async function load(background = false) {
     offset = Date.parse(data.server_time) - Date.now()
     now.value = Date.now() + offset
     result.value = data.today
+    await syncWinnerBalance(data.today, !background)
   } catch {
     error.value = t('lottery.loadError')
   } finally { loading.value = false }
@@ -178,9 +198,10 @@ async function draw() {
     pendingDraw.value = null
     // 先锁定本地状态，后续刷新失败也不能让按钮重新可点。
     if (status.value) { status.value.today = confirmed; status.value.state = 'drawn' }
+    const sync = syncWinnerBalance(confirmed)
     if (!await finishReveal(confirmed.prize) || disposed) return
     result.value = confirmed
-    await auth.refreshUser().catch(() => undefined)
+    await sync
     await load(true)
   } catch (cause) {
     cancelReveal()
@@ -191,7 +212,6 @@ async function draw() {
     await load(true)
     if (adminAttempt) error.value = t(pendingDraw.value ? 'lottery.adminDrawError' : 'lottery.drawError')
     else if (!status.value?.today) error.value = t('lottery.drawError')
-    else if (status.value.today.prize > 0) await auth.refreshUser().catch(() => undefined)
   } finally { drawing.value = false }
 }
 onMounted(() => {

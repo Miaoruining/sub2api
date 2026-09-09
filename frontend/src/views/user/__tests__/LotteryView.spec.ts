@@ -54,6 +54,7 @@ describe('LotteryView', () => {
     const today = { id: 1, activity_date: '2026-09-08', prize: 5, created_at: '2026-09-08T02:00:00Z' }
     api.status.mockResolvedValue(state({ state: 'drawn', today, history: [today] }))
     resolveDraw(today); await flushPromises()
+    expect(api.refreshUser).toHaveBeenCalledTimes(1)
     expect(w.find('.lottery-result').exists()).toBe(false)
     expect(w.get('.draw-button').attributes('disabled')).toBeDefined()
     await vi.advanceTimersByTimeAsync(6000); await flushPromises()
@@ -68,6 +69,26 @@ describe('LotteryView', () => {
     await w.get('.draw-button').trigger('click'); await flushPromises()
     expect(w.find('[role="alert"]').exists()).toBe(false)
     expect(w.text()).toContain('今日抽奖结果'); expect(w.get('.draw-button').attributes('disabled')).toBeDefined(); w.unmount()
+  })
+  it('refreshes the wallet when reopening an existing winning result', async () => {
+    const today = { id: 7, activity_date: '2026-09-08', prize: 1, created_at: '2026-09-08T02:00:00Z' }
+    api.status.mockResolvedValue(state({ state: 'drawn', today, history: [today] }))
+    const w = render(); await flushPromises()
+    expect(api.refreshUser).toHaveBeenCalledTimes(1)
+    expect(w.get('.draw-button').attributes('disabled')).toBeDefined()
+    expect(api.draw).not.toHaveBeenCalled(); w.unmount()
+  })
+  it('shows wallet sync failure and retries on polling without drawing again', async () => {
+    const today = { id: 8, activity_date: '2026-09-08', prize: 1, created_at: '2026-09-08T02:00:00Z' }
+    api.status.mockResolvedValue(state({ state: 'drawn', today, history: [today] }))
+    api.refreshUser.mockRejectedValueOnce(new Error('wallet unavailable')).mockResolvedValue(undefined)
+    const w = render(); await flushPromises()
+    expect(w.text()).toContain('余额显示尚未同步')
+    expect(w.text()).toContain('1 额度已到账')
+    await vi.advanceTimersByTimeAsync(30000); await flushPromises()
+    expect(api.refreshUser).toHaveBeenCalledTimes(2)
+    expect(w.text()).not.toContain('余额显示尚未同步')
+    expect(api.draw).not.toHaveBeenCalled(); w.unmount()
   })
   it('refreshes at 09:00 using server time instead of client wall time', async () => {
     api.status.mockResolvedValueOnce(state({ state: 'not_open', server_time: '2026-09-08T00:59:59Z', opens_at: '2026-09-08T09:00:00+08:00' }))
@@ -130,6 +151,9 @@ describe('LotteryView', () => {
     expect(w.get('.draw-button').attributes('disabled')).toBeUndefined()
     const firstKey = api.draw.mock.calls[0][1]
     expect(firstKey).toMatch(/^[0-9a-f-]{36}$/)
+    const second = { ...first, id: 12 }
+    api.draw.mockResolvedValue(second)
+    api.status.mockResolvedValue(state({ admin_repeat: true, today: second, history: [second, first] }))
     await w.get('.draw-button').trigger('click'); await flushPromises()
     await vi.advanceTimersByTimeAsync(6000); await flushPromises()
     expect(api.draw.mock.calls[1][1]).not.toBe(firstKey)

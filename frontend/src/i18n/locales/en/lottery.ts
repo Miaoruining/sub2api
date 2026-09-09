@@ -1,5 +1,6 @@
 export default {
   lottery: {
+    balanceSyncFailed: 'Your reward has been credited, but the header balance has not synced yet. We will retry automatically; you can also refresh the status. Do not draw again.',
     makeupSchedule: 'Beijing time · Today’s makeup draw 14:00–16:00',
     makeupTimeRule: 'Makeup draws on September 9, 2026 run from 14:00 to 16:00 Beijing time. From the following day: daily 09:00–11:00, once per user per day.',
     title: 'Daily lucky draw', entry: 'Draw', description: 'A little luck, every day from 09:00 to 11:00',
