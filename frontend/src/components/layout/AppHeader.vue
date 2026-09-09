@@ -36,7 +36,6 @@
         </router-link>
 
         <!-- Announcement Bell -->
-        <AnnouncementBell v-if="user" />
         <PoolNotificationBell v-if="user" />
 
         <!-- Model Plaza Entry -->
@@ -268,7 +267,6 @@ import { useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
-import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 

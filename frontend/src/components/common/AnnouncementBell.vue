@@ -2,6 +2,7 @@
   <div>
     <!-- 铃铛按钮 -->
     <button
+      v-if="!hideTrigger"
       @click="openModal"
       class="relative flex h-9 w-9 items-center justify-center rounded-lg text-gray-600 transition-all hover:bg-gray-100 hover:scale-105 dark:text-gray-400 dark:hover:bg-dark-800"
       :class="{ 'text-blue-600 dark:text-blue-400': unreadCount > 0 }"
@@ -325,6 +326,7 @@ import Icon from '@/components/icons/Icon.vue'
 import '@/styles/announcement-markdown.css'
 
 const { t } = useI18n()
+defineProps<{ hideTrigger?: boolean }>()
 const appStore = useAppStore()
 const announcementStore = useAnnouncementStore()
 
@@ -353,6 +355,8 @@ function renderMarkdown(content: string): string {
 function openModal() {
   isModalOpen.value = true
 }
+
+defineExpose({ openModal })
 
 function closeModal() {
   isModalOpen.value = false
