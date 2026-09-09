@@ -51,7 +51,7 @@
 - `go test -tags embed ./internal/web` 和对应 `-race` 检查通过。
 - `go test ./internal/web` 非嵌入版本可编译（该版本无测试）；`go build -tags embed ./cmd/server` 通过。
 - 7 页正文、内部指南链接和 JSON-LD 解析有自动化验证；已在浏览器检查指南模板的实际排版。
-- 未在本轮执行生产部署，未向 Search Console 提交站点地图。
+- SEO 实现轮次未部署；随后于 2026-09-10 随 v0.2.4 部署上线，应用提交 `34f71d10b`。线上首页、7 个指南、robots、sitemap、canonical、404、私有页 noindex 及 API 鉴权检查通过，详见 `release-modelport-20260910-v0.2.4.md`。尚未向 Search Console 提交站点地图。
 
 ## 后续内容与衡量
 
