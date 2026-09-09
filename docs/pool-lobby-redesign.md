@@ -39,3 +39,11 @@ final result: passed
 未解决 P0/P1/P2：无。截图：desktop-dark.png、desktop-light.png、mobile.png、mobile-detail.png；通知手机截图位于 `/tmp/modelport-lobby-design/mobile-notifications.png`。
 
 本轮为前端改动，未新增迁移或修改后端支付/动态额度调度规则；未部署生产。
+
+## 后续调整：个人拼单移至我的订阅
+
+用户要求统一在「我的订阅」查看已参与订单。个人拼单卡片从大厅移到 `/subscriptions` 顶部的「我的拼单」区域；既有常规订阅继续单独显示。大厅提供简短文字提示与链接；用户发货通知同步跳转到该位置，管理员发货入口保持原路径。个人订单使用独立加载与错误状态，保留待发货、个人额度、Key、使用记录、退出退款等功能。
+
+迁移验收：页面/通知 20 项回归通过，新组件 4 项测试通过（自己的订单筛选、错误恢复、退款防重复与重试、轮询与卸载清理）。浏览器已实测大厅跳转、订阅详情与退款确认、390×844 手机布局，控制台无 error；截图 `/tmp/modelport-lobby-design/subscriptions-with-pool.png`。
+
+最终构建：`pnpm run build` 通过，包含国际化完整性 3 项、TypeScript 与 Vite 生产构建。

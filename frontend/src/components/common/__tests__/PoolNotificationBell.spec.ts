@@ -46,4 +46,12 @@ describe('顶部统一通知入口', () => {
     expect(w.get('button[aria-expanded]').text()).toContain('2')
     w.unmount()
   })
+  it('用户发货通知跳转到我的订阅中的拼单订单', async () => {
+    mocks.notifications.mockResolvedValue([{id:5,order_id:9,title:'已发货',kind:'delivered',deadline:null,read:false}])
+    const w=render();await flushPromises()
+    await w.get('button[aria-expanded]').trigger('click');await flushPromises()
+    expect(w.find('a[data-target="/subscriptions#pool-orders"]').exists()).toBe(true)
+    w.unmount()
+  })
+
 })

@@ -1,6 +1,9 @@
 <template>
   <AppLayout>
     <div class="space-y-6">
+      <PoolSubscriptionsSection />
+      <section class="space-y-4" aria-labelledby="regular-subscriptions-title">
+      <h2 id="regular-subscriptions-title" class="text-xl font-semibold">{{ t('pool.regularSubscriptions') }}</h2>
       <!-- Loading State -->
       <div v-if="loading" class="flex justify-center py-12">
         <div
@@ -243,6 +246,7 @@
           </div>
         </div>
       </div>
+      </section>
     </div>
   </AppLayout>
 </template>
@@ -255,6 +259,7 @@ import { useAppStore } from '@/stores/app'
 import subscriptionsAPI from '@/api/subscriptions'
 import type { UserSubscription } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import PoolSubscriptionsSection from '@/components/account/PoolSubscriptionsSection.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { formatDateTimeToMinute } from '@/utils/format'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'

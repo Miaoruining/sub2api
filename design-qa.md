@@ -110,3 +110,7 @@ final result: passed
 无待处理的 P0/P1/P2 卡片差异。动态内容、美元符号及现有页面外围布局属于明确保留的业务边界，不宣称两套完整页面的每个像素一致。
 
 final result: passed
+
+## 2026-09-10 后续迁移
+
+个人拼单详情已从大厅移动到我的订阅，大厅与用户发货通知均链接 `/subscriptions#pool-orders`。保留常规订阅。桌面/手机与退款确认验收通过；迁移回归见 `docs/pool-lobby-redesign.md`。

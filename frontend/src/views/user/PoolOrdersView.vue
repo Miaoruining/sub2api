@@ -21,6 +21,10 @@
           <button class="btn btn-secondary btn-sm" :disabled="busy" @click="load">{{ t('pool.refresh') }}</button>
         </div>
       </header>
+      <p v-if="!admin" data-test="my-orders-notice" class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-500 dark:text-dark-400">
+        <Icon name="infoCircle" size="sm" />{{ t('pool.myOrdersNotice') }}
+        <router-link to="/subscriptions#pool-orders" class="font-medium text-primary-600 hover:underline dark:text-primary-300">{{ t('pool.viewMySubscriptions') }} →</router-link>
+      </p>
       <p v-if="error && !selected" role="alert" class="rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{{ error }}</p>
       <p v-if="success" role="status" class="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">{{ success }}</p>
       <template v-if="admin">
@@ -96,10 +100,6 @@
             <PoolLobbyOrderRow v-for="o in forming" :key="o.id" :order="o" :busy="busy" @act="selectOrder" />
           </div>
         </section>
-        <details class="rounded-xl border border-gray-200 p-4 dark:border-dark-700" :open="userMine.length > 0">
-          <summary class="cursor-pointer text-sm font-medium">{{ t('pool.myOrders') }} <span class="ml-2 font-normal text-gray-500">{{ userMine.length }}</span></summary>
-          <div v-if="userMine.length" class="mt-4 grid gap-4 lg:grid-cols-2"><PoolOrderCard v-for="o in userMine" :key="o.id" :o="o" :busy="busy" @act="selectOrder" /></div>
-        </details>
         <aside>
           <details class="rounded-xl border border-gray-200 p-4 dark:border-dark-700">
             <summary class="cursor-pointer text-sm font-medium">{{ t('pool.recentSuccess') }} <span class="ml-2 font-normal text-gray-500">{{ t('pool.recentHint') }} · {{ recent.length }}</span></summary>
@@ -136,7 +136,6 @@ type Selection={item:PoolOrder;action:'join'|'leave'|'cancel'}|{item:PoolProduct
 const selected=ref<Selection|null>(null)
 const showAllProducts=ref(false)
 const visibleProducts=computed(()=>showAllProducts.value ? products.value : products.value.slice(0,2))
-const userMine=computed(()=>orders.value.filter(o=>o.mine))
 function selectProduct(product:PoolProduct){selected.value={item:product,action:'purchase',requestId:newRequestId()}}
 const newProduct=():PoolProduct=>({id:0,title:'',description:'',quota_mode:'dynamic_shadow',plan_type:'plus',total_credit:100,credit_5h:10,credit_7d:50,seats:2,price:10,duration_days:30,formation_days:2,total_tokens:0,total_requests:0,concurrency:1,status:'active',version:0})
 const form=ref(newProduct())
