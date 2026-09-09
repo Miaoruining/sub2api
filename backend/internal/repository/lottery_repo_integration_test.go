@@ -223,7 +223,7 @@ func TestLotteryTimeGatesAndRandomFailureRollback(t *testing.T) {
 	r, uids, date := lotteryFixture(t, 1)
 	lotteryPaid(t, uids)
 	ctx := context.Background()
-	for _, now := range []time.Time{time.Date(2038, 1, 2, 1, 59, 59, 0, time.UTC), time.Date(2038, 1, 2, 16, 0, 0, 0, time.UTC)} {
+	for _, now := range []time.Time{time.Date(2038, 1, 2, 0, 59, 59, 0, time.UTC), time.Date(2038, 1, 2, 16, 0, 0, 0, time.UTC)} {
 		r.clock = func(context.Context, lotteryQuery) (time.Time, error) { return now, nil }
 		_, err := r.Draw(ctx, uids[0], date)
 		require.ErrorIs(t, err, service.ErrLotteryClosed)
@@ -241,6 +241,40 @@ func TestLotteryTimeGatesAndRandomFailureRollback(t *testing.T) {
 	d, err := r.Draw(ctx, uids[0], date)
 	require.NoError(t, err)
 	require.Equal(t, 1, d.Prize)
+}
+
+func TestLotteryMakeupWindowAndOneDailyAttempt(t *testing.T) {
+	date := "2026-09-09"
+	// Fixture cleanup removes owned draws first, then this disposable day's summary.
+	t.Cleanup(func() {
+		_, err := integrationDB.Exec(`DELETE FROM lottery_days WHERE activity_date=$1`, date)
+		require.NoError(t, err)
+	})
+	r, uids, _ := lotteryFixture(t, 2)
+	lotteryPaid(t, uids)
+	ctx := context.Background()
+	now := time.Date(2026, 9, 9, 5, 59, 59, 0, time.UTC)
+	r.clock = func(context.Context, lotteryQuery) (time.Time, error) { return now, nil }
+	s, err := r.Status(ctx, uids[0])
+	require.NoError(t, err)
+	require.Equal(t, "not_open", s.State)
+	require.Equal(t, "2026-09-09T14:00:00+08:00", s.OpensAt.Format(time.RFC3339))
+	require.Equal(t, "2026-09-09T16:00:00+08:00", s.ClosesAt.Format(time.RFC3339))
+	require.Equal(t, "2026-09-10T09:00:00+08:00", s.NextOpensAt.Format(time.RFC3339))
+	_, err = r.Draw(ctx, uids[0], date)
+	require.ErrorIs(t, err, service.ErrLotteryClosed)
+	now = now.Add(time.Second)
+	d, err := r.Draw(ctx, uids[0], date)
+	require.NoError(t, err)
+	replay, err := r.Draw(ctx, uids[0], date)
+	require.NoError(t, err)
+	require.Equal(t, d.ID, replay.ID)
+	now = now.Add(2 * time.Hour)
+	s, err = r.Status(ctx, uids[1])
+	require.NoError(t, err)
+	require.Equal(t, "ended", s.State)
+	_, err = r.Draw(ctx, uids[1], date)
+	require.ErrorIs(t, err, service.ErrLotteryClosed)
 }
 
 func TestLotteryLedgerFailureRollsBackBalanceAndBudget(t *testing.T) {
@@ -465,7 +499,7 @@ func TestLotteryElevenOClockCutoffAndAdministratorException(t *testing.T) {
 		hour, minute, second int
 		state                string
 	}{
-		{1, 59, 59, "not_open"}, {2, 0, 0, "ready"}, {2, 59, 59, "ready"},
+		{0, 59, 59, "not_open"}, {1, 0, 0, "ready"}, {2, 0, 0, "ready"}, {2, 59, 59, "ready"},
 		{3, 0, 0, "ended"}, {3, 0, 1, "ended"}, {15, 59, 59, "ended"},
 	} {
 		t.Run(fmt.Sprintf("UTC-%02d:%02d:%02d", test.hour, test.minute, test.second), func(t *testing.T) {

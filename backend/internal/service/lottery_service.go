@@ -11,7 +11,7 @@ import (
 )
 
 const LotteryDailyBudget = 100
-const LotteryWindowDuration = time.Hour
+const LotteryWindowDuration = 2 * time.Hour
 const LotteryIntroDrawLimit = 3
 const LotteryIntroTicketCount = 100000
 
@@ -27,11 +27,19 @@ var lotteryZone = time.FixedZone("Asia/Shanghai", 8*60*60)
 
 func LotteryWindow(now time.Time) (string, time.Time, time.Time) {
 	n := now.In(lotteryZone)
-	open := time.Date(n.Year(), n.Month(), n.Day(), 10, 0, 0, 0, lotteryZone)
-	return n.Format("2006-01-02"), open, open.AddDate(0, 0, 1)
+	return n.Format("2006-01-02"), lotteryOpensOn(n), lotteryOpensOn(n.AddDate(0, 0, 1))
 }
 
-// 普通用户开放区间为北京时间 [10:00, 11:00)，不包含 11:00。
+func lotteryOpensOn(day time.Time) time.Time {
+	hour := 9
+	// 2026-09-09 上午活动未开放，仅当天补抽；不重置次数、概率或预算。
+	if day.Format("2006-01-02") == "2026-09-09" {
+		hour = 14
+	}
+	return time.Date(day.Year(), day.Month(), day.Day(), hour, 0, 0, 0, lotteryZone)
+}
+
+// 普通用户每日北京时间 [09:00, 11:00)，补抽日为 [14:00, 16:00)。
 func LotteryIsOpen(now time.Time) bool {
 	_, open, _ := LotteryWindow(now)
 	return !now.Before(open) && now.Before(open.Add(LotteryWindowDuration))

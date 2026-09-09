@@ -3,7 +3,7 @@
     <div class="mx-auto max-w-6xl space-y-6">
       <header class="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p class="mb-2 text-xs font-semibold tracking-wide text-rose-700 dark:text-rose-300">{{ t(status?.admin_repeat ? 'lottery.adminSchedule' : 'lottery.schedule') }}</p>
+          <p class="mb-2 text-xs font-semibold tracking-wide text-rose-700 dark:text-rose-300">{{ t(status?.admin_repeat ? 'lottery.adminSchedule' : makeupDay ? 'lottery.makeupSchedule' : 'lottery.schedule') }}</p>
           <h2 class="text-3xl font-semibold tracking-tight text-gray-900 dark:text-white">{{ t('lottery.title') }}</h2>
         </div>
         <span class="rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{{ t(status?.admin_repeat ? 'lottery.adminFree' : 'lottery.free') }}</span>
@@ -90,7 +90,7 @@
       <section class="rounded-xl bg-gray-50 p-5 text-sm leading-7 text-gray-600 dark:bg-dark-800/50 dark:text-dark-400">
         <h3 class="mb-2 font-medium text-gray-900 dark:text-white">{{ t('lottery.rules') }}</h3>
         <p v-if="status?.admin_repeat">{{ t('lottery.adminOnce') }}</p>
-        <template v-else><p>{{ t('lottery.once') }}</p><p>{{ t('lottery.timeRule') }}</p><p>{{ t('lottery.qualificationNote') }}</p></template>
+        <template v-else><p>{{ t('lottery.once') }}</p><p>{{ t(makeupDay ? 'lottery.makeupTimeRule' : 'lottery.timeRule') }}</p><p>{{ t('lottery.qualificationNote') }}</p></template>
         <p>{{ t('lottery.creditRule') }}</p>
       </section>
     </div>
@@ -109,6 +109,7 @@ import { lotteryRing, useLotteryReveal } from '@/composables/useLotteryReveal'
 const { t } = useI18n()
 const auth = useAuthStore()
 const status = ref<LotteryStatus | null>(null)
+const makeupDay = computed(() => status.value?.activity_date === '2026-09-09')
 const result = ref<LotteryDraw | null>(null)
 const loading = ref(false)
 const drawing = ref(false)

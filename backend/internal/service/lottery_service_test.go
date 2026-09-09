@@ -78,7 +78,7 @@ func TestLotteryWindowUsesBeijingIndependentOfServerZone(t *testing.T) {
 		utc, date string
 		before    bool
 	}{
-		{"2026-09-08T01:59:59Z", "2026-09-08", true},
+		{"2026-09-08T00:59:59Z", "2026-09-08", true},
 		{"2026-09-08T02:00:00Z", "2026-09-08", false},
 		{"2026-09-08T15:59:59Z", "2026-09-08", false},
 		{"2026-09-08T16:00:00Z", "2026-09-09", true},
@@ -88,7 +88,7 @@ func TestLotteryWindowUsesBeijingIndependentOfServerZone(t *testing.T) {
 		date, open, next := LotteryWindow(now.In(time.FixedZone("other", -7*3600)))
 		require.Equal(t, test.date, date)
 		require.Equal(t, test.before, now.Before(open))
-		require.Equal(t, 24*time.Hour, next.Sub(open))
+		require.Equal(t, open.AddDate(0, 0, 1).Format("2006-01-02"), next.In(lotteryZone).Format("2006-01-02"))
 	}
 }
 
@@ -100,18 +100,41 @@ func TestLotteryUserDTOHasNoInternalFields(t *testing.T) {
 	}
 }
 
-func TestLotteryOpeningWindowIsTenToElevenBeijing(t *testing.T) {
+func TestLotteryMakeupNextOpening(t *testing.T) {
+	for _, tc := range []struct{ now, open, next string }{
+		{"2026-09-08T12:00:00+08:00", "2026-09-08T09:00:00+08:00", "2026-09-09T14:00:00+08:00"},
+		{"2026-09-09T12:00:00+08:00", "2026-09-09T14:00:00+08:00", "2026-09-10T09:00:00+08:00"},
+		{"2026-09-10T12:00:00+08:00", "2026-09-10T09:00:00+08:00", "2026-09-11T09:00:00+08:00"},
+	} {
+		now, err := time.Parse(time.RFC3339, tc.now)
+		require.NoError(t, err)
+		_, open, next := LotteryWindow(now)
+		require.Equal(t, tc.open, open.Format(time.RFC3339))
+		require.Equal(t, tc.next, next.Format(time.RFC3339))
+	}
+}
+
+func TestLotteryOpeningWindowIsNineToElevenBeijing(t *testing.T) {
 	for _, test := range []struct {
 		utc  string
 		open bool
 	}{
-		{"2026-09-08T01:59:59Z", false},
+		{"2026-09-08T00:59:59Z", false},
+		{"2026-09-08T01:00:00Z", true},
 		{"2026-09-08T02:00:00Z", true},
 		{"2026-09-08T02:59:59.999999999Z", true},
 		{"2026-09-08T03:00:00Z", false},
 		{"2026-09-08T03:00:01Z", false},
 		{"2026-09-08T15:59:59Z", false},
 		{"2026-09-08T16:00:00Z", false},
+		{"2026-09-09T01:00:00Z", false},
+		{"2026-09-09T05:59:59.999999999Z", false},
+		{"2026-09-09T06:00:00Z", true},
+		{"2026-09-09T07:59:59.999999999Z", true},
+		{"2026-09-09T08:00:00Z", false},
+		{"2026-09-10T00:59:59Z", false},
+		{"2026-09-10T01:00:00Z", true},
+		{"2026-09-10T03:00:00Z", false},
 	} {
 		now, err := time.Parse(time.RFC3339Nano, test.utc)
 		require.NoError(t, err)
