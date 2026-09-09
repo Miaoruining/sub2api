@@ -200,3 +200,72 @@ func (h *PoolOrderHandler) Notifications(c *gin.Context) {
 	}
 	response.Success(c, out)
 }
+
+func (h *PoolOrderHandler) Products(c *gin.Context)      { h.products(c, false) }
+func (h *PoolOrderHandler) AdminProducts(c *gin.Context) { h.products(c, true) }
+func (h *PoolOrderHandler) products(c *gin.Context, admin bool) {
+	if admin && !poolAdmin(c) {
+		return
+	}
+	out, err := h.Repo.Products(c.Request.Context(), admin)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, out)
+}
+func (h *PoolOrderHandler) SaveProduct(c *gin.Context) {
+	if !poolAdmin(c) {
+		return
+	}
+	var p service.PoolProduct
+	if c.ShouldBindJSON(&p) != nil {
+		response.BadRequest(c, "商品参数无效")
+		return
+	}
+	var id int64
+	var err error
+	if c.Param("id") != "" {
+		id, err = strconv.ParseInt(c.Param("id"), 10, 64)
+		if err != nil || id <= 0 {
+			response.BadRequest(c, "商品编号无效")
+			return
+		}
+	}
+	id, err = h.Repo.SaveProduct(c.Request.Context(), id, p)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"id": id})
+}
+func (h *PoolOrderHandler) PurchaseProduct(c *gin.Context) {
+	subject, ok := middleware.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "请先登录")
+		return
+	}
+	var req struct {
+		RequestID string `json:"request_id"`
+		Version   int64  `json:"version"`
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 || c.ShouldBindJSON(&req) != nil {
+		response.BadRequest(c, "商品参数无效")
+		return
+	}
+	oid, err := h.Repo.PurchaseProduct(c.Request.Context(), id, subject.UserID, req.RequestID, req.Version)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), 5*time.Second)
+	defer cancel()
+	if h.billing != nil {
+		_ = h.billing.InvalidateUserBalance(ctx, subject.UserID)
+	}
+	if h.auth != nil {
+		h.auth.InvalidateAuthCacheByUserID(ctx, subject.UserID)
+	}
+	response.Success(c, gin.H{"order_id": oid})
+}

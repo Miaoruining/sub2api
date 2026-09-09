@@ -11,11 +11,12 @@ import (
 )
 
 var (
-	ErrPoolConfig  = infraerrors.BadRequest("POOL_CONFIG", "请检查拼单参数；发布时无需绑定账号，发货账号必须来自可用的独立拼单号池")
-	ErrPoolClosed  = infraerrors.Conflict("POOL_CLOSED", "拼单已满员、结束或超过截止时间")
-	ErrPoolBalance = infraerrors.Conflict("POOL_BALANCE", "站内余额不足，请先充值")
-	ErrPoolAccess  = infraerrors.Forbidden("POOL_ACCESS", "仅限本车成员使用自己的拼单专属 Key")
-	ErrPoolLimit   = infraerrors.New(429, "POOL_LIMIT", "个人 Token、请求次数或并发额度不足，请等待当前请求结束或下一周期")
+	ErrPoolProductChanged = infraerrors.Conflict("POOL_PRODUCT_CHANGED", "商品已更新或下架，请刷新商品后重新确认")
+	ErrPoolConfig         = infraerrors.BadRequest("POOL_CONFIG", "请检查拼单参数；发布时无需绑定账号，发货账号必须来自可用的独立拼单号池")
+	ErrPoolClosed         = infraerrors.Conflict("POOL_CLOSED", "拼单已满员、结束或超过截止时间")
+	ErrPoolBalance        = infraerrors.Conflict("POOL_BALANCE", "站内余额不足，请先充值")
+	ErrPoolAccess         = infraerrors.Forbidden("POOL_ACCESS", "仅限本车成员使用自己的拼单专属 Key")
+	ErrPoolLimit          = infraerrors.New(429, "POOL_LIMIT", "个人 Token、请求次数或并发额度不足，请等待当前请求结束或下一周期")
 )
 
 type PoolCreate struct {
@@ -49,6 +50,8 @@ type PoolMember struct {
 	Inflight       int     `json:"inflight"`
 }
 type PoolOrder struct {
+	ProductID     *int64        `json:"product_id"`
+	DurationDays  float64       `json:"duration_days"`
 	SharedAccount *PoolResource `json:"shared_account"`
 	ID            int64         `json:"id"`
 	PoolCreate
@@ -107,7 +110,33 @@ type PoolResource struct {
 	Used5h    *float64 `json:"used_5h"`
 	Used7d    *float64 `json:"used_7d"`
 }
+type PoolProduct struct {
+	ID            int64   `json:"id"`
+	Title         string  `json:"title"`
+	Description   string  `json:"description"`
+	Seats         int     `json:"seats"`
+	Price         float64 `json:"price"`
+	DurationDays  int     `json:"duration_days"`
+	FormationDays int     `json:"formation_days"`
+	TotalTokens   int64   `json:"total_tokens"`
+	TotalRequests int64   `json:"total_requests"`
+	Concurrency   int     `json:"concurrency"`
+	Status        string  `json:"status"`
+	Version       int64   `json:"version"`
+}
+
+func (p PoolProduct) Validate() error {
+	now := time.Now()
+	if len([]rune(p.Description)) > 2000 || p.DurationDays < 1 || p.DurationDays > 365 || p.FormationDays < 1 || p.FormationDays > 90 || (p.Status != "active" && p.Status != "disabled") {
+		return ErrPoolConfig
+	}
+	return (PoolCreate{Title: p.Title, Seats: p.Seats, Price: p.Price, DurationHours: p.DurationDays * 24, TotalTokens: p.TotalTokens, TotalRequests: p.TotalRequests, Concurrency: p.Concurrency, JoinDeadline: now.Add(time.Hour)}).Validate(now)
+}
+
 type PoolRepository interface {
+	Products(context.Context, bool) ([]PoolProduct, error)
+	SaveProduct(context.Context, int64, PoolProduct) (int64, error)
+	PurchaseProduct(context.Context, int64, int64, string, int64) (int64, error)
 	Deliver(context.Context, int64, int64) ([]int64, error)
 	Notifications(context.Context, int64, bool) ([]PoolNotification, error)
 	ReadNotification(context.Context, int64, int64, bool) error

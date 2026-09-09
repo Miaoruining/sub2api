@@ -24,12 +24,12 @@ func NewPoolRepository(db *sql.DB) service.PoolRepository { return &poolReposito
 func (r *poolRepository) List(ctx context.Context, uid int64, admin bool) ([]service.PoolOrder, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT p.id,p.title,COALESCE(p.group_id,0),p.seats,p.price,p.duration_hours,p.total_tokens,p.total_requests,p.concurrency,p.join_deadline,
  CASE WHEN p.status='active' AND p.expires_at<=NOW() THEN 'expired' WHEN p.status='forming' AND p.join_deadline<=NOW() THEN 'closed' ELSE p.status END,
- p.starts_at,p.expires_at,p.formed_at,p.delivery_deadline,p.resource_id,
+ p.starts_at,p.expires_at,p.formed_at,p.delivery_deadline,p.resource_id,p.product_id,
  (SELECT COUNT(*) FROM pool_members WHERE order_id=p.id AND status='joined'),
  COALESCE((SELECT SUM(tokens_used) FROM pool_members WHERE order_id=p.id),0),
  COALESCE((SELECT SUM(requests_used) FROM pool_members WHERE order_id=p.id),0),
  COALESCE((SELECT SUM(q.reserved_tokens) FROM pool_requests q JOIN pool_members m ON m.id=q.member_id WHERE m.order_id=p.id AND q.status='pending'),0)
- FROM pool_orders p WHERE $2 OR p.status IN ('forming','active') OR EXISTS(SELECT 1 FROM pool_members WHERE order_id=p.id AND user_id=$1)
+ FROM pool_orders p WHERE $2 OR p.status IN ('forming','active') OR (p.status='awaiting_delivery' AND p.formed_at>=NOW()-INTERVAL '24 hours') OR EXISTS(SELECT 1 FROM pool_members WHERE order_id=p.id AND user_id=$1)
  ORDER BY p.id DESC LIMIT 100`, uid, admin)
 	if err != nil {
 		return nil, err
@@ -38,9 +38,10 @@ func (r *poolRepository) List(ctx context.Context, uid int64, admin bool) ([]ser
 	out := []service.PoolOrder{}
 	for rows.Next() {
 		var p service.PoolOrder
-		if err = rows.Scan(&p.ID, &p.Title, &p.GroupID, &p.Seats, &p.Price, &p.DurationHours, &p.TotalTokens, &p.TotalRequests, &p.Concurrency, &p.JoinDeadline, &p.Status, &p.StartsAt, &p.ExpiresAt, &p.FormedAt, &p.DeliveryDeadline, &p.ResourceID, &p.Joined, &p.TokensUsed, &p.RequestsUsed, &p.ReservedTokens); err != nil {
+		if err = rows.Scan(&p.ID, &p.Title, &p.GroupID, &p.Seats, &p.Price, &p.DurationHours, &p.TotalTokens, &p.TotalRequests, &p.Concurrency, &p.JoinDeadline, &p.Status, &p.StartsAt, &p.ExpiresAt, &p.FormedAt, &p.DeliveryDeadline, &p.ResourceID, &p.ProductID, &p.Joined, &p.TokensUsed, &p.RequestsUsed, &p.ReservedTokens); err != nil {
 			return nil, err
 		}
+		p.DurationDays = float64(p.DurationHours) / 24
 		out = append(out, p)
 	}
 	if err = rows.Err(); err != nil {
@@ -92,6 +93,14 @@ func (r *poolRepository) Join(ctx context.Context, oid, uid int64) ([]int64, err
 		return nil, err
 	}
 	defer tx.Rollback()
+	affected, err := joinPoolOrder(ctx, tx, oid, uid)
+	if err != nil {
+		return nil, err
+	}
+	return affected, tx.Commit()
+}
+func joinPoolOrder(ctx context.Context, tx *sql.Tx, oid, uid int64) ([]int64, error) {
+	var err error
 	var status string
 	var seats int
 	var open bool
@@ -145,7 +154,7 @@ func (r *poolRepository) Join(ctx context.Context, oid, uid int64) ([]int64, err
 		}
 	}
 
-	return affected, tx.Commit()
+	return affected, nil
 }
 
 func (r *poolRepository) Leave(ctx context.Context, oid, uid int64) ([]int64, error) {
@@ -212,6 +221,12 @@ func (r *poolRepository) refund(ctx context.Context, oid, uid int64, cancel bool
 	}
 	if cancel {
 		if _, err = tx.ExecContext(ctx, `UPDATE pool_orders SET status='cancelled' WHERE id=$1`, oid); err != nil {
+			return nil, err
+		}
+	}
+	// 商品开团后最后一人退出时结束空团，避免大厅出现无人参与的订单。
+	if !cancel {
+		if _, err = tx.ExecContext(ctx, `UPDATE pool_orders SET status='cancelled' WHERE id=$1 AND product_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM pool_members WHERE order_id=$1 AND status='joined')`, oid); err != nil {
 			return nil, err
 		}
 	}
