@@ -16,12 +16,12 @@
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <label class="text-sm">{{ t('pool.productName') }}<input v-model="form.title" required maxlength="100" class="input mt-1" :placeholder="t('pool.productExample')" :disabled="busy" /></label>
           <label v-for="f in numberFields" :key="f.key" class="text-sm">{{ t(`pool.${f.key}`) }}<input v-model.number="form[f.key]" type="number" required :min="f.min" :max="f.max" :step="f.step || 1" class="input mt-1" :disabled="busy" /></label>
-          <label class="text-sm">{{ t('pool.quotaMode') }}<select v-model="form.quota_mode" class="input mt-1" :disabled="busy"><option value="credits">{{ t('pool.creditQuota') }}</option><option value="tokens">{{ t('pool.legacyTokens') }}</option></select></label>
- <label v-if="form.quota_mode === 'credits'" class="text-sm">{{ t('pool.planType') }}<select v-model="form.plan_type" class="input mt-1" :disabled="busy" @change="changePlan"><option value="plus">Plus</option><option value="pro">Pro</option></select></label>
+          <label class="text-sm">{{ t('pool.quotaMode') }}<select v-model="form.quota_mode" class="input mt-1" :disabled="busy" @change="changeQuotaMode"><option value="credits">{{ t('pool.creditQuota') }}</option><option value="dynamic">{{ t('pool.quotaMode_dynamic') }}</option><option value="dynamic_shadow">{{ t('pool.quotaMode_dynamic_shadow') }}</option><option value="tokens">{{ t('pool.legacyTokens') }}</option></select></label>
+ <label v-if="form.quota_mode !== 'tokens'" class="text-sm">{{ t('pool.planType') }}<select v-model="form.plan_type" class="input mt-1" :disabled="busy" @change="changePlan"><option value="plus">Plus</option><option value="pro">Pro</option></select></label>
  <label class="text-sm">{{ t('pool.productStatus') }}<select v-model="form.status" class="input mt-1" :disabled="busy"><option value="active">{{ t('pool.onSale') }}</option><option value="disabled">{{ t('pool.offSale') }}</option></select></label>
         </div>
         <label class="block text-sm">{{ t('pool.productDescription') }}<textarea v-model="form.description" maxlength="2000" rows="2" class="input mt-1" :disabled="busy" /></label>
-        <p class="text-xs leading-6 text-gray-500">{{ t('pool.productHint') }}</p>
+        <p class="text-xs leading-6 text-gray-500">{{ form.quota_mode === 'dynamic' ? t('pool.dynamicProductHint') : form.quota_mode === 'dynamic_shadow' ? t('pool.dynamicShadowProductHint') : t('pool.productHint') }}</p>
         <div class="flex gap-2"><button class="btn btn-primary" :disabled="busy">{{ t(form.id ? 'pool.saveProduct' : 'pool.publishProduct') }}</button><button v-if="form.id" type="button" class="btn btn-secondary" :disabled="busy" @click="form = newProduct()">{{ t('pool.back') }}</button></div>
       </form>
       <p v-if="loading" role="status" class="card p-10 text-center text-gray-500">{{ t('pool.loading') }}</p>
@@ -46,7 +46,8 @@
             <p class="whitespace-pre-line text-sm leading-6 text-gray-500">{{ p.description || t('pool.defaultProductDescription') }}</p>
             <p><strong class="text-3xl tabular-nums">{{ n(p.price) }}</strong><span class="ml-2 text-sm text-gray-500">{{ t('pool.balanceUnit') }} / {{ t('pool.seat') }}</span></p>
             <PoolCreditSummary v-if="p.quota_mode === 'credits'" :config="p" :seats="p.seats" />
- <p v-if="p.quota_mode === 'credits'" class="text-sm text-gray-500">{{ p.duration_days }} {{ t('pool.days') }} · {{ t('pool.formation_days') }} {{ p.formation_days }} {{ t('pool.days') }}</p>
+            <PoolDynamicQuotaSummary v-else-if="isDynamicMode(p.quota_mode)" :mode="p.quota_mode" :plan="p.plan_type" :seats="p.seats" :total-credit="p.total_credit" :credit5h="p.credit_5h" :credit7d="p.credit_7d" undelivered />
+ <p v-if="p.quota_mode === 'credits' || isDynamicMode(p.quota_mode)" class="text-sm text-gray-500">{{ p.duration_days }} {{ t('pool.days') }} · {{ t('pool.formation_days') }} {{ p.formation_days }} {{ t('pool.days') }}</p>
  <dl v-else class="grid grid-cols-2 gap-3 rounded-lg bg-gray-50 p-4 text-sm dark:bg-dark-800"><div><dt class="text-gray-500">{{ t('pool.duration_days') }}</dt><dd class="mt-1 font-medium">{{ p.duration_days }} {{ t('pool.days') }}</dd></div><div><dt class="text-gray-500">{{ t('pool.formation_days') }}</dt><dd class="mt-1 font-medium">{{ p.formation_days }} {{ t('pool.days') }}</dd></div><div><dt class="text-gray-500">{{ t('pool.shareTokens') }}</dt><dd class="mt-1 font-medium">{{ n(Math.floor(p.total_tokens / p.seats)) }}</dd></div><div><dt class="text-gray-500">{{ t('pool.shareRequests') }}</dt><dd class="mt-1 font-medium">{{ n(Math.floor(p.total_requests / p.seats)) }}</dd></div></dl>
             <p class="text-xs text-gray-500">{{ t('pool.concurrency') }}: {{ p.concurrency }} · {{ t('pool.deliveryPromise') }}</p>
             <div v-if="admin" class="mt-auto flex items-center justify-between gap-2"><span class="text-sm" :class="p.status === 'active' ? 'text-emerald-600' : 'text-gray-500'">{{ t(p.status === 'active' ? 'pool.onSale' : 'pool.offSale') }}</span><button class="btn btn-secondary" :disabled="busy" @click="editProduct(p)">{{ t('pool.editProduct') }}</button></div>
@@ -69,21 +70,36 @@ import {computed, onMounted, onUnmounted, ref} from 'vue'
 import {useI18n} from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import PoolCreditSummary from '@/components/account/PoolCreditSummary.vue'
+import PoolDynamicQuotaSummary from '@/components/account/PoolDynamicQuotaSummary.vue'
 import PoolOrderCard from '@/components/account/PoolOrderCard.vue'
 import Icon from '@/components/icons/Icon.vue'
 import {useAuthStore} from '@/stores/auth'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import {poolAPI,poolError,type PoolOrder,type PoolProduct} from '@/api/poolOrders'
+import {poolAPI,poolError,type PoolOrder,type PoolProduct,type PoolQuotaMode} from '@/api/poolOrders'
 const props=defineProps<{admin?:boolean}>(), {t}=useI18n(), auth=useAuthStore()
 const orders=ref<PoolOrder[]>([]), products=ref<PoolProduct[]>([]),busy=ref(false),loading=ref(true),error=ref(''),success=ref('')
 type Selection={item:PoolOrder;action:'join'|'leave'|'cancel'}|{item:PoolProduct;action:'purchase';requestId:string}
 const selected=ref<Selection|null>(null)
-const newProduct=():PoolProduct=>({id:0,title:'',description:'',quota_mode:'credits',plan_type:'plus',total_credit:100,credit_5h:10,credit_7d:50,seats:2,price:10,duration_days:30,formation_days:2,total_tokens:2000000,total_requests:2000,concurrency:1,status:'active',version:0})
+const newProduct=():PoolProduct=>({id:0,title:'',description:'',quota_mode:'dynamic_shadow',plan_type:'plus',total_credit:100,credit_5h:10,credit_7d:50,seats:2,price:10,duration_days:30,formation_days:2,total_tokens:0,total_requests:0,concurrency:1,status:'active',version:0})
 const form=ref(newProduct())
 type NumberKey='seats'|'price'|'duration_days'|'formation_days'|'total_tokens'|'total_requests'|'concurrency'|'total_credit'|'credit_5h'|'credit_7d'
 const allNumberFields:{key:NumberKey;min:number;max:number;step?:number}[]=[{key:'seats',min:2,max:50},{key:'price',min:0.01,max:1000000,step:0.01},{key:'duration_days',min:1,max:365},{key:'formation_days',min:1,max:90},{key:'total_tokens',min:16384,max:1000000000000},{key:'total_requests',min:2,max:1000000000},{key:'concurrency',min:1,max:10}]
-const numberFields=computed(()=>[...allNumberFields.filter(f=>form.value.quota_mode !== 'credits' || !['total_tokens','total_requests'].includes(f.key)),...(form.value.quota_mode === 'credits' ? [{key:'total_credit' as NumberKey,min:0.01,max:100000000,step:0.01},...(form.value.plan_type === 'plus' ? [{key:'credit_5h' as NumberKey,min:0.01,max:100000000,step:0.01},{key:'credit_7d' as NumberKey,min:0.01,max:100000000,step:0.01}] : [])] : [])])
-function changePlan(){if(form.value.plan_type==='pro'){form.value.credit_5h=0;form.value.credit_7d=0}else{form.value.credit_5h=10;form.value.credit_7d=50}}
+const isDynamicMode=(mode?:PoolQuotaMode): mode is 'dynamic'|'dynamic_shadow' => mode === 'dynamic' || mode === 'dynamic_shadow'
+const hasFixedCredits=computed(()=>form.value.quota_mode === 'credits' || form.value.quota_mode === 'dynamic_shadow')
+const numberFields=computed(()=>[...allNumberFields.filter(f=>!['total_tokens','total_requests'].includes(f.key) || !['credits','dynamic_shadow','dynamic'].includes(form.value.quota_mode || '')),...(hasFixedCredits.value ? [{key:'total_credit' as NumberKey,min:0.01,max:100000000,step:0.01},...(form.value.plan_type === 'plus' ? [{key:'credit_5h' as NumberKey,min:0.01,max:100000000,step:0.01},{key:'credit_7d' as NumberKey,min:0.01,max:100000000,step:0.01}] : [])] : [])])
+function changePlan(){if(form.value.plan_type==='pro'){form.value.credit_5h=0;form.value.credit_7d=0}else if(hasFixedCredits.value){form.value.credit_5h=10;form.value.credit_7d=50}}
+function changeQuotaMode(){
+ if (form.value.quota_mode === 'dynamic') {
+  form.value.total_credit = 0; form.value.credit_5h = 0; form.value.credit_7d = 0
+ } else if (form.value.quota_mode === 'dynamic_shadow' && !(form.value.total_credit || form.value.credit_5h || form.value.credit_7d)) {
+  form.value.total_credit = 100; form.value.credit_5h = form.value.plan_type === 'pro' ? 0 : 10; form.value.credit_7d = form.value.plan_type === 'pro' ? 0 : 50
+ } else if (form.value.quota_mode === 'credits' && !(form.value.total_credit || form.value.credit_5h || form.value.credit_7d)) {
+  form.value.total_credit = 100; form.value.credit_5h = form.value.plan_type === 'pro' ? 0 : 10; form.value.credit_7d = form.value.plan_type === 'pro' ? 0 : 50
+ } else if (form.value.quota_mode === 'tokens') {
+  if (form.value.total_tokens < form.value.seats * 8192) form.value.total_tokens = form.value.seats * 1000000
+  if (form.value.total_requests < form.value.seats) form.value.total_requests = form.value.seats * 1000
+ }
+}
 const forming=computed(()=>orders.value.filter(o=>o.status==='forming'&&o.joined>0))
 const recent=computed(()=>orders.value.filter(o=>['active','awaiting_delivery'].includes(o.status)&&o.formed_at&&Date.now()-new Date(o.formed_at).getTime()<86400000).sort((a,b)=>new Date(b.formed_at!).getTime()-new Date(a.formed_at!).getTime()).slice(0,6))
 const managed=computed(()=>orders.value.filter(o=>!forming.value.some(f=>f.id===o.id)&&(props.admin||o.mine)))

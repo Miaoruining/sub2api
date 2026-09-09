@@ -3,13 +3,14 @@
           <div class="flex items-start justify-between gap-3"><div><p class="text-xs text-gray-500">#{{ o.id }} · {{ o.joined }}/{{ o.seats }} {{ t('pool.people') }}</p><h2 class="mt-2 break-words text-lg font-semibold">{{ o.title }}</h2></div><span class="shrink-0 rounded-full px-3 py-1 text-xs font-semibold" :class="o.status === 'forming' ? 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300' : 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'">{{ t(`pool.state.${o.status}`) }}</span></div>
           <div class="flex items-baseline gap-2"><strong class="text-3xl tabular-nums">{{ n(o.price) }}</strong><span class="text-sm text-gray-500">{{ t('pool.balanceUnit') }} / {{ t('pool.seat') }} · {{ n(o.duration_days ?? o.duration_hours / 24) }} {{ t('pool.days') }}</span></div>
           <PoolCreditSummary v-if="o.quota_mode === 'credits'" :config="o" :seats="o.seats" :member="o.mine" />
+          <PoolDynamicQuotaSummary v-else-if="o.quota_mode === 'dynamic' || o.quota_mode === 'dynamic_shadow'" :mode="o.quota_mode" :plan="o.plan_type" :seats="o.seats" :total-credit="o.total_credit" :credit5h="o.credit_5h" :credit7d="o.credit_7d" :quota="o.mine?.dynamic_quota" :undelivered="o.status === 'awaiting_delivery'" />
  <dl v-else class="grid grid-cols-2 gap-3 rounded-xl bg-gray-50 p-4 text-sm dark:bg-dark-800">
             <div><dt class="text-gray-500">{{ t('pool.sharedTokens') }}</dt><dd class="mt-1 font-medium tabular-nums">{{ n(o.tokens_used) }} / {{ n(o.total_tokens) }}</dd></div>
             <div><dt class="text-gray-500">{{ t('pool.sharedRequests') }}</dt><dd class="mt-1 font-medium tabular-nums">{{ n(o.requests_used) }} / {{ n(o.total_requests) }}</dd></div>
             <div><dt class="text-gray-500">{{ t(o.mine ? 'pool.personalTokens' : 'pool.shareTokens') }}</dt><dd class="mt-1 font-medium tabular-nums"><span v-if="o.mine">{{ n(o.mine.tokens_used) }} / </span> {{ n(Math.floor(o.total_tokens / o.seats)) }}</dd></div>
             <div><dt class="text-gray-500">{{ t(o.mine ? 'pool.personalRequests' : 'pool.shareRequests') }}</dt><dd class="mt-1 font-medium tabular-nums"><span v-if="o.mine">{{ n(o.mine.requests_used) }} / </span> {{ n(Math.floor(o.total_requests / o.seats)) }}</dd></div>
           </dl>
-          <div v-if="o.mine?.status === 'joined' && o.quota_mode !== 'credits'" class="space-y-2 text-sm">
+          <div v-if="o.mine?.status === 'joined' && (o.quota_mode === 'tokens' || !o.quota_mode)" class="space-y-2 text-sm">
             <p>{{ t('pool.remaining') }}: <strong>{{ n(Math.max(0, Math.floor(o.total_tokens / o.seats) - o.mine.tokens_used - o.mine.reserved_tokens)) }}</strong> Tokens</p>
             <progress :value="Math.min(o.mine.tokens_used + o.mine.reserved_tokens, Math.floor(o.total_tokens / o.seats))" :max="Math.floor(o.total_tokens / o.seats)" class="h-2 w-full accent-emerald-600" :aria-label="t('pool.personalTokens')" />
             <p class="text-xs text-gray-500">{{ t('pool.reserved') }} {{ n(o.mine.reserved_tokens) }} Tokens · {{ t('pool.concurrency') }} {{ o.mine.inflight }}/{{ o.concurrency }}</p>
@@ -32,6 +33,7 @@
 </template>
 <script setup lang="ts">
 import PoolCreditSummary from './PoolCreditSummary.vue'
+import PoolDynamicQuotaSummary from './PoolDynamicQuotaSummary.vue'
 import {useI18n} from 'vue-i18n'
 import type {PoolOrder} from '@/api/poolOrders'
 defineProps<{o:PoolOrder;admin?:boolean;busy:boolean}>()

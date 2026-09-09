@@ -178,6 +178,7 @@
       </div>
 
       <template v-if="activeTab === 'usage'">
+ <PoolDynamicUsage v-if="filters.usage_source === 'pool'" :key-id="filters.api_key_id" />
  <PoolCreditHolds v-if="filters.usage_source === 'pool'" :key-id="filters.api_key_id" />
         <UsageTable
           :data="usageLogs"
@@ -232,6 +233,7 @@ import Select, { type SelectOption } from '@/components/common/Select.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import UsageStatsCards from '@/components/admin/usage/UsageStatsCards.vue'
 import PoolCreditHolds from '@/components/account/PoolCreditHolds.vue'
+import PoolDynamicUsage from '@/components/account/PoolDynamicUsage.vue'
 import UsageTable from '@/components/admin/usage/UsageTable.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import GroupDistributionChart from '@/components/charts/GroupDistributionChart.vue'

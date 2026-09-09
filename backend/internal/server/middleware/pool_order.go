@@ -71,7 +71,7 @@ func PoolQuota(repo service.PoolRepository, estimators ...PoolCreditEstimator) g
 			return
 		}
 		var credit []float64
-		if gate.QuotaMode == "credits" {
+		if gate.QuotaMode == "credits" || gate.QuotaMode == "dynamic" || gate.QuotaMode == "dynamic_shadow" {
 			if len(estimators) == 0 || estimators[0] == nil {
 				poolAbort(c, service.ErrPoolConfig)
 				return
@@ -86,6 +86,10 @@ func PoolQuota(repo service.PoolRepository, estimators ...PoolCreditEstimator) g
 				Model string `json:"model"`
 			}
 			_ = json.Unmarshal(rewritten, &requestModel)
+			if gate.QuotaMode == "dynamic" && strings.Contains(strings.ToLower(requestModel.Model), "codex-spark") {
+				AbortWithError(c, 400, "POOL_DYNAMIC_MODEL", "动态拼单暂不支持 codex-spark 模型")
+				return
+			}
 			c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), service.PoolStandardPricingContextKey{}, requestModel.Model))
 		}
 		id, err := repo.Reserve(c.Request.Context(), gate.MemberID, reserved, credit...)

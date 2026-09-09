@@ -12,15 +12,41 @@ import (
 )
 
 type PoolOrderHandler struct {
-	Repo          service.PoolRepository
-	auth          service.APIKeyAuthCacheInvalidator
-	billing       *service.BillingCacheService
-	subscriptions *service.SubscriptionService
+	Repo           service.PoolRepository
+	auth           service.APIKeyAuthCacheInvalidator
+	billing        *service.BillingCacheService
+	subscriptions  *service.SubscriptionService
+	dynamicRefresh *service.PoolDynamicRefreshService
 }
 
 func NewPoolOrderHandler(repo service.PoolRepository, auth service.APIKeyAuthCacheInvalidator, billing *service.BillingCacheService, subscriptions *service.SubscriptionService) *PoolOrderHandler {
 	return &PoolOrderHandler{Repo: repo, auth: auth, billing: billing, subscriptions: subscriptions}
 }
+func ProvidePoolOrderHandler(repo service.PoolRepository, auth service.APIKeyAuthCacheInvalidator, billing *service.BillingCacheService, subscriptions *service.SubscriptionService, dynamic *service.PoolDynamicRefreshService) *PoolOrderHandler {
+	h := NewPoolOrderHandler(repo, auth, billing, subscriptions)
+	h.dynamicRefresh = dynamic
+	return h
+}
+
+func (h *PoolOrderHandler) DynamicUsage(c *gin.Context) {
+	subject, ok := middleware.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "请先登录")
+		return
+	}
+	repo, ok := h.Repo.(service.PoolDynamicRepository)
+	if !ok {
+		response.Success(c, []service.PoolDynamicUsage{})
+		return
+	}
+	out, err := repo.DynamicUsage(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, out)
+}
+
 func (h *PoolOrderHandler) Pricing(c *gin.Context) {
 	response.Success(c, service.PoolPricingCatalog())
 }
@@ -94,6 +120,32 @@ func (h *PoolOrderHandler) mutate(c *gin.Context, action string) {
 		if c.ShouldBindJSON(&req) != nil || req.ResourceID <= 0 {
 			response.BadRequest(c, "请选择拼单账号")
 			return
+		}
+		// Refresh only dynamic orders; the repository remains authoritative about
+		// freshness and ownership, including when a concurrent probe holds the lease.
+		orders, listErr := h.Repo.List(c.Request.Context(), subject.UserID, true)
+		if listErr != nil {
+			response.ErrorFrom(c, listErr)
+			return
+		}
+		for _, order := range orders {
+			if order.ID != id || (order.QuotaMode != "dynamic" && order.QuotaMode != "dynamic_shadow") {
+				continue
+			}
+			if h.dynamicRefresh != nil {
+				resources, resourceErr := h.Repo.Resources(c.Request.Context())
+				if resourceErr != nil {
+					response.ErrorFrom(c, resourceErr)
+					return
+				}
+				for _, resource := range resources {
+					if resource.ID == req.ResourceID {
+						_ = h.dynamicRefresh.Refresh(c.Request.Context(), resource.AccountID)
+						break
+					}
+				}
+			}
+			break
 		}
 		affected, err = h.Repo.Deliver(c.Request.Context(), id, req.ResourceID)
 	case "join":

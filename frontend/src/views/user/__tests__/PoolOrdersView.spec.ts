@@ -64,7 +64,42 @@ describe('拼单席位和个人额度', () => {
   const plan=w.findAll('select').find(s=>s.findAll('option').some(o=>o.text()==='Pro'))!
   await plan.setValue('pro');expect(w.text()).not.toContain('整车 5 小时额度（$）');expect(w.text()).not.toContain('整车每周额度（$）')
   await w.get('input[maxlength="100"]').setValue('Pro 3 人团');await w.get('form').trigger('submit');await flushPromises()
-  expect(api.saveProduct).toHaveBeenCalledWith(expect.objectContaining({quota_mode:'credits',plan_type:'pro',total_credit:100,credit_5h:0,credit_7d:0}));w.unmount()
+  expect(api.saveProduct).toHaveBeenCalledWith(expect.objectContaining({quota_mode:'dynamic_shadow',plan_type:'pro',total_credit:100,credit_5h:0,credit_7d:0}));w.unmount()
+ })
+ it('动态额度新建不显示固定美元字段并提交零固定额度', async()=>{
+  api.saveProduct.mockResolvedValue(undefined)
+  const w=render(true);await flushPromises()
+  const mode=w.findAll('select').find(s=>s.find('option[value="dynamic"]').exists())!
+  await mode.setValue('dynamic')
+  expect(w.text()).toContain('动态额度按发货账号实际上游窗口和席位均分')
+  expect(w.text()).not.toContain('整车周期额度（$）')
+  await w.get('input[maxlength="100"]').setValue('动态 Plus 2 人团');await w.get('form').trigger('submit');await flushPromises()
+  expect(api.saveProduct).toHaveBeenCalledWith(expect.objectContaining({quota_mode:'dynamic',total_credit:0,credit_5h:0,credit_7d:0}))
+  w.unmount()
+ })
+ it('新建商品切回 Token 模式时恢复可提交的默认 Token 和次数', async()=>{
+  api.saveProduct.mockResolvedValue(undefined)
+  const w=render(true);await flushPromises()
+  const mode=w.findAll('select').find(s=>s.find('option[value="dynamic"]').exists())!
+  await mode.setValue('tokens')
+  await w.get('input[maxlength="100"]').setValue('Token 2 人团');await w.get('form').trigger('submit');await flushPromises()
+  expect(api.saveProduct).toHaveBeenCalledWith(expect.objectContaining({quota_mode:'tokens',total_tokens:2000000,total_requests:2000}))
+  w.unmount()
+ })
+ it('编辑旧 credits 商品时保留原配额模式', async()=>{
+  const product={id:8,title:'旧 credits 商品',description:'旧规则',quota_mode:'credits',plan_type:'plus',total_credit:100,credit_5h:10,credit_7d:50,seats:2,price:10,duration_days:30,formation_days:2,total_tokens:0,total_requests:0,concurrency:1,status:'active' as const,version:3}
+  api.products.mockResolvedValue([product]);const w=render(true);await flushPromises()
+  await w.findAll('button').find(b=>b.text()==='编辑商品')!.trigger('click')
+  const mode=w.findAll('select').find(s=>s.find('option[value="dynamic"]').exists())!
+  expect((mode.element as HTMLSelectElement).value).toBe('credits');expect(w.text()).toContain('整车周期额度（$）');w.unmount()
+ })
+ it('动态窗口明确使用整号百分点，缺失或过期不会显示零额度', async()=>{
+  api.list.mockResolvedValue([order({status:'active',quota_mode:'dynamic',plan_type:'plus',mine:{id:2,status:'joined',key_id:8,paid:10,refunded:0,tokens_used:0,requests_used:0,reserved_tokens:0,inflight:0,dynamic_quota:{status:'stale',shadow:false,windows:[{key:'5h',account_remaining_percent:null,used_percent:null,reserved_percent:null,remaining_percent:null,entitlement_percent:null,reset_at:null,observed_at:null,status:'stale'}]}}})])
+  const w=render();await flushPromises();expect(w.text()).toContain('占整号窗口的百分点');expect(w.text()).toContain('数据过期');expect(w.text()).not.toContain('0 pp');w.unmount()
+ })
+ it('Pro 动态账号返回窗口时展示窗口而非无限承诺', async()=>{
+  api.list.mockResolvedValue([order({status:'active',quota_mode:'dynamic',plan_type:'pro',mine:{id:2,status:'joined',key_id:8,paid:10,refunded:0,tokens_used:0,requests_used:0,reserved_tokens:0,inflight:0,dynamic_quota:{status:'ready',shadow:false,windows:[{key:'5h',account_remaining_percent:80,used_percent:20,reserved_percent:0,remaining_percent:40,entitlement_percent:40,reset_at:'2030-01-01T00:00:00Z',observed_at:'2029-12-31T00:00:00Z',status:'ready'}]}}})])
+  const w=render();await flushPromises();expect(w.text()).toContain('Pro');expect(w.text()).toContain('5 小时窗口');expect(w.text()).toContain('40 pp');expect(w.text()).not.toContain('Pro 不设置 5 小时和周额度');w.unmount()
  })
 
 })

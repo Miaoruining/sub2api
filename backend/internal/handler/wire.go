@@ -249,7 +249,7 @@ var ProviderSet = wire.NewSet(
 	NewAvailableChannelHandler,
 	NewModelPlazaHandler,
 	NewLotteryHandler,
-	NewPoolOrderHandler,
+	ProvidePoolOrderHandler,
 	NewAsyncImageHandler,
 	ProvideBatchImageHandler,
 

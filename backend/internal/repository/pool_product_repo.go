@@ -32,9 +32,12 @@ func (r *poolRepository) Products(ctx context.Context, admin bool) ([]service.Po
 	return out, rows.Err()
 }
 func (r *poolRepository) SaveProduct(ctx context.Context, id int64, p service.PoolProduct) (int64, error) {
-	if p.QuotaMode == "credits" {
+	if p.QuotaMode == "credits" || p.QuotaMode == "dynamic_shadow" {
 		p.TotalTokens = int64(p.Seats) * 8192
 		p.TotalRequests = int64(p.Seats)
+	} else if p.QuotaMode == "dynamic" {
+		p.TotalTokens = 0
+		p.TotalRequests = 0
 	}
 	if err := p.Validate(); err != nil {
 		return 0, err

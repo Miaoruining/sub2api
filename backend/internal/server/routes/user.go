@@ -28,6 +28,7 @@ func RegisterUserRoutes(
 		if h.PoolOrder != nil {
 			authenticated.GET("/pool-pricing", h.PoolOrder.Pricing)
 			authenticated.GET("/pool-credit-holds", h.PoolOrder.CreditHolds)
+			authenticated.GET("/pool-dynamic-usage", h.PoolOrder.DynamicUsage)
 			authenticated.GET("/pool-notifications", h.PoolOrder.Notifications)
 			authenticated.POST("/pool-notifications/:id/read", h.PoolOrder.Notifications)
 			authenticated.GET("/pool-products", h.PoolOrder.Products)

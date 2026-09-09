@@ -54,8 +54,13 @@ func (r *poolRepository) List(ctx context.Context, uid int64, admin bool) ([]ser
  COALESCE((SELECT SUM(reserved_tokens) FROM pool_requests WHERE member_id=m.id AND status='pending'),0),
  (SELECT COUNT(*) FROM pool_requests WHERE member_id=m.id AND status='pending') FROM pool_members m WHERE order_id=$1 AND user_id=$2`, out[i].ID, uid).Scan(&m.ID, &m.Status, &m.KeyID, &m.Paid, &m.Refunded, &m.TokensUsed, &m.RequestsUsed, &m.ReservedTokens, &m.Inflight)
 		if err == nil {
-			if out[i].QuotaMode == "credits" {
+			if out[i].QuotaMode == "credits" || out[i].QuotaMode == "dynamic" || out[i].QuotaMode == "dynamic_shadow" {
 				if err = loadPoolCreditUsage(ctx, r.db, m.ID, &m); err != nil {
+					return nil, err
+				}
+			}
+			if out[i].QuotaMode == "dynamic" || out[i].QuotaMode == "dynamic_shadow" {
+				if m.DynamicQuota, err = loadPoolDynamicQuota(ctx, r.db, m.ID, out[i].QuotaMode == "dynamic_shadow"); err != nil {
 					return nil, err
 				}
 			}
@@ -88,8 +93,14 @@ func (r *poolRepository) Create(ctx context.Context, p service.PoolCreate) (int6
 	if err := p.Validate(time.Now()); err != nil {
 		return 0, err
 	}
+	if p.QuotaMode == "" {
+		p.QuotaMode = "tokens"
+	}
+	if p.PlanType == "" {
+		p.PlanType = "plus"
+	}
 	var id int64
-	err := r.db.QueryRowContext(ctx, `INSERT INTO pool_orders(title,seats,price,duration_hours,total_tokens,total_requests,concurrency,join_deadline) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`, p.Title, p.Seats, p.Price, p.DurationHours, p.TotalTokens, p.TotalRequests, p.Concurrency, p.JoinDeadline).Scan(&id)
+	err := r.db.QueryRowContext(ctx, `INSERT INTO pool_orders(title,seats,price,duration_hours,total_tokens,total_requests,concurrency,join_deadline,quota_mode,plan_type,total_credit,credit_5h,credit_7d) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`, p.Title, p.Seats, p.Price, p.DurationHours, p.TotalTokens, p.TotalRequests, p.Concurrency, p.JoinDeadline, p.QuotaMode, p.PlanType, p.TotalCredit, p.Credit5h, p.Credit7d).Scan(&id)
 	return id, err
 }
 func (r *poolRepository) Join(ctx context.Context, oid, uid int64) ([]int64, error) {
@@ -259,7 +270,7 @@ func (r *poolRepository) Gate(ctx context.Context, kid, uid, gid int64) (*servic
 	if err = r.db.QueryRowContext(ctx, `SELECT quota_mode FROM pool_orders WHERE id=$1`, g.OrderID).Scan(&g.QuotaMode); err != nil {
 		return nil, err
 	}
-	if g.QuotaMode == "credits" {
+	if g.QuotaMode != "tokens" {
 		g.TokensRemaining = 2000000
 	}
 	return &g, nil
@@ -277,7 +288,8 @@ func (r *poolRepository) Reserve(ctx context.Context, mid, tokens int64, credit 
 	var valid bool
 	var concurrency int
 	var tokenLimit, reqLimit int64
-	err = tx.QueryRowContext(ctx, `SELECT p.status='active' AND p.expires_at>NOW(),p.concurrency,p.total_tokens/p.seats,p.total_requests/p.seats FROM pool_orders p JOIN pool_members m ON m.order_id=p.id WHERE m.id=$1 FOR UPDATE OF p`, mid).Scan(&valid, &concurrency, &tokenLimit, &reqLimit)
+	var mode string
+	err = tx.QueryRowContext(ctx, `SELECT p.status='active' AND p.expires_at>NOW(),p.concurrency,p.total_tokens/NULLIF(p.seats,0),p.total_requests/NULLIF(p.seats,0),p.quota_mode FROM pool_orders p JOIN pool_members m ON m.order_id=p.id WHERE m.id=$1 FOR UPDATE OF p`, mid).Scan(&valid, &concurrency, &tokenLimit, &reqLimit, &mode)
 	if err != nil {
 		return "", err
 	}
@@ -302,6 +314,31 @@ func (r *poolRepository) Reserve(ctx context.Context, mid, tokens int64, credit 
 		if _, err = tx.ExecContext(ctx, `UPDATE pool_members SET tokens_used=tokens_used+$2 WHERE id=$1`, mid, stale); err != nil {
 			return "", err
 		}
+		if mode == "dynamic" || mode == "dynamic_shadow" {
+			staleRows, e := tx.QueryContext(ctx, `SELECT DISTINCT q.id FROM pool_requests q JOIN pool_dynamic_request_windows w ON w.request_id=q.id WHERE q.member_id=$1 AND q.status='uncertain' AND w.status='pending'`, mid)
+			if e != nil {
+				return "", e
+			}
+			var staleIDs []string
+			for staleRows.Next() {
+				var staleID string
+				if e = staleRows.Scan(&staleID); e != nil {
+					staleRows.Close()
+					return "", e
+				}
+				staleIDs = append(staleIDs, staleID)
+			}
+			if e = staleRows.Err(); e != nil {
+				staleRows.Close()
+				return "", e
+			}
+			staleRows.Close()
+			for _, staleID := range staleIDs {
+				if e = finishDynamicRequestTx(ctx, tx, staleID); e != nil {
+					return "", e
+				}
+			}
+		}
 		used += stale
 	}
 	var pending int
@@ -309,12 +346,8 @@ func (r *poolRepository) Reserve(ctx context.Context, mid, tokens int64, credit 
 	if err = tx.QueryRowContext(ctx, `SELECT COUNT(*),COALESCE(SUM(reserved_tokens),0) FROM pool_requests WHERE member_id=$1 AND status='pending'`, mid).Scan(&pending, &reserved); err != nil {
 		return "", err
 	}
-	var mode string
-	if err = tx.QueryRowContext(ctx, `SELECT quota_mode FROM pool_orders p JOIN pool_members m ON m.order_id=p.id WHERE m.id=$1`, mid).Scan(&mode); err != nil {
-		return "", err
-	}
 	reservedCredit := 0.0
-	if mode == "credits" {
+	if mode == "credits" || mode == "dynamic_shadow" || mode == "dynamic" {
 		var recentRequests int
 		if err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM pool_requests WHERE member_id=$1 AND created_at>NOW()-INTERVAL '1 minute'`, mid).Scan(&recentRequests); err != nil {
 			return "", err
@@ -326,16 +359,23 @@ func (r *poolRepository) Reserve(ctx context.Context, mid, tokens int64, credit 
 			return "", service.ErrPoolConfig
 		}
 		reservedCredit = service.QuantizeUsageBillingAmount(credit[0])
-		if err = checkPoolCredit(ctx, tx, mid, reservedCredit); err != nil {
-			return "", err
+		if mode == "credits" || mode == "dynamic_shadow" {
+			if err = checkPoolCredit(ctx, tx, mid, reservedCredit); err != nil {
+				return "", err
+			}
 		}
 	}
-	if (mode != "credits" && (used+reserved+tokens > tokenLimit || requests >= reqLimit)) || pending >= concurrency {
+	if (mode == "tokens" || mode == "") && (used+reserved+tokens > tokenLimit || requests >= reqLimit) || pending >= concurrency {
 		return "", service.ErrPoolLimit
 	}
 	id := uuid.NewString()
 	if _, err = tx.ExecContext(ctx, `INSERT INTO pool_requests(id,member_id,reserved_tokens,reserved_credit) VALUES($1,$2,$3,$4)`, id, mid, tokens, reservedCredit); err != nil {
 		return "", err
+	}
+	if mode == "dynamic" || mode == "dynamic_shadow" {
+		if err = reservePoolDynamicTx(ctx, tx, mid, id, reservedCredit, mode == "dynamic"); err != nil {
+			return "", err
+		}
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE pool_members SET requests_used=requests_used+1 WHERE id=$1`, mid); err != nil {
 		return "", err
@@ -348,10 +388,14 @@ func (r *poolRepository) Finish(ctx context.Context, id string, _ bool) error {
 		return err
 	}
 	defer tx.Rollback()
-	var mid int64
-	// 与计费结算使用同一锁序，先成员后请求。
-	err = tx.QueryRowContext(ctx, `SELECT m.id FROM pool_members m JOIN pool_requests q ON q.member_id=m.id WHERE q.id=$1 FOR UPDATE OF m`, id).Scan(&mid)
+	var mid, oid int64
+	var mode string
+	// 与预占和计费结算统一锁序：订单、成员、请求。
+	err = tx.QueryRowContext(ctx, `SELECT p.id,m.id,p.quota_mode FROM pool_members m JOIN pool_requests q ON q.member_id=m.id JOIN pool_orders p ON p.id=m.order_id WHERE q.id=$1 FOR UPDATE OF p`, id).Scan(&oid, &mid, &mode)
 	if err != nil {
+		return err
+	}
+	if err = tx.QueryRowContext(ctx, `SELECT id FROM pool_members WHERE id=$1 FOR UPDATE`, mid).Scan(&mid); err != nil {
 		return err
 	}
 	var tokens int64
@@ -361,6 +405,11 @@ func (r *poolRepository) Finish(ctx context.Context, id string, _ bool) error {
 	}
 	if err != nil {
 		return err
+	}
+	if mode == "dynamic" || mode == "dynamic_shadow" {
+		if err = finishDynamicRequestTx(ctx, tx, id); err != nil {
+			return err
+		}
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE pool_members SET tokens_used=tokens_used+$2 WHERE id=$1`, mid, tokens); err != nil {
 		return err
@@ -372,14 +421,17 @@ func settlePoolRequest(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillin
 	if cmd.PoolReservationID == "" {
 		return nil
 	}
-	var mid int64
-	err := tx.QueryRowContext(ctx, `SELECT m.id FROM pool_members m JOIN pool_requests q ON q.member_id=m.id WHERE q.id=$1 AND m.api_key_id=$2 FOR UPDATE OF m`, cmd.PoolReservationID, cmd.APIKeyID).Scan(&mid)
+	var mid, oid int64
+	err := tx.QueryRowContext(ctx, `SELECT p.id,m.id FROM pool_members m JOIN pool_requests q ON q.member_id=m.id JOIN pool_orders p ON p.id=m.order_id WHERE q.id=$1 AND m.api_key_id=$2 FOR UPDATE OF p`, cmd.PoolReservationID, cmd.APIKeyID).Scan(&oid, &mid)
 	if err != nil {
 		return err
 	}
-	var status string
+	if err = tx.QueryRowContext(ctx, `SELECT id FROM pool_members WHERE id=$1 FOR UPDATE`, mid).Scan(&mid); err != nil {
+		return err
+	}
+	var status, mode string
 	var reserved int64
-	if err = tx.QueryRowContext(ctx, `SELECT status,reserved_tokens FROM pool_requests WHERE id=$1 FOR UPDATE`, cmd.PoolReservationID).Scan(&status, &reserved); err != nil {
+	if err = tx.QueryRowContext(ctx, `SELECT q.status,q.reserved_tokens,p.quota_mode FROM pool_requests q JOIN pool_members m ON m.id=q.member_id JOIN pool_orders p ON p.id=m.order_id WHERE q.id=$1 FOR UPDATE`, cmd.PoolReservationID).Scan(&status, &reserved, &mode); err != nil {
 		return err
 	}
 	if status == "settled" {
@@ -398,6 +450,11 @@ func settlePoolRequest(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillin
 	delta := actual
 	if status == "uncertain" {
 		delta -= reserved
+	}
+	if mode == "dynamic" || mode == "dynamic_shadow" {
+		if err = settleDynamicRequestTx(ctx, tx, cmd.PoolReservationID, cmd.PoolCreditCost); err != nil {
+			return err
+		}
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE pool_members SET tokens_used=tokens_used+$2 WHERE id=$1`, mid, delta); err != nil {
 		return err
@@ -537,8 +594,61 @@ func (r *poolRepository) Deliver(ctx context.Context, oid, resourceID int64) ([]
 	if err = tx.QueryRowContext(ctx, `SELECT p.quota_mode,p.plan_type,LOWER(COALESCE(a.credentials->>'plan_type','')) FROM pool_orders p CROSS JOIN accounts a WHERE p.id=$1 AND a.id=$2`, oid, aid).Scan(&mode, &plan, &accountPlan); err != nil {
 		return nil, err
 	}
-	if mode == "credits" && (accountPlan == "plus" || accountPlan == "pro") && plan != accountPlan {
+	if mode != "tokens" && (accountPlan == "plus" || accountPlan == "pro") && plan != accountPlan {
 		return nil, service.ErrPoolPlan
+	}
+	if mode == "dynamic" || mode == "dynamic_shadow" {
+		// A dynamic order starts from a real upstream observation.  Shadow
+		// orders may proceed without one because they keep the legacy credit
+		// gate, but any available observation is still recorded for display.
+		var sid int64
+		var observed time.Time
+		var blocked bool
+		e := tx.QueryRowContext(ctx, `SELECT id,observed_at,blocked FROM pool_dynamic_snapshots WHERE account_id=$1 ORDER BY observed_at DESC,id DESC LIMIT 1`, aid).Scan(&sid, &observed, &blocked)
+		if mode == "dynamic" && (errors.Is(e, sql.ErrNoRows) || blocked || time.Since(observed) > dynamicSnapshotFreshness || time.Since(observed) < -dynamicResetDrift) {
+			if blocked {
+				return nil, service.ErrPoolDynamicBlocked
+			}
+			return nil, service.ErrPoolDynamicUnavailable
+		}
+		if e != nil && !errors.Is(e, sql.ErrNoRows) {
+			return nil, e
+		}
+		if e == nil {
+			rows, qe := tx.QueryContext(ctx, `SELECT key,used_percent,reset_at,window_seconds FROM pool_dynamic_snapshot_windows WHERE snapshot_id=$1 ORDER BY key`, sid)
+			if qe != nil {
+				return nil, qe
+			}
+			var windows []service.PoolDynamicSnapshotWindow
+			for rows.Next() {
+				var w service.PoolDynamicSnapshotWindow
+				if qe = rows.Scan(&w.Key, &w.UsedPercent, &w.ResetsAt, &w.WindowSeconds); qe != nil {
+					rows.Close()
+					return nil, qe
+				}
+				windows = append(windows, w)
+			}
+			if qe = rows.Err(); qe != nil {
+				rows.Close()
+				return nil, qe
+			}
+			rows.Close()
+			if mode == "dynamic" && len(windows) == 0 {
+				return nil, service.ErrPoolDynamicUnavailable
+			}
+			for _, w := range windows {
+				if _, qe = tx.ExecContext(ctx, `INSERT INTO pool_dynamic_window_ledgers(order_id,account_id,key,reset_at,window_seconds,baseline_used_percent,observed_used_percent,observed_at,snapshot_id,status) VALUES($1,$2,$3,$4,$5,$6,$6,$7,$8,$9) ON CONFLICT(order_id,key,reset_at) DO NOTHING`, oid, aid, w.Key, w.ResetsAt, w.WindowSeconds, w.UsedPercent, observed, sid, dynamicLedgerStatus(w.UsedPercent, blocked)); qe != nil {
+					return nil, qe
+				}
+				var lid int64
+				if qe = tx.QueryRowContext(ctx, `SELECT id FROM pool_dynamic_window_ledgers WHERE order_id=$1 AND key=$2 AND reset_at=$3`, oid, w.Key, w.ResetsAt).Scan(&lid); qe != nil {
+					return nil, qe
+				}
+				if qe = ensureDynamicMembers(ctx, tx, lid, oid); qe != nil {
+					return nil, qe
+				}
+			}
+		}
 	}
 	var previous int64
 	var ended bool
@@ -636,6 +746,11 @@ func (r *poolRepository) Deliver(ctx context.Context, oid, resourceID int64) ([]
 			return nil, err
 		}
 		affected = append(affected, m.uid)
+	}
+	if mode == "dynamic" || mode == "dynamic_shadow" {
+		if err = initializeDynamicDelivery(ctx, tx, oid, aid, mode == "dynamic"); err != nil {
+			return nil, err
+		}
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO pool_notifications(order_id,user_id,kind) SELECT order_id,user_id,'delivered' FROM pool_members WHERE order_id=$1 AND status='joined'`, oid); err != nil {
 		return nil, err
