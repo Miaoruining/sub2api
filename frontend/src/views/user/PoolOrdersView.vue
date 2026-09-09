@@ -5,6 +5,10 @@
         <div><p class="mb-2 text-sm font-medium text-primary-600">MODELPORT / {{ t('pool.equalShare') }}</p><h1 class="text-2xl font-semibold">{{ t(admin ? 'pool.adminTitle' : 'pool.title') }}</h1><p class="mt-2 max-w-3xl text-sm leading-6 text-gray-500">{{ t('pool.description') }}</p></div>
         <div class="flex gap-2"><router-link v-if="admin" to="/admin/pool-resources" class="btn btn-secondary">{{ t('pool.resourceTitle') }}</router-link><button class="btn btn-secondary" :disabled="busy" @click="load">{{ t('pool.refresh') }}</button></div>
       </header>
+      <section class="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-primary-100 bg-primary-50/60 p-5 dark:border-primary-900 dark:bg-primary-950/20">
+        <div><h2 class="font-semibold text-primary-800 dark:text-primary-200">{{ t('pool.pricingBanner') }}</h2><p class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ t('pool.pricingBannerHint') }}</p></div>
+        <router-link to="/pool-orders/pricing" class="btn btn-secondary shrink-0">{{ t('pool.pricingLink') }} <span aria-hidden="true">→</span></router-link>
+      </section>
       <p v-if="error && !selected" role="alert" class="rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950/30 dark:text-red-300">{{ error }}</p>
       <p v-if="success" role="status" class="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">{{ success }}</p>
       <form v-if="admin" class="card space-y-4 p-6" @submit.prevent="saveProduct">

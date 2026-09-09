@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"math"
 	"strings"
-	"time"
 )
 
 // 请求前按无缓存输入与最大输出估价；最终扣额以网关实际上报用量计费为准。
@@ -24,7 +23,7 @@ func (s *OpenAIGatewayService) EstimatePoolCredit(ctx context.Context, key *APIK
 	if json.Unmarshal(body, &req) != nil || strings.TrimSpace(req.Model) == "" {
 		return 0, ErrPoolConfig
 	}
-	if identified, _ := s.hasIdentifiedOpenAIResponsePricing(ctx, req.Model, key); !identified {
+	if _, err := poolModelPrice(req.Model); err != nil {
 		return 0, ErrPoolConfig
 	}
 	output := req.MaxTokens
@@ -37,11 +36,7 @@ func (s *OpenAIGatewayService) EstimatePoolCredit(ctx context.Context, key *APIK
 	if output <= 0 || tokens <= output {
 		return 0, ErrPoolConfig
 	}
-	effort := req.ReasoningEffort
-	if req.Reasoning.Effort != "" {
-		effort = req.Reasoning.Effort
-	}
-	cost, err := s.calculateOpenAIRecordUsageTokenCost(ctx, key, req.Model, 1, time.Now(), UsageTokens{InputTokens: int(tokens - output), OutputTokens: int(output)}, req.ServiceTier, effort, nil)
+	cost, err := s.billingService.calculatePoolStandardCost(req.Model, UsageTokens{InputTokens: int(tokens - output), OutputTokens: int(output)})
 	if err != nil {
 		return 0, err
 	}

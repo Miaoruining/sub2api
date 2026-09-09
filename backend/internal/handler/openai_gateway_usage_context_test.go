@@ -43,6 +43,8 @@ func TestOpenAISubmitUsageRecordTaskCopiesRequestContext(t *testing.T) {
 
 func TestPoolUsageReservationSurvivesAsyncContext(t *testing.T) {
 	parent := context.WithValue(context.Background(), service.PoolReservationContextKey{}, "pool-reservation")
+	parent = context.WithValue(parent, service.PoolStandardPricingContextKey{}, "gpt-5.4")
 	wrapped := usageRecordContext(parent, context.Background())
+	require.Equal(t, "gpt-5.4", wrapped.Value(service.PoolStandardPricingContextKey{}))
 	require.Equal(t, "pool-reservation", wrapped.Value(service.PoolReservationContextKey{}))
 }

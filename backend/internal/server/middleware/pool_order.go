@@ -82,6 +82,11 @@ func PoolQuota(repo service.PoolRepository, estimators ...PoolCreditEstimator) g
 				return
 			}
 			credit = []float64{cost}
+			var requestModel struct {
+				Model string `json:"model"`
+			}
+			_ = json.Unmarshal(rewritten, &requestModel)
+			c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), service.PoolStandardPricingContextKey{}, requestModel.Model))
 		}
 		id, err := repo.Reserve(c.Request.Context(), gate.MemberID, reserved, credit...)
 		if err != nil {

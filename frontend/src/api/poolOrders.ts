@@ -7,7 +7,10 @@ export interface PoolOrder extends PoolConfig { group_id: number; product_id?: n
 export interface PoolNotification {id: number; order_id: number; title: string; kind: string; deadline: string | null; read: boolean}
 export interface PoolProduct extends PoolCreditConfig {id: number; title: string; description: string; seats: number; price: number; duration_days: number; formation_days: number; total_tokens: number; total_requests: number; concurrency: number; status: 'active' | 'disabled'; version: number}
 export interface PoolCreditHold {id:string;order_id:number;key_id:number;status:string;credit:number;created_at:string}
+export interface PoolModelPrice {model:string;input:number;cache_read:number|null;cache_write:number|null;output:number;long_context_threshold:number}
+export interface PoolPriceCatalog {version:string;source_url:string;tier:string;models:PoolModelPrice[]}
 export const poolAPI = {
+ async pricing(): Promise<PoolPriceCatalog> {return (await apiClient.get('/pool-pricing')).data},
  async creditHolds(): Promise<PoolCreditHold[]> {return (await apiClient.get('/pool-credit-holds')).data},
  async products(admin = false): Promise<PoolProduct[]> {return (await apiClient.get(`${admin ? '/admin' : ''}/pool-products`)).data},
  async saveProduct(p: PoolProduct): Promise<void> {if (p.id) await apiClient.put(`/admin/pool-products/${p.id}`, p); else await apiClient.post('/admin/pool-products',p)},

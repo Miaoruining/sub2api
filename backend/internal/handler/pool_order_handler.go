@@ -21,6 +21,10 @@ type PoolOrderHandler struct {
 func NewPoolOrderHandler(repo service.PoolRepository, auth service.APIKeyAuthCacheInvalidator, billing *service.BillingCacheService, subscriptions *service.SubscriptionService) *PoolOrderHandler {
 	return &PoolOrderHandler{Repo: repo, auth: auth, billing: billing, subscriptions: subscriptions}
 }
+func (h *PoolOrderHandler) Pricing(c *gin.Context) {
+	response.Success(c, service.PoolPricingCatalog())
+}
+
 func (h *PoolOrderHandler) List(c *gin.Context)      { h.list(c, false) }
 func (h *PoolOrderHandler) AdminList(c *gin.Context) { h.list(c, true) }
 func (h *PoolOrderHandler) list(c *gin.Context, admin bool) {
