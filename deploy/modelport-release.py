@@ -1055,7 +1055,7 @@ def established_connections(container: str, port: int = APP_PORT) -> int:
     if pid_int <= 0:
         return 0
     output = run_command(
-        ["nsenter", "--target", str(pid_int), "--net", "ss", "-Htan", f"state established sport = :{port}"],
+        ["nsenter", "--target", str(pid_int), "--net", "ss", "-Htan", "state", "established", f"( sport = :{port} )"],
         timeout=15,
     )
     count = 0
