@@ -61,6 +61,7 @@ func newGatewayRoutesTestRouterWithConfig(cfg *config.Config, platform ...string
 func TestCountTokensGatewayKind(t *testing.T) {
 	require.Equal(t, countTokensGatewayGemini, countTokensGatewayKind(service.PlatformGemini))
 	require.Equal(t, countTokensGatewayOpenAI, countTokensGatewayKind(service.PlatformOpenAI))
+	require.Equal(t, countTokensGatewayOpenAI, countTokensGatewayKind(service.PlatformMiniMax))
 	require.Equal(t, countTokensGatewayGrok, countTokensGatewayKind(service.PlatformGrok))
 	require.Equal(t, countTokensGatewayAnthropic, countTokensGatewayKind(service.PlatformAnthropic))
 }
