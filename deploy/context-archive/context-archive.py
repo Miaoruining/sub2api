@@ -332,7 +332,10 @@ def preflight_external() -> None:
     mounted = first_value(info, "Mounted", "VolumeIsMounted")
     mountpoint = first_value(info, "MountPoint", "VolumeMountPoint")
     uuid = first_value(info, "VolumeUUID", "Volume UUID")
-    if mounted is not True or mountpoint != str(EXTERNAL_ROOT) or uuid != VOLUME_UUID:
+    # macOS 26 diskutil omits Mounted/VolumeIsMounted from plist output for
+    # FAT volumes. An exact MountPoint plus the immutable VolumeUUID is the
+    # authoritative mounted-volume check in that case.
+    if (mounted is not None and mounted is not True) or mountpoint != str(EXTERNAL_ROOT) or uuid != VOLUME_UUID:
         raise ArchiveError("external_not_expected")
     safe_dir(EXTERNAL_AI, create=True)
     try:
