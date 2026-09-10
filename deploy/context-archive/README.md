@@ -14,7 +14,7 @@ snapshot(from_id)
   -> export(from_id, to_id)
   -> gzip/分片落盘
   -> SHA-256、gzip、CSV header、行数、首末 id、排序和范围校验
-  -> APFS sparsebundle 安全卸载
+  -> 加密 sparsebundle 安全卸载
   -> delete(from_id, to_id, expected_count)
 ```
 
@@ -62,11 +62,11 @@ SSH/psql 输出或异常文本。状态、锁和日志位于本机 APFS 的
 /Volumes/MIAO/AI 数据/context-archive.sparsebundle/
 ```
 
-首次运行时由 `hdiutil create -type SPARSEBUNDLE -fs APFS -encryption AES-256`
-创建 900 GB 的稀疏包；归档实际写入其中的 APFS 卷
+首次运行时由 `hdiutil create -type SPARSEBUNDLE -fs 'Case-sensitive Journaled HFS+' -encryption AES-256`
+创建 900 GB 的稀疏包；归档实际写入其中的 AES-256 加密卷
 `batches/<from-id>-<to-id>/`。单个 gzip 分片上限 512 MiB，避免 FAT32 的单文件
-上限。程序会通过 `hdiutil imageinfo` 检查 sparsebundle/AES-256，并通过
-`diskutil` 检查已挂载的内部文件系统为 APFS。
+上限。程序会校验 sparsebundle 元数据并通过 `hdiutil isencrypted` 检查加密状态，再通过
+`diskutil` 检查已挂载的内部文件系统为区分大小写的日志式 HFS+（也兼容已有 APFS 包）。
 
 密码必须预先存入 macOS Keychain Generic Password，Service 默认
 `com.modelport.context-archive`、Account 默认 `archive`（可在本机配置中改名）。
@@ -176,7 +176,7 @@ launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.modelport.con
 | 条件 | 行为 |
 | --- | --- |
 | `/Volumes/MIAO` 未挂载或 UUID/挂载点不符 | 失败，不创建/删除任何远端数据 |
-| FAT32 可用空间低、APFS 内部空间低或 Keychain 锁定 | 失败，不 delete |
+| FAT32 可用空间低、加密卷内部空间低或 Keychain 锁定 | 失败，不 delete |
 | SSH/导出/gzip/CSV/哈希/首末 ID/行数失败 | batch 不封存或保留未完成状态，下个周期重试，不 delete |
 | sparsebundle 无法 attach/detach | 失败；不使用 `hdiutil -force`，不 delete |
 | delete SSH 断线 | 状态保持 pending；下次以相同范围重试，远端已提交时得到 `ALREADY_EMPTY` |

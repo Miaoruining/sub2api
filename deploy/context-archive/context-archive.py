@@ -2,7 +2,7 @@
 """每日上下文归档编排器（macOS Python 3.9，fail closed）。
 
 该程序只通过生产机上的 forced-command helper 读取/删除固定范围的
-request_context_archives 归档行；提示词/历史消息正文只存在于加密 APFS sparsebundle 内。
+request_context_archives 归档行；提示词/历史消息正文只存在于 AES-256 加密 sparsebundle 内。
 """
 
 from __future__ import annotations
@@ -387,18 +387,64 @@ class Attachment:
 def image_info_ok() -> None:
     if not SPARSEBUNDLE.exists():
         return
-    if not SPARSEBUNDLE.is_dir():
+    try:
+        image_stat = SPARSEBUNDLE.lstat()
+    except OSError:
+        raise ArchiveError("image_invalid")
+    if stat.S_ISLNK(image_stat.st_mode) or not stat.S_ISDIR(image_stat.st_mode):
+        raise ArchiveError("image_invalid")
+
+    # `hdiutil imageinfo` can spend minutes scanning a large sparsebundle on
+    # FAT32. Validate its bounded bundle metadata locally, then use the
+    # purpose-built `isencrypted` verb; the mounted filesystem is separately
+    # checked in attach_image().
+    info_path = SPARSEBUNDLE / "Info.plist"
+    token_path = SPARSEBUNDLE / "token"
+    try:
+        safe_regular(info_path)
+        safe_regular(token_path)
+        if info_path.stat().st_size > MAX_META_BYTES or token_path.stat().st_size > MAX_META_BYTES * 4:
+            raise ArchiveError("image_invalid")
+        with info_path.open("rb") as handle:
+            info = plistlib.load(handle)
+    except (ArchiveError, OSError, plistlib.InvalidFileException, ValueError, TypeError):
+        raise ArchiveError("image_invalid")
+    if not isinstance(info, dict):
+        raise ArchiveError("image_invalid")
+    if (
+        info.get("diskimage-bundle-type") != "com.apple.diskimage.sparsebundle"
+        or info.get("bundle-backingstore-version") != 1
+        or not isinstance(info.get("band-size"), int)
+        or info.get("band-size", 0) <= 0
+        or not isinstance(info.get("size"), int)
+        or info.get("size", 0) <= 0
+    ):
         raise ArchiveError("image_invalid")
     try:
-        info = plistlib.loads(run_capture(["/usr/bin/hdiutil", "imageinfo", "-plist", str(SPARSEBUNDLE)], timeout=30))
-    except (ArchiveError, plistlib.InvalidFileException, ValueError, TypeError):
+        encryption = run_capture(["/usr/bin/hdiutil", "isencrypted", str(SPARSEBUNDLE)], timeout=30).decode(
+            "ascii", "strict"
+        )
+    except (ArchiveError, UnicodeError):
         raise ArchiveError("image_invalid")
-    try:
-        blob = json.dumps(info, ensure_ascii=True).lower()
-    except (TypeError, ValueError):
-        raise ArchiveError("image_invalid")
-    if "sparsebundle" not in blob or "aes-256" not in blob:
-        raise ArchiveError("image_not_encrypted_apfs")
+    if re.search(r"(?m)^encrypted:\s*YES\s*$", encryption) is None:
+        raise ArchiveError("image_not_encrypted")
+
+
+def mounted_archive_filesystem_ok(info: Dict[str, Any]) -> bool:
+    fs = " ".join(
+        str(info.get(name) or "")
+        for name in (
+            "FilesystemType",
+            "FileSystemType",
+            "FilesystemName",
+            "FilesystemPersonality",
+            "FilesystemUserVisibleName",
+        )
+    ).lower()
+    # APFS sparsebundles cannot be mounted from this FAT32 volume on macOS 26,
+    # while case-sensitive journaled HFS+ is supported. Accept APFS for an
+    # existing compatible image and HFS+ for the portable archive image.
+    return "apfs" in fs or ("hfs" in fs and "journal" in fs and "case-sensitive" in fs)
 
 
 def find_existing_attachment() -> Optional[Attachment]:
@@ -428,9 +474,8 @@ def attach_image(password: bytes) -> Attachment:
     existing = find_existing_attachment()
     if existing is not None:
         internal = diskutil_info(existing.mountpoint)
-        fs = str(first_value(internal, "FilesystemType", "FilesystemPersonality", "FileSystemType") or "").lower()
-        if "apfs" not in fs:
-            raise ArchiveError("image_not_apfs")
+        if not mounted_archive_filesystem_ok(internal):
+            raise ArchiveError("image_filesystem_invalid")
         safe_dir(existing.mountpoint)
         return existing
     try:
@@ -450,9 +495,8 @@ def attach_image(password: bytes) -> Attachment:
         if isinstance(mount, str) and isinstance(device, str):
             attachment = Attachment(Path(mount), device, True)
             internal = diskutil_info(attachment.mountpoint)
-            fs = str(first_value(internal, "FilesystemType", "FilesystemPersonality", "FileSystemType") or "").lower()
-            if "apfs" not in fs:
-                raise ArchiveError("image_not_apfs")
+            if not mounted_archive_filesystem_ok(internal):
+                raise ArchiveError("image_filesystem_invalid")
             safe_dir(attachment.mountpoint)
             return attachment
     raise ArchiveError("image_mount_missing")
@@ -476,7 +520,7 @@ def create_image(password: bytes) -> None:
                 "-size",
                 IMAGE_SIZE,
                 "-fs",
-                "APFS",
+                "Case-sensitive Journaled HFS+",
                 "-volname",
                 "ContextArchive",
                 "-encryption",
@@ -558,27 +602,28 @@ def stream_export(config: Dict[str, Any], from_id: int, to_id: int, stage: Path)
     parts: List[Dict[str, Any]] = []
     whole = hashlib.sha256()
     part_fp: Optional[Any] = None
+    part_temp: Optional[Path] = None
     part_hash: Optional[Any] = None
     part_bytes = 0
     total = 0
 
     def close_part() -> None:
-        nonlocal part_fp, part_hash, part_bytes
-        if part_fp is None or part_hash is None:
+        nonlocal part_fp, part_temp, part_hash, part_bytes
+        if part_fp is None or part_temp is None or part_hash is None:
             return
         try:
             part_fp.flush()
             os.fsync(part_fp.fileno())
             part_fp.close()
-            temp = Path(part_fp.name)
             final = stage / ("payload-%06d.gz.part" % (len(parts) + 1))
-            os.chmod(temp, 0o600)
-            os.replace(str(temp), str(final))
+            os.chmod(part_temp, 0o600)
+            os.replace(str(part_temp), str(final))
             parts.append({"name": final.name, "bytes": part_bytes, "sha256": part_hash.hexdigest()})
         except OSError:
             raise ArchiveError("archive_write_failed")
         finally:
             part_fp = None
+            part_temp = None
             part_hash = None
             part_bytes = 0
 
@@ -603,6 +648,7 @@ def stream_export(config: Dict[str, Any], from_id: int, to_id: int, stage: Path)
                     temp_fd, temp_name = tempfile.mkstemp(prefix=".payload.", dir=str(stage))
                     os.fchmod(temp_fd, 0o600)
                     part_fp = os.fdopen(temp_fd, "wb")
+                    part_temp = Path(temp_name)
                     part_hash = hashlib.sha256()
                     part_bytes = 0
                 take = min(PART_BYTES - part_bytes, len(chunk) - offset)
@@ -792,21 +838,21 @@ def validate_batch(batch: Path) -> Dict[str, Any]:
     return manifest
 
 
-def write_manifest(stage: Path, snapshot: Dict[str, Any], exported: Dict[str, Any]) -> Dict[str, Any]:
-    required = ("to_id", "row_count", "first_id", "last_id", "logical_bytes")
-    if any(not isinstance(snapshot.get(k), int) for k in required):
+def write_manifest(stage: Path, pending: Dict[str, Any], exported: Dict[str, Any]) -> Dict[str, Any]:
+    required = ("from_id", "to_id", "expected_count", "first_id", "last_id", "logical_bytes")
+    if any(not isinstance(pending.get(k), int) for k in required):
         raise ArchiveError("remote_metadata_invalid")
-    if snapshot["row_count"] <= 0 or snapshot["to_id"] < snapshot["from_id"]:
+    if pending["expected_count"] <= 0 or pending["to_id"] < pending["from_id"]:
         raise ArchiveError("remote_metadata_invalid")
     manifest: Dict[str, Any] = {
         "schema": 1,
         "created_at": utc_stamp(),
-        "from_id": snapshot["from_id"],
-        "to_id": snapshot["to_id"],
-        "expected_count": snapshot["row_count"],
-        "first_id": snapshot["first_id"],
-        "last_id": snapshot["last_id"],
-        "logical_bytes": snapshot["logical_bytes"],
+        "from_id": pending["from_id"],
+        "to_id": pending["to_id"],
+        "expected_count": pending["expected_count"],
+        "first_id": pending["first_id"],
+        "last_id": pending["last_id"],
+        "logical_bytes": pending["logical_bytes"],
         "compressed_bytes": exported["compressed_bytes"],
         "compressed_sha256": exported["compressed_sha256"],
         "header": list(HEADER),
