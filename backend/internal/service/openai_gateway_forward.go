@@ -150,6 +150,19 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	reqModel, reqStream, promptCacheKey := requestView.Model, requestView.Stream, requestView.PromptCacheKey
 	originalModel := reqModel
 
+	// A third-party image-only provider can implement Images but not a text
+	// Responses driver. Do not rewrite its image model to the global Codex
+	// driver; use the explicitly enabled native Images bridge instead.
+	if !compactPath && !responsesLite && account.UsesNativeImagesForResponses() && isOpenAIImageGenerationModel(reqModel) {
+		apiKey := getAPIKeyFromContext(c)
+		if apiKey != nil && !GroupAllowsImageGeneration(apiKey.Group) {
+			MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalFeatureGate)
+			c.JSON(http.StatusForbidden, gin.H{"error": gin.H{"type": "permission_error", "message": ImageGenerationPermissionMessage()}})
+			return nil, errors.New("image generation disabled for group")
+		}
+		return s.forwardResponsesViaNativeImages(ctx, c, account, body, originalModel, reqStream)
+	}
+
 	if account.Platform == PlatformGrok {
 		return s.forwardGrokResponses(ctx, c, account, body, originalModel, reqStream, startTime)
 	}

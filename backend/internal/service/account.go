@@ -1787,6 +1787,14 @@ func (a *Account) GetOpenAISessionID() string {
 	return strings.TrimSpace(a.GetExtraString("openai_session_id"))
 }
 
+// UsesNativeImagesForResponses opts a verified Images API provider into the
+// dedicated image-model Responses bridge. It must not affect text/tool turns,
+// remote compaction, OAuth accounts, or the global Responses capability probe.
+func (a *Account) UsesNativeImagesForResponses() bool {
+	return a != nil && a.Platform == PlatformOpenAI && a.Type == AccountTypeAPIKey &&
+		strings.TrimSpace(a.GetExtraString("openai_responses_image_transport")) == "images"
+}
+
 func (a *Account) SupportsOpenAIEndpointCapability(capability OpenAIEndpointCapability) bool {
 	if a == nil {
 		return false
