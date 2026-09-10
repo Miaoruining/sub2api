@@ -106,6 +106,13 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 			return
 		}
 
+		// Serve configured raster branding assets from a short, immutable URL.
+		// Invalid and stale branding paths are handled here so they cannot fall
+		// through to the SPA shell or another application route.
+		if s.handleBrandingAssetRequest(c) {
+			return
+		}
+
 		// Skip API routes
 		if shouldBypassEmbeddedFrontend(path) {
 			c.Next()
@@ -269,17 +276,22 @@ func (s *FrontendServer) serveIndexHTMLForPath(c *gin.Context, path string) {
 }
 
 func (s *FrontendServer) injectSettings(settingsJSON []byte) []byte {
+	// Keep the public settings snapshot and database value unchanged.  Only the
+	// copy embedded in the HTML is rewritten when the logo is a supported,
+	// bounded raster data URL.
+	settingsForHTML, _ := rewriteBrandingLogo(settingsJSON)
+
 	// Create the script tag to inject with nonce placeholder
 	// The placeholder will be replaced with actual nonce at request time
-	script := []byte(`<script nonce="` + NonceHTMLPlaceholder + `">window.__APP_CONFIG__=` + string(settingsJSON) + `;</script>`)
+	script := []byte(`<script nonce="` + NonceHTMLPlaceholder + `">window.__APP_CONFIG__=` + string(settingsForHTML) + `;</script>`)
 
 	// Inject before </head>
 	headClose := []byte("</head>")
 	result := bytes.Replace(s.baseHTML, headClose, append(script, headClose...), 1)
 
 	// Apply custom branding before the browser paints the static defaults.
-	result = injectSiteTitle(result, settingsJSON)
-	result = injectSiteFavicon(result, settingsJSON)
+	result = injectSiteTitle(result, settingsForHTML)
+	result = injectSiteFavicon(result, settingsForHTML)
 
 	return result
 }
