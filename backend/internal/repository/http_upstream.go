@@ -198,8 +198,10 @@ func NewHTTPUpstream(cfg *config.Config) service.HTTPUpstream {
 //   - 调用方必须关闭 resp.Body，否则会导致 inFlight 计数泄漏
 //   - inFlight > 0 的客户端不会被淘汰，确保活跃请求不被中断
 func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
+	trace := newHTTPUpstreamTrace(req, accountID, time.Now())
 	applyGrokCLIProxyHeaders(req)
 	if err := s.validateRequestHost(req); err != nil {
+		trace.finish(err, time.Now())
 		return nil, err
 	}
 	profile := service.HTTPUpstreamProfileDefault
@@ -210,14 +212,19 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 	// 获取或创建对应的客户端，并标记请求占用
 	entry, err := s.acquireClientWithProfile(proxyURL, accountID, accountConcurrency, profile)
 	if err != nil {
+		trace.finish(err, time.Now())
 		return nil, err
 	}
+	trace.markClientAcquired(time.Now())
 
 	// 执行请求
 	client := s.httpClientForUpstreamRequest(entry.client, req)
 	client = httpClientWithGrokAccessDeniedFallback(client)
-	resp, err := servertiming.Do(client, req)
+	tracedReq := trace.requestWithTrace(req)
+	resp, err := servertiming.Do(client, tracedReq)
+	trace.markHeaders(resp, time.Now())
 	if err != nil {
+		trace.finish(err, time.Now())
 		s.recordOpenAIHTTP2Failure(profile, entry.protocolMode, entry.proxyKey, err)
 		// 请求失败，立即减少计数
 		atomic.AddInt64(&entry.inFlight, -1)
@@ -225,6 +232,11 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 		return nil, err
 	}
 	s.recordOpenAIHTTP2Success(profile, entry.protocolMode, entry.proxyKey)
+
+	// 只观察调用方的读取，不预读、不缓冲响应；解压读取也包含在观察范围。
+	if resp.Body != nil {
+		resp.Body = &httpUpstreamTraceBody{ReadCloser: resp.Body, trace: trace}
+	}
 
 	// 如果上游返回了压缩内容，解压后再交给业务层
 	decompressResponseBody(resp)
@@ -234,6 +246,7 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 	resp.Body = wrapTrackedBody(resp.Body, func() {
 		atomic.AddInt64(&entry.inFlight, -1)
 		atomic.StoreInt64(&entry.lastUsed, time.Now().UnixNano())
+		trace.finish(nil, time.Now())
 	})
 
 	return resp, nil
