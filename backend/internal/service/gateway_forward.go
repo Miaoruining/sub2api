@@ -53,6 +53,21 @@ func (s *GatewayService) shouldFailoverUpstreamError(statusCode int) bool {
 	}
 }
 
+// poolModeOwnsRetry reports whether the handler's pool-mode retry policy is
+// responsible for retrying this status on the same account. Keeping a single
+// retry owner avoids restarting the service-level retry budget on every outer
+// pool retry while leaving non-pool accounts on the existing policy.
+func poolModeOwnsRetry(account *Account, statusCode int) bool {
+	if account == nil || !account.IsPoolMode() || !account.IsPoolModeRetryableStatus(statusCode) {
+		return false
+	}
+	// The outer handler can only retry after a service-level failover. Keep
+	// statuses handled as ordinary client errors (notably 400/404) on the
+	// existing path so signature/body repair and error semantics are preserved.
+	return statusCode == 401 || statusCode == 403 || statusCode == 429 ||
+		statusCode == 529 || statusCode >= 500
+}
+
 func retryBackoffDelay(attempt int) time.Duration {
 	// attempt 从 1 开始，表示第 attempt 次请求刚失败，需要等待后进行第 attempt+1 次请求。
 	if attempt <= 0 {
@@ -618,8 +633,11 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 			}
 		}
 
-		// 检查是否需要通用重试（排除400，因为400已经在上面特殊处理过了）
-		if resp.StatusCode >= 400 && resp.StatusCode != 400 && s.shouldRetryUpstreamError(account, resp.StatusCode) {
+		// 检查是否需要通用重试（排除400，因为400已经在上面特殊处理过了）。
+		// 池模式且状态码已交给 Handler 同账号重试时，直接走下面的
+		// failover 出口，避免每次外层重试都重新消耗这层的 5 次预算。
+		if resp.StatusCode >= 400 && resp.StatusCode != 400 &&
+			s.shouldRetryUpstreamError(account, resp.StatusCode) && !poolModeOwnsRetry(account, resp.StatusCode) {
 			if attempt < maxRetryAttempts {
 				elapsed := time.Since(retryStart)
 				if elapsed >= maxRetryElapsed {
@@ -682,7 +700,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	defer func() { _ = resp.Body.Close() }()
 
 	// 处理重试耗尽的情况
-	if resp.StatusCode >= 400 && s.shouldRetryUpstreamError(account, resp.StatusCode) {
+	if resp.StatusCode >= 400 && s.shouldRetryUpstreamError(account, resp.StatusCode) && !poolModeOwnsRetry(account, resp.StatusCode) {
 		if s.shouldFailoverUpstreamError(resp.StatusCode) {
 			respBody, _ := s.readUpstreamErrorBody(resp)
 			_ = resp.Body.Close()

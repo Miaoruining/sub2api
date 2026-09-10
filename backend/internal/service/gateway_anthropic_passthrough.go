@@ -120,8 +120,10 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 			})
 		}
 
-		// 透传分支禁止 400 请求体降级重试（该重试会改写请求体）
-		if resp.StatusCode >= 400 && resp.StatusCode != 400 && s.shouldRetryUpstreamError(account, resp.StatusCode) {
+		// 透传分支禁止 400 请求体降级重试（该重试会改写请求体）。池模式且状态码
+		// 已交给 Handler 同账号重试时，也跳过 Service 层通用重试，避免预算叠加。
+		if resp.StatusCode >= 400 && resp.StatusCode != 400 &&
+			s.shouldRetryUpstreamError(account, resp.StatusCode) && !poolModeOwnsRetry(account, resp.StatusCode) {
 			if attempt < maxRetryAttempts {
 				elapsed := time.Since(retryStart)
 				if elapsed >= maxRetryElapsed {
@@ -175,7 +177,7 @@ func (s *GatewayService) forwardAnthropicAPIKeyPassthroughWithInput(
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode >= 400 && s.shouldRetryUpstreamError(account, resp.StatusCode) {
+	if resp.StatusCode >= 400 && s.shouldRetryUpstreamError(account, resp.StatusCode) && !poolModeOwnsRetry(account, resp.StatusCode) {
 		if s.shouldFailoverUpstreamError(resp.StatusCode) {
 			respBody, _ := s.readUpstreamErrorBody(resp)
 			_ = resp.Body.Close()
