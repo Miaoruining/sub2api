@@ -111,7 +111,7 @@
                     {{ formatSelectedSubscriptionPaymentAmount(selectedPlan.original_price) }}
                   </span>
                   <span :class="['text-3xl font-bold', planTextClass]">{{ formatSelectedSubscriptionPaymentAmount(selectedPlan.price) }}</span>
-                  <span class="text-sm text-gray-500 dark:text-gray-400">/ {{ planValiditySuffix }}</span>
+                  <span class="text-sm text-gray-500 dark:text-gray-400">/ {{ selectedPlan.plan_kind === 'topup' ? t('payment.currentCycle') : planValiditySuffix }}</span>
                 </div>
                 <!-- Description -->
                 <p v-if="selectedPlan.description" class="mt-2 text-sm leading-relaxed text-gray-500 dark:text-gray-400">
@@ -119,6 +119,13 @@
                 </p>
                 <!-- Rate + Limits grid -->
                 <div class="mt-3 grid grid-cols-2 gap-3">
+                  <div v-if="selectedPlan.plan_kind === 'topup'">
+                    <span class="text-xs text-gray-400 dark:text-gray-500">{{ t('payment.planCard.quota') }}</span>
+                    <div class="text-lg font-semibold text-gray-800 dark:text-gray-200">+${{ selectedPlan.quota_usd ?? 0 }}</div>
+                    <p v-if="selectedCycleSubscription?.expires_at" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t('payment.currentCycleExpires', { expiresAt: selectedCycleSubscription.expires_at, days: getDaysRemaining(selectedCycleSubscription.expires_at) }) }}
+                    </p>
+                  </div>
                   <div>
                     <span class="text-xs text-gray-400 dark:text-gray-500">{{ t('payment.planCard.rate') }}</span>
                     <div class="flex items-baseline">
@@ -187,8 +194,20 @@
                 <Icon name="gift" size="xl" class="mx-auto mb-3 text-gray-300 dark:text-dark-600" />
                 <p class="text-gray-500 dark:text-gray-400">{{ t('payment.noPlans') }}</p>
               </div>
-              <div v-else :class="planGridClass">
-                <SubscriptionPlanCard v-for="plan in checkout.plans" :key="plan.id" :plan="plan" :active-subscriptions="activeSubscriptions" @select="selectPlan" />
+              <div v-else class="space-y-6">
+                <div v-if="basePlans.length > 0">
+                  <p class="mb-2 text-xs font-medium text-gray-400 dark:text-gray-500">{{ t('payment.basePlans') }}</p>
+                  <div :class="planGridClass(basePlans.length)">
+                    <SubscriptionPlanCard v-for="plan in basePlans" :key="plan.id" :plan="plan" :active-subscriptions="activeSubscriptions" @select="selectPlan" />
+                  </div>
+                </div>
+                <div v-if="topupPlans.length > 0">
+                  <p class="mb-2 text-xs font-medium text-gray-400 dark:text-gray-500">{{ t('payment.quotaTopups') }}</p>
+                  <p class="mb-3 text-xs text-gray-500 dark:text-gray-400">{{ t('payment.quotaTopupsHint') }}</p>
+                  <div :class="planGridClass(topupPlans.length)">
+                    <SubscriptionPlanCard v-for="plan in topupPlans" :key="plan.id" :plan="plan" :active-subscriptions="activeSubscriptions" @select="selectPlan" />
+                  </div>
+                </div>
               </div>
               <!-- Active subscriptions (compact, below plan list) -->
               <div v-if="activeSubscriptions.length > 0">
@@ -307,6 +326,8 @@ const appStore = useAppStore()
 
 const user = computed(() => authStore.user)
 const activeSubscriptions = computed(() => subscriptionStore.activeSubscriptions)
+const basePlans = computed(() => checkout.value.plans.filter(plan => plan.plan_kind !== 'topup'))
+const topupPlans = computed(() => checkout.value.plans.filter(plan => plan.plan_kind === 'topup'))
 
 function getDaysRemaining(expiresAt: string): number {
   const diff = new Date(expiresAt).getTime() - Date.now()
@@ -330,6 +351,11 @@ const amount = ref<number | null>(null)
 const selectedMethod = ref('')
 const selectedPlan = ref<SubscriptionPlan | null>(null)
 const previewImage = ref('')
+const selectedCycleSubscription = computed(() => {
+  const plan = selectedPlan.value
+  if (!plan || plan.plan_kind !== 'topup') return null
+  return activeSubscriptions.value.find(sub => sub.group_id === plan.group_id && sub.status === 'active') ?? null
+})
 
 const paymentPhase = ref<'select' | 'paying'>('select')
 
@@ -480,7 +506,7 @@ function buildWechatOAuthAuthorizeUrl(
 }
 
 function onPaymentDone() {
-  const wasSubscription = paymentState.value.orderType === 'subscription'
+  const wasSubscription = paymentState.value.orderType === 'subscription' || paymentState.value.orderType === 'subscription_topup'
   resetPayment()
   selectedPlan.value = null
   if (wasSubscription) {
@@ -492,7 +518,7 @@ async function onPaymentSuccess() {
   const completedPayment = { ...paymentState.value }
   removeRecoverySnapshot()
   authStore.refreshUser()
-  if (paymentState.value.orderType === 'subscription') {
+  if (paymentState.value.orderType === 'subscription' || paymentState.value.orderType === 'subscription_topup') {
     subscriptionStore.fetchActiveSubscriptions(true).catch(() => {})
   }
   await redirectToPaymentResult(completedPayment)
@@ -534,11 +560,10 @@ const subscriptionUsdToCnyRate = computed(() => {
 const creditedAmount = computed(() => Math.round((validAmount.value * balanceRechargeMultiplier.value) * 100) / 100)
 
 // Adaptive grid: center single card, 2-col for 2 plans, 3-col for 3+
-const planGridClass = computed(() => {
-  const n = checkout.value.plans.length
+function planGridClass(n: number): string {
   if (n <= 2) return 'grid grid-cols-1 gap-5 sm:grid-cols-2'
   return 'grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3'
-})
+}
 
 // Check if an amount fits a method's [min, max]. 0 = no limit.
 function amountFitsMethod(amt: number, methodType: string): boolean {
@@ -600,6 +625,7 @@ function ceilPaymentAmount(value: number, currency: string): number {
 }
 
 function subscriptionPaymentAmountForCurrency(value: number, currency: string): number {
+	if (selectedPlan.value?.plan_kind === 'topup') return roundPaymentAmount(value, currency)
   const rate = subscriptionUsdToCnyRate.value
   if (rate <= 0 || currency !== DEFAULT_PAYMENT_CURRENCY) return roundPaymentAmount(value, currency)
   return roundPaymentAmount(value * rate, currency)
@@ -768,7 +794,8 @@ async function handleSubmitRecharge() {
 
 async function confirmSubscribe() {
   if (!selectedPlan.value || submitting.value) return
-  await createOrder(selectedPlan.value.price, 'subscription', selectedPlan.value.id)
+  const orderType: OrderType = selectedPlan.value.plan_kind === 'topup' ? 'subscription_topup' : 'subscription'
+  await createOrder(selectedPlan.value.price, orderType, selectedPlan.value.id)
 }
 
 async function createOrder(orderAmount: number, orderType: OrderType, planId?: number, options: CreateOrderOptions = {}) {
@@ -1079,7 +1106,7 @@ async function resumeWechatPaymentFromQuery() {
   if (resume.orderType === 'balance' && resume.orderAmount > 0) {
     amount.value = resume.orderAmount
   }
-  if (resume.orderType === 'subscription' && resume.planId) {
+  if ((resume.orderType === 'subscription' || resume.orderType === 'subscription_topup') && resume.planId) {
     selectedPlan.value = checkout.value.plans.find(plan => plan.id === resume.planId) ?? null
   }
 

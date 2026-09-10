@@ -71,6 +71,9 @@ func (h *PaymentHandler) GetPlans(c *gin.Context) {
 		ProductName        string   `json:"product_name"`
 		ForSale            bool     `json:"for_sale"`
 		SortOrder          int      `json:"sort_order"`
+		PlanKind           string   `json:"plan_kind"`
+		QuotaUSD           *float64 `json:"quota_usd,omitempty"`
+		AllowActiveRenewal bool     `json:"allow_active_renewal"`
 	}
 	groupInfo := h.configService.GetGroupInfoMap(c.Request.Context(), plans)
 	result := make([]planWithPlatform, 0, len(plans))
@@ -85,6 +88,7 @@ func (h *PaymentHandler) GetPlans(c *gin.Context) {
 			Currency:     p.Currency,
 			ValidityDays: p.ValidityDays, ValidityUnit: p.ValidityUnit, Features: p.Features,
 			ProductName: p.ProductName, ForSale: p.ForSale, SortOrder: p.SortOrder,
+			PlanKind: p.PlanKind, QuotaUSD: p.QuotaUsd, AllowActiveRenewal: p.AllowActiveRenewal,
 		})
 	}
 	response.Success(c, result)
@@ -136,7 +140,7 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 			Name:        p.Name, Description: p.Description, Price: p.Price, OriginalPrice: p.OriginalPrice,
 			Currency:     p.Currency,
 			ValidityDays: p.ValidityDays, ValidityUnit: p.ValidityUnit, Features: parseFeatures(p.Features),
-			ProductName: p.ProductName,
+			ProductName: p.ProductName, PlanKind: p.PlanKind, QuotaUSD: p.QuotaUsd, AllowActiveRenewal: p.AllowActiveRenewal,
 		})
 	}
 
@@ -196,6 +200,9 @@ type checkoutPlan struct {
 	ValidityUnit       string   `json:"validity_unit"`
 	Features           []string `json:"features"`
 	ProductName        string   `json:"product_name"`
+	PlanKind           string   `json:"plan_kind"`
+	QuotaUSD           *float64 `json:"quota_usd,omitempty"`
+	AllowActiveRenewal bool     `json:"allow_active_renewal"`
 }
 
 // parseFeatures splits a newline-separated features string into a string slice.

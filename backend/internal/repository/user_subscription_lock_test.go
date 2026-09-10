@@ -9,6 +9,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	_ "github.com/Wei-Shaw/sub2api/ent/runtime"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionquotagrant"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 	"github.com/stretchr/testify/require"
 
@@ -18,7 +19,12 @@ import (
 
 func TestUserSubscriptionGetByIDForUpdateLocksRow(t *testing.T) {
 	var capturedSQL string
-	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(captureEntQueryMatcher{actual: &capturedSQL}))
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherFunc(func(expected, actual string) error {
+		if expected == "locked subscription" {
+			capturedSQL = actual
+		}
+		return nil
+	})))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
@@ -34,6 +40,8 @@ func TestUserSubscriptionGetByIDForUpdateLocksRow(t *testing.T) {
 			nil, nil, nil, 0.0, 0.0, 0.0, nil, now, "renewal",
 		),
 	)
+
+	mock.ExpectQuery("current-cycle quota grants").WithArgs(int64(7), now, "active", "consumption_ambiguous").WillReturnRows(sqlmock.NewRows(subscriptionquotagrant.Columns))
 
 	sub, err := repo.GetByIDForUpdate(context.Background(), 7)
 	require.NoError(t, err)

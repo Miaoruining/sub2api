@@ -8,6 +8,16 @@ import (
 
 const subscriptionDayDuration = 24 * time.Hour
 
+// Subscription quota grant states are shared by the repository and payment
+// services. An ambiguous grant remains part of the paid entitlement total but
+// cannot be automatically refunded because its consumption attribution is not
+// safe.
+const (
+	SubscriptionQuotaGrantStatusActive    = "active"
+	SubscriptionQuotaGrantStatusAmbiguous = "consumption_ambiguous"
+	SubscriptionQuotaGrantStatusRefunded  = "refunded"
+)
+
 type UserSubscription struct {
 	ID      int64
 	UserID  int64
@@ -24,6 +34,8 @@ type UserSubscription struct {
 	DailyUsageUSD   float64
 	WeeklyUsageUSD  float64
 	MonthlyUsageUSD float64
+	TopupGrantedUSD float64
+	TopupUsedUSD    float64
 
 	AssignedBy *int64
 	AssignedAt time.Time
@@ -222,7 +234,7 @@ func (s *UserSubscription) CheckMonthlyLimit(group *Group, additionalCost float6
 	if !group.HasMonthlyLimit() {
 		return true
 	}
-	return s.MonthlyUsageUSD+additionalCost <= *group.MonthlyLimitUSD
+	return s.MonthlyUsageUSD+additionalCost <= *group.MonthlyLimitUSD+s.TopupGrantedUSD
 }
 
 func (s *UserSubscription) CheckAllLimits(group *Group, additionalCost float64) (daily, weekly, monthly bool) {

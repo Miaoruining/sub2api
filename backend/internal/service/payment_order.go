@@ -118,7 +118,7 @@ func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrder
 	if req.OrderType == payment.OrderTypeBalance && cfg.BalanceDisabled {
 		return nil, infraerrors.Forbidden("BALANCE_PAYMENT_DISABLED", "balance recharge has been disabled")
 	}
-	if req.OrderType == payment.OrderTypeSubscription {
+	if req.OrderType == payment.OrderTypeSubscription || req.OrderType == payment.OrderTypeSubscriptionTopup {
 		return s.validateSubOrder(ctx, req)
 	}
 	if math.IsNaN(req.Amount) || math.IsInf(req.Amount, 0) || req.Amount <= 0 {
@@ -145,6 +145,29 @@ func (s *PaymentService) validateSubOrder(ctx context.Context, req CreateOrderRe
 	}
 	if !group.IsSubscriptionType() {
 		return nil, infraerrors.BadRequest("GROUP_TYPE_MISMATCH", "group is not a subscription type")
+	}
+	if req.OrderType == payment.OrderTypeSubscriptionTopup {
+		if plan.PlanKind != payment.SubscriptionPlanKindTopup || plan.QuotaUsd == nil || *plan.QuotaUsd <= 0 {
+			return nil, infraerrors.BadRequest("PLAN_KIND_MISMATCH", "selected plan is not a valid quota top-up")
+		}
+		if !group.HasMonthlyLimit() {
+			return nil, infraerrors.BadRequest("TOPUP_MONTHLY_LIMIT_REQUIRED", "quota top-up requires a monthly quota limit on the subscription group")
+		}
+		if s.subscriptionSvc == nil {
+			return nil, infraerrors.ServiceUnavailable("SUBSCRIPTION_UNAVAILABLE", "subscription service is unavailable")
+		}
+		if _, err := s.subscriptionSvc.GetActiveSubscription(ctx, req.UserID, plan.GroupID); err != nil {
+			return nil, infraerrors.Conflict("TOPUP_REQUIRES_ACTIVE_SUBSCRIPTION", "quota top-up requires an active subscription in the same group")
+		}
+		return plan, nil
+	}
+	if plan.PlanKind == payment.SubscriptionPlanKindTopup {
+		return nil, infraerrors.BadRequest("PLAN_KIND_MISMATCH", "quota top-up plans must be purchased as a top-up")
+	}
+	if s.subscriptionSvc != nil {
+		if active, activeErr := s.subscriptionSvc.GetActiveSubscription(ctx, req.UserID, plan.GroupID); activeErr == nil && active != nil && !plan.AllowActiveRenewal {
+			return nil, infraerrors.Conflict("ACTIVE_SUBSCRIPTION_EXISTS", "this subscription is active; purchase a quota top-up instead")
+		}
 	}
 	return plan, nil
 }
@@ -207,7 +230,21 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 		b.SetProviderSnapshot(providerSnapshot)
 	}
 	if plan != nil {
-		b.SetPlanID(plan.ID).SetSubscriptionGroupID(plan.GroupID).SetSubscriptionDays(psComputeValidityDays(plan.ValidityDays, plan.ValidityUnit))
+		b.SetPlanID(plan.ID).SetSubscriptionGroupID(plan.GroupID).SetSubscriptionDays(psComputeValidityDays(plan.ValidityDays, plan.ValidityUnit)).SetSubscriptionAllowActiveRenewal(plan.AllowActiveRenewal)
+	}
+	if plan != nil && plan.PlanKind == payment.SubscriptionPlanKindTopup {
+		txCtx := dbent.NewTxContext(ctx, tx)
+		if s.subscriptionSvc == nil {
+			return nil, infraerrors.ServiceUnavailable("SUBSCRIPTION_UNAVAILABLE", "subscription service is unavailable")
+		}
+		active, activeErr := s.subscriptionSvc.userSubRepo.GetActiveByUserIDAndGroupID(txCtx, req.UserID, plan.GroupID)
+		if activeErr != nil || active == nil {
+			return nil, infraerrors.Conflict("TOPUP_REQUIRES_ACTIVE_SUBSCRIPTION", "active subscription changed before order creation")
+		}
+		b.SetSubscriptionID(active.ID).SetSubscriptionCycleStart(active.StartsAt)
+		if plan.QuotaUsd != nil {
+			b.SetQuotaUsd(*plan.QuotaUsd)
+		}
 	}
 	order, err := b.Save(ctx)
 	if err != nil {

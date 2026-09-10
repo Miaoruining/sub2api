@@ -19,6 +19,12 @@ type SubscriptionPlan struct {
 	ID int64 `json:"id,omitempty"`
 	// GroupID holds the value of the "group_id" field.
 	GroupID int64 `json:"group_id,omitempty"`
+	// PlanKind holds the value of the "plan_kind" field.
+	PlanKind string `json:"plan_kind,omitempty"`
+	// QuotaUsd holds the value of the "quota_usd" field.
+	QuotaUsd *float64 `json:"quota_usd,omitempty"`
+	// AllowActiveRenewal holds the value of the "allow_active_renewal" field.
+	AllowActiveRenewal bool `json:"allow_active_renewal,omitempty"`
 	// Name holds the value of the "name" field.
 	Name string `json:"name,omitempty"`
 	// Description holds the value of the "description" field.
@@ -53,13 +59,13 @@ func (*SubscriptionPlan) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case subscriptionplan.FieldForSale:
+		case subscriptionplan.FieldAllowActiveRenewal, subscriptionplan.FieldForSale:
 			values[i] = new(sql.NullBool)
-		case subscriptionplan.FieldPrice, subscriptionplan.FieldOriginalPrice:
+		case subscriptionplan.FieldQuotaUsd, subscriptionplan.FieldPrice, subscriptionplan.FieldOriginalPrice:
 			values[i] = new(sql.NullFloat64)
 		case subscriptionplan.FieldID, subscriptionplan.FieldGroupID, subscriptionplan.FieldValidityDays, subscriptionplan.FieldSortOrder:
 			values[i] = new(sql.NullInt64)
-		case subscriptionplan.FieldName, subscriptionplan.FieldDescription, subscriptionplan.FieldCurrency, subscriptionplan.FieldValidityUnit, subscriptionplan.FieldFeatures, subscriptionplan.FieldProductName:
+		case subscriptionplan.FieldPlanKind, subscriptionplan.FieldName, subscriptionplan.FieldDescription, subscriptionplan.FieldCurrency, subscriptionplan.FieldValidityUnit, subscriptionplan.FieldFeatures, subscriptionplan.FieldProductName:
 			values[i] = new(sql.NullString)
 		case subscriptionplan.FieldCreatedAt, subscriptionplan.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -89,6 +95,25 @@ func (_m *SubscriptionPlan) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field group_id", values[i])
 			} else if value.Valid {
 				_m.GroupID = value.Int64
+			}
+		case subscriptionplan.FieldPlanKind:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field plan_kind", values[i])
+			} else if value.Valid {
+				_m.PlanKind = value.String
+			}
+		case subscriptionplan.FieldQuotaUsd:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field quota_usd", values[i])
+			} else if value.Valid {
+				_m.QuotaUsd = new(float64)
+				*_m.QuotaUsd = value.Float64
+			}
+		case subscriptionplan.FieldAllowActiveRenewal:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field allow_active_renewal", values[i])
+			} else if value.Valid {
+				_m.AllowActiveRenewal = value.Bool
 			}
 		case subscriptionplan.FieldName:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -207,6 +232,17 @@ func (_m *SubscriptionPlan) String() string {
 	builder.WriteString(fmt.Sprintf("id=%v, ", _m.ID))
 	builder.WriteString("group_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.GroupID))
+	builder.WriteString(", ")
+	builder.WriteString("plan_kind=")
+	builder.WriteString(_m.PlanKind)
+	builder.WriteString(", ")
+	if v := _m.QuotaUsd; v != nil {
+		builder.WriteString("quota_usd=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("allow_active_renewal=")
+	builder.WriteString(fmt.Sprintf("%v", _m.AllowActiveRenewal))
 	builder.WriteString(", ")
 	builder.WriteString("name=")
 	builder.WriteString(_m.Name)

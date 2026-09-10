@@ -82,7 +82,7 @@ const props = defineProps<{
   orderId: number
   amount: number
   clientSecret: string
-  orderType?: 'balance' | 'subscription'
+  orderType?: 'balance' | 'subscription' | 'subscription_topup'
   publishableKey: string
   payAmount: number
   currency?: string

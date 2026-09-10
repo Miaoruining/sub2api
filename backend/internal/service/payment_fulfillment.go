@@ -16,6 +16,8 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
+	"github.com/Wei-Shaw/sub2api/ent/user"
+	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
@@ -218,7 +220,7 @@ func (s *PaymentService) executeFulfillment(ctx context.Context, oid int64) erro
 	if err != nil {
 		return fmt.Errorf("get order: %w", err)
 	}
-	if o.OrderType == payment.OrderTypeSubscription {
+	if o.OrderType == payment.OrderTypeSubscription || o.OrderType == payment.OrderTypeSubscriptionTopup {
 		return s.ExecuteSubscriptionFulfillment(ctx, oid)
 	}
 	return s.ExecuteBalanceFulfillment(ctx, oid)
@@ -530,6 +532,9 @@ func (s *PaymentService) ExecuteSubscriptionFulfillment(ctx context.Context, oid
 	if lease == nil {
 		return nil
 	}
+	if o.OrderType == payment.OrderTypeSubscriptionTopup {
+		return s.doSubscriptionTopup(ctx, o, lease)
+	}
 	if err := s.doSub(ctx, o, lease); err != nil {
 		s.markFailed(ctx, oid, lease, err)
 		return err
@@ -566,6 +571,16 @@ func (s *PaymentService) ensurePaymentSubscriptionAssigned(ctx context.Context, 
 
 	txCtx := dbent.NewTxContext(ctx, tx)
 	txClient := tx.Client()
+	// Serialize all payment assignments for a user, including the no-row case.
+	// Locking only an existing subscription row leaves a gap where two paid base
+	// orders can both observe no subscription and race to create/extend it.
+	userQuery := txClient.User.Query().Where(user.IDEQ(o.UserID))
+	if paymentAuditDialect(txClient) != dialect.SQLite {
+		userQuery.ForUpdate()
+	}
+	if _, err := userQuery.Only(txCtx); err != nil {
+		return fmt.Errorf("lock user for subscription assignment: %w", err)
+	}
 	alreadyAssigned, err := hasPaymentSubscriptionAssignmentAudit(txCtx, txClient, o.ID)
 	if err != nil {
 		return fmt.Errorf("check subscription assignment audit: %w", err)
@@ -574,13 +589,32 @@ func (s *PaymentService) ensurePaymentSubscriptionAssigned(ctx context.Context, 
 	recoveredFromNote := false
 	if !alreadyAssigned {
 		orderNote := paymentSubscriptionOrderNote(o.ID)
-		existing, lookupErr := s.subscriptionSvc.userSubRepo.GetByUserIDAndGroupID(txCtx, o.UserID, groupID)
-		switch {
-		case lookupErr == nil && existing != nil && hasPaymentSubscriptionOrderNote(existing.Notes, orderNote):
-			recoveredFromNote = true
-		case lookupErr != nil && !errors.Is(lookupErr, ErrSubscriptionNotFound):
+		// Read the existing row under the same transaction lock used for the
+		// assignment. This check must happen after the per-order audit check so a
+		// retry whose assignment already committed is idempotent even if the
+		// subscription is now active.
+		subscriptionQuery := txClient.UserSubscription.Query().
+			Where(usersubscription.UserIDEQ(o.UserID), usersubscription.GroupIDEQ(groupID))
+		if paymentAuditDialect(txClient) != dialect.SQLite {
+			subscriptionQuery.ForUpdate()
+		}
+		existing, lookupErr := subscriptionQuery.Only(txCtx)
+		if lookupErr != nil && !dbent.IsNotFound(lookupErr) {
 			return fmt.Errorf("check existing subscription assignment: %w", lookupErr)
-		default:
+		}
+		if lookupErr == nil && existing != nil {
+			existingNotes := ""
+			if existing.Notes != nil {
+				existingNotes = *existing.Notes
+			}
+			recoveredFromNote = hasPaymentSubscriptionOrderNote(existingNotes, orderNote)
+			if !recoveredFromNote && !o.SubscriptionAllowActiveRenewal && existing.Status == SubscriptionStatusActive && existing.ExpiresAt.After(time.Now()) {
+				_ = tx.Rollback()
+				return s.requireSubscriptionOrderRefund(ctx, o, "an active subscription already exists; this base order cannot extend the current 30-day cycle", "SUBSCRIPTION_BASE_RENEWAL_REFUND_REQUIRED")
+			}
+		}
+
+		if !recoveredFromNote {
 			if _, _, err := s.subscriptionSvc.assignOrExtendSubscription(txCtx, &AssignSubscriptionInput{
 				UserID:       o.UserID,
 				GroupID:      groupID,
@@ -588,6 +622,14 @@ func (s *PaymentService) ensurePaymentSubscriptionAssigned(ctx context.Context, 
 				AssignedBy:   0,
 				Notes:        orderNote,
 			}, true); err != nil {
+				// A non-payment assignment path may have created the unique row
+				// outside this user lock. Treat that race as a base-order refund
+				// requirement instead of allowing a paid order to disappear as a
+				// generic fulfillment failure.
+				if !o.SubscriptionAllowActiveRenewal && errors.Is(err, ErrSubscriptionAlreadyExists) {
+					_ = tx.Rollback()
+					return s.requireSubscriptionOrderRefund(ctx, o, "another active subscription won the assignment race; this base order cannot extend the current 30-day cycle", "SUBSCRIPTION_BASE_RENEWAL_REFUND_REQUIRED")
+				}
 				return fmt.Errorf("assign subscription: %w", err)
 			}
 		}

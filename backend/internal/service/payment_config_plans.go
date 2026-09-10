@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -44,6 +45,30 @@ func validatePlanRequired(name string, groupID int64, price float64, validityDay
 	}
 	if originalPrice != nil && *originalPrice < 0 {
 		return infraerrors.BadRequest("PLAN_ORIGINAL_PRICE_INVALID", "original price must be >= 0")
+	}
+	return nil
+}
+
+func normalizePlanKind(raw string) (string, error) {
+	kind := strings.TrimSpace(raw)
+	if kind == "" {
+		return payment.SubscriptionPlanKindBase, nil
+	}
+	if kind != payment.SubscriptionPlanKindBase && kind != payment.SubscriptionPlanKindTopup {
+		return "", infraerrors.BadRequest("PLAN_KIND_INVALID", "plan kind must be base or topup")
+	}
+	return kind, nil
+}
+
+func validatePlanQuota(kind string, quota *float64) error {
+	if kind == payment.SubscriptionPlanKindTopup {
+		if quota == nil || *quota <= 0 || math.IsNaN(*quota) || math.IsInf(*quota, 0) {
+			return infraerrors.BadRequest("PLAN_QUOTA_INVALID", "top-up plan quota must be positive")
+		}
+		return nil
+	}
+	if quota != nil && *quota < 0 {
+		return infraerrors.BadRequest("PLAN_QUOTA_INVALID", "plan quota must be >= 0")
 	}
 	return nil
 }
@@ -140,11 +165,22 @@ func (s *PaymentConfigService) CreatePlan(ctx context.Context, req CreatePlanReq
 	if err != nil {
 		return nil, err
 	}
+	kind, err := normalizePlanKind(req.PlanKind)
+	if err != nil {
+		return nil, err
+	}
+	if err := validatePlanQuota(kind, req.QuotaUSD); err != nil {
+		return nil, err
+	}
 	b := s.entClient.SubscriptionPlan.Create().
 		SetGroupID(req.GroupID).SetName(req.Name).SetDescription(req.Description).
 		SetPrice(req.Price).SetCurrency(currency).SetValidityDays(req.ValidityDays).SetValidityUnit(req.ValidityUnit).
-		SetFeatures(req.Features).SetProductName(req.ProductName).
+		SetFeatures(req.Features).SetProductName(req.ProductName).SetPlanKind(kind).
+		SetAllowActiveRenewal(req.AllowActiveRenewal).
 		SetForSale(req.ForSale).SetSortOrder(req.SortOrder)
+	if req.QuotaUSD != nil {
+		b.SetQuotaUsd(*req.QuotaUSD)
+	}
 	if req.OriginalPrice != nil {
 		b.SetOriginalPrice(*req.OriginalPrice)
 	}
@@ -158,7 +194,29 @@ func (s *PaymentConfigService) UpdatePlan(ctx context.Context, id int64, req Upd
 	if err := validatePlanPatch(req); err != nil {
 		return nil, err
 	}
+	if req.PlanKind != nil {
+		kind, err := normalizePlanKind(*req.PlanKind)
+		if err != nil {
+			return nil, err
+		}
+		if err := validatePlanQuota(kind, req.QuotaUSD); err != nil {
+			return nil, err
+		}
+	} else if req.QuotaUSD != nil {
+		if err := validatePlanQuota(payment.SubscriptionPlanKindTopup, req.QuotaUSD); err != nil {
+			return nil, err
+		}
+	}
 	u := s.entClient.SubscriptionPlan.UpdateOneID(id)
+	if req.PlanKind != nil {
+		u.SetPlanKind(strings.TrimSpace(*req.PlanKind))
+	}
+	if req.QuotaUSD != nil {
+		u.SetQuotaUsd(*req.QuotaUSD)
+	}
+	if req.AllowActiveRenewal != nil {
+		u.SetAllowActiveRenewal(*req.AllowActiveRenewal)
+	}
 	if req.GroupID != nil {
 		u.SetGroupID(*req.GroupID)
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionquotagrant"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -246,12 +247,113 @@ func (s *PaymentService) PrepareRefund(ctx context.Context, oid int64, amt float
 		rr = fmt.Sprintf("refund order:%d", o.ID)
 	}
 	p := &RefundPlan{OrderID: oid, Order: o, RefundAmount: amt, GatewayAmount: ga, Reason: rr, Force: force, DeductBalance: deduct, DeductionType: payment.DeductionTypeNone}
-	if deduct {
+	if o.OrderType == payment.OrderTypeSubscriptionTopup {
+		if math.Abs(amt-o.Amount) > paymentAmountToleranceForCurrency(orderCurrency) {
+			return nil, nil, infraerrors.BadRequest("TOPUP_REFUND_MUST_BE_FULL", "quota top-up refunds must cover the full paid amount")
+		}
+		if early := s.prepareTopupRefund(ctx, o, p); early != nil {
+			return nil, early, nil
+		}
+	}
+	if deduct && o.OrderType != payment.OrderTypeSubscriptionTopup {
 		if er := s.prepDeduct(ctx, o, p, force); er != nil {
 			return nil, er, nil
 		}
 	}
 	return p, nil, nil
+}
+
+func (s *PaymentService) prepareTopupRefund(ctx context.Context, o *dbent.PaymentOrder, p *RefundPlan) *RefundResult {
+	grant, err := s.entClient.SubscriptionQuotaGrant.Query().
+		Where(subscriptionquotagrant.PaymentOrderIDEQ(o.ID)).Only(ctx)
+	if err != nil {
+		if !dbent.IsNotFound(err) {
+			return &RefundResult{Success: false, Warning: "quota top-up grant lookup failed; retry the refund after the database is available"}
+		}
+		s.requireTopupRefund(ctx, o, "quota top-up grant is missing; manual refund review is required")
+		if p.Force {
+			p.DeductionType = payment.DeductionTypeNone
+			return nil
+		}
+		return &RefundResult{Success: false, Warning: "quota top-up grant is missing; manual refund review is required", RequireForce: true}
+	}
+	if grant.Status != quotaGrantStatusActive {
+		// A gateway-successful refund can be left in REFUND_PENDING when the
+		// terminal order update failed. The grant was already revoked before the
+		// gateway call, so reconciliation must be allowed to mark the order
+		// complete without revoking it a second time.
+		if o.Status == OrderStatusRefundPending && grant.Status == quotaGrantStatusRefunded {
+			p.DeductionType = payment.DeductionTypeSubscriptionTopup
+			p.TopupGrantID = grant.ID
+			p.TopupRevoked = true
+			return nil
+		}
+		if p.Force {
+			p.DeductionType = payment.DeductionTypeNone
+			return nil
+		}
+		return &RefundResult{Success: false, Warning: "quota top-up grant is already refunded or unavailable", RequireForce: true}
+	}
+	if grant.UsedUsd > 0.00000001 || grant.GrantedUsd <= 0 {
+		s.requireTopupRefund(ctx, o, "quota top-up has been consumed or cannot be attributed safely; manual compensation is required")
+		if p.Force {
+			p.DeductionType = payment.DeductionTypeNone
+			return nil
+		}
+		return &RefundResult{Success: false, Warning: "quota top-up has been consumed or cannot be attributed safely; manual compensation is required", RequireForce: true}
+	}
+	p.DeductionType = payment.DeductionTypeSubscriptionTopup
+	p.TopupGrantID = grant.ID
+	p.DeductBalance = true
+	return nil
+}
+
+func (s *PaymentService) revokeTopupGrant(ctx context.Context, p *RefundPlan) error {
+	if p == nil || p.TopupGrantID <= 0 {
+		return errors.New("quota top-up grant is not bound to refund")
+	}
+	if p.TopupRevoked {
+		return nil
+	}
+	now := time.Now()
+	updated, err := s.entClient.SubscriptionQuotaGrant.Update().
+		Where(subscriptionquotagrant.IDEQ(p.TopupGrantID), subscriptionquotagrant.StatusEQ(quotaGrantStatusActive), subscriptionquotagrant.UsedUsdLTE(0.00000001)).
+		SetStatus(quotaGrantStatusRefunded).SetRefundedAt(now).Save(ctx)
+	if err != nil {
+		return fmt.Errorf("revoke quota top-up grant: %w", err)
+	}
+	if updated == 0 {
+		return errors.New("quota top-up grant was consumed or already refunded")
+	}
+	p.TopupRevoked = true
+	if s.subscriptionSvc != nil && p.Order != nil && p.Order.SubscriptionGroupID != nil {
+		if err := s.subscriptionSvc.invalidateSubscriptionCaches(p.Order.UserID, *p.Order.SubscriptionGroupID); err != nil {
+			return fmt.Errorf("invalidate quota top-up cache: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *PaymentService) restoreTopupGrant(ctx context.Context, p *RefundPlan) error {
+	if p == nil || p.TopupGrantID <= 0 || !p.TopupRevoked {
+		return nil
+	}
+	updated, err := s.entClient.SubscriptionQuotaGrant.Update().
+		Where(subscriptionquotagrant.IDEQ(p.TopupGrantID), subscriptionquotagrant.StatusEQ(quotaGrantStatusRefunded)).
+		SetStatus(quotaGrantStatusActive).ClearRefundedAt().Save(ctx)
+	if err != nil {
+		return fmt.Errorf("restore quota top-up grant: %w", err)
+	}
+	if updated == 0 {
+		return errors.New("quota top-up grant was not in refunded state")
+	}
+	p.TopupRevoked = false
+	if s.subscriptionSvc != nil && p.Order != nil && p.Order.SubscriptionGroupID != nil {
+		if err := s.subscriptionSvc.invalidateSubscriptionCaches(p.Order.UserID, *p.Order.SubscriptionGroupID); err != nil {
+			return fmt.Errorf("invalidate restored quota top-up cache: %w", err)
+		}
+	}
+	return nil
 }
 
 func (s *PaymentService) prepDeduct(ctx context.Context, o *dbent.PaymentOrder, p *RefundPlan, force bool) *RefundResult {
@@ -316,6 +418,17 @@ func (s *PaymentService) ExecuteRefund(ctx context.Context, p *RefundPlan) (*Ref
 		} else {
 			slog.Warn("skipping balance deduction on retry (previous rollback failed)", "orderID", p.OrderID)
 			p.BalanceToDeduct = 0
+		}
+	}
+	if p.DeductionType == payment.DeductionTypeSubscriptionTopup {
+		if err := s.revokeTopupGrant(ctx, p); err != nil {
+			if restoreErr := s.restoreTopupGrant(ctx, p); restoreErr != nil {
+				recoveryErr := fmt.Errorf("revoke quota top-up grant: %w; restore failed: %v", err, restoreErr)
+				s.markRefundRecoveryRequired(ctx, p, recoveryErr)
+				return nil, recoveryErr
+			}
+			s.restoreStatus(ctx, p)
+			return nil, err
 		}
 	}
 	if p.DeductionType == payment.DeductionTypeSubscription && p.SubDaysToDeduct > 0 && p.SubscriptionID > 0 {
@@ -410,7 +523,17 @@ func (s *PaymentService) finishRefund(ctx context.Context, p *RefundPlan, resp *
 	}
 	switch strings.TrimSpace(resp.Status) {
 	case payment.ProviderStatusSuccess, payment.ProviderStatusRefunded:
-		return s.markRefundOk(ctx, p)
+		result, err := s.markRefundOk(ctx, p)
+		if err == nil || p.DeductionType != payment.DeductionTypeSubscriptionTopup {
+			return result, err
+		}
+		// The gateway has already accepted the refund while the local terminal
+		// update failed. Keep the grant revoked and expose a retryable pending
+		// state; restoring it here could let the user spend refunded quota.
+		if reconcileErr := s.markTopupRefundPendingAfterGatewaySuccess(ctx, p, resp, err); reconcileErr != nil {
+			return nil, fmt.Errorf("mark quota top-up refund for reconciliation: %w (original: %v)", reconcileErr, err)
+		}
+		return &RefundResult{Success: false, Warning: "gateway refund succeeded; local completion needs reconciliation"}, nil
 	case payment.ProviderStatusPending:
 		return s.markRefundPending(ctx, p, resp)
 	default:
@@ -456,8 +579,17 @@ func (s *PaymentService) QueryAndFinalizeRefund(ctx context.Context, oid int64) 
 	if !pendingDetail.DeductionRollbackOK {
 		plan.BalanceToDeduct = 0
 		plan.SubDaysToDeduct = 0
+		if o.OrderType == payment.OrderTypeSubscriptionTopup {
+			if early := s.prepareTopupRefund(ctx, o, plan); early != nil {
+				return early, nil
+			}
+		}
 	} else if o.OrderType == payment.OrderTypeSubscription {
 		if early := s.prepDeduct(ctx, o, plan, true); early != nil {
+			return early, nil
+		}
+	} else if o.OrderType == payment.OrderTypeSubscriptionTopup {
+		if early := s.prepareTopupRefund(ctx, o, plan); early != nil {
 			return early, nil
 		}
 	}
@@ -522,7 +654,12 @@ func (s *PaymentService) refundFinalizePlan(o *dbent.PaymentOrder) *RefundPlan {
 		Reason:        reason,
 		Force:         o.ForceRefund,
 		DeductBalance: true,
-		DeductionType: payment.DeductionTypeBalance,
+		DeductionType: func() string {
+			if o.OrderType == payment.OrderTypeSubscriptionTopup {
+				return payment.DeductionTypeSubscriptionTopup
+			}
+			return payment.DeductionTypeBalance
+		}(),
 		BalanceToDeduct: func() float64 {
 			if o.OrderType == payment.OrderTypeBalance {
 				return refundAmount
@@ -551,7 +688,70 @@ func (s *PaymentService) applyRefundFinalDeduction(ctx context.Context, p *Refun
 			}
 		}
 	}
+	if p.DeductionType == payment.DeductionTypeSubscriptionTopup {
+		if !p.TopupRevoked {
+			if err := s.revokeTopupGrant(ctx, p); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
+}
+
+func (s *PaymentService) markTopupRefundPendingAfterGatewaySuccess(ctx context.Context, p *RefundPlan, resp *payment.RefundResponse, finalizeErr error) error {
+	if p == nil || p.Order == nil {
+		return errors.New("quota top-up refund plan is missing")
+	}
+	updated, err := s.entClient.PaymentOrder.Update().
+		Where(paymentorder.IDEQ(p.OrderID), paymentorder.StatusEQ(OrderStatusRefunding)).
+		SetStatus(OrderStatusRefundPending).
+		SetRefundAmount(p.RefundAmount).
+		SetRefundReason(p.Reason).
+		ClearRefundAt().
+		SetForceRefund(p.Force).
+		ClearFailedAt().
+		ClearFailedReason().
+		Save(ctx)
+	if err != nil {
+		return fmt.Errorf("persist pending refund state: %w", err)
+	}
+	if updated == 0 {
+		// Another retry may have completed the order between the failed update
+		// and this reconciliation attempt. Do not regress a terminal status.
+		s.writeAuditLog(ctx, p.OrderID, "REFUND_GATEWAY_SUCCESS_FINALIZATION_SKIPPED", "admin", map[string]any{
+			"refundID":      refundResponseID(resp),
+			"detail":        "order was no longer refunding",
+			"finalizeError": psErrMsg(finalizeErr),
+		})
+		return nil
+	}
+	s.writeAuditLog(ctx, p.OrderID, "REFUND_GATEWAY_SUCCESS_FINALIZATION_REQUIRED", "admin", map[string]any{
+		"refundID":      refundResponseID(resp),
+		"refundAmount":  p.RefundAmount,
+		"grantID":       p.TopupGrantID,
+		"finalizeError": psErrMsg(finalizeErr),
+	})
+	return nil
+}
+
+func (s *PaymentService) markRefundRecoveryRequired(ctx context.Context, p *RefundPlan, recoveryErr error) {
+	if p == nil {
+		return
+	}
+	reason := "refund grant recovery requires manual reconciliation"
+	if recoveryErr != nil {
+		reason = recoveryErr.Error()
+	}
+	now := time.Now()
+	_, _ = s.entClient.PaymentOrder.UpdateOneID(p.OrderID).
+		SetStatus(OrderStatusRefundFailed).
+		SetFailedAt(now).
+		SetFailedReason(reason).
+		Save(ctx)
+	s.writeAuditLog(ctx, p.OrderID, "REFUND_ROLLBACK_FAILED", "admin", map[string]any{
+		"detail":  reason,
+		"grantID": p.TopupGrantID,
+	})
 }
 
 func (s *PaymentService) finalizeRefundFailed(ctx context.Context, o *dbent.PaymentOrder, gErr error) (*RefundResult, error) {
@@ -705,6 +905,13 @@ func (s *PaymentService) RollbackRefund(ctx context.Context, p *RefundPlan, gErr
 		if _, err := s.subscriptionSvc.ExtendSubscription(ctx, p.SubscriptionID, p.SubDaysToDeduct); err != nil {
 			slog.Error("[CRITICAL] subscription rollback failed", "orderID", p.OrderID, "subID", p.SubscriptionID, "days", p.SubDaysToDeduct, "error", err)
 			s.writeAuditLog(ctx, p.OrderID, "REFUND_ROLLBACK_FAILED", "admin", map[string]any{"gatewayError": psErrMsg(gErr), "rollbackError": psErrMsg(err), "subDaysDeducted": p.SubDaysToDeduct})
+			return false
+		}
+	}
+	if p.DeductionType == payment.DeductionTypeSubscriptionTopup && p.TopupRevoked {
+		if err := s.restoreTopupGrant(ctx, p); err != nil {
+			slog.Error("[CRITICAL] quota top-up rollback failed", "orderID", p.OrderID, "grantID", p.TopupGrantID, "error", err)
+			s.writeAuditLog(ctx, p.OrderID, "REFUND_ROLLBACK_FAILED", "admin", map[string]any{"gatewayError": psErrMsg(gErr), "rollbackError": psErrMsg(err), "grantID": p.TopupGrantID})
 			return false
 		}
 	}

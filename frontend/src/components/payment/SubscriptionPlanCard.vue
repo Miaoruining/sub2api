@@ -32,9 +32,10 @@
           </div>
           <div class="flex items-center justify-end gap-1">
             <span :class="['inline-flex shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium', badgeLightClass]">
-              {{ pLabel }}
+              {{ plan.plan_kind === 'topup' ? t('payment.quotaTopup') : pLabel }}
             </span>
-            <span class="text-[11px] text-gray-400 dark:text-dark-500">/ {{ validitySuffix }}</span>
+            <span v-if="plan.plan_kind !== 'topup'" class="text-[11px] text-gray-400 dark:text-dark-500">/ {{ validitySuffix }}</span>
+            <span v-else class="text-[11px] text-gray-400 dark:text-dark-500">{{ t('payment.currentCycle') }}</span>
           </div>
           <div v-if="plan.original_price" class="mt-0.5 flex items-center justify-end gap-1.5">
             <span class="text-xs text-gray-400 line-through dark:text-dark-500">{{ planCurrencySymbol }}{{ plan.original_price }}<template v-if="plan.currency"> {{ plan.currency }}</template></span>
@@ -45,27 +46,37 @@
 
       <!-- Group quota info (compact) -->
       <div class="mb-3 grid grid-cols-2 gap-x-3 gap-y-1 rounded-lg bg-gray-50 px-3 py-2 text-xs dark:bg-dark-700/50">
-        <div class="flex items-center justify-between">
+        <div v-if="plan.plan_kind !== 'topup'" class="flex items-center justify-between">
           <span class="text-gray-400 dark:text-dark-500">{{ t('payment.planCard.rate') }}</span>
           <span class="font-medium text-gray-700 dark:text-gray-300">{{ rateDisplay }}</span>
         </div>
-        <div v-if="hasPeakRate" class="col-span-2 flex items-center justify-between gap-2">
+        <div v-if="plan.plan_kind !== 'topup' && hasPeakRate" class="col-span-2 flex items-center justify-between gap-2">
           <span class="text-gray-400 dark:text-dark-500">{{ t('payment.planCard.peakRate') }}</span>
           <span class="text-right font-medium text-amber-700 dark:text-amber-300">{{ peakRateDisplay }}</span>
         </div>
-        <div v-if="plan.daily_limit_usd != null" class="flex items-center justify-between">
+        <div v-if="plan.plan_kind !== 'topup' && plan.daily_limit_usd != null" class="flex items-center justify-between">
           <span class="text-gray-400 dark:text-dark-500">{{ t('payment.planCard.dailyLimit') }}</span>
           <span class="font-medium text-gray-700 dark:text-gray-300">${{ plan.daily_limit_usd }}</span>
         </div>
-        <div v-if="plan.weekly_limit_usd != null" class="flex items-center justify-between">
+        <div v-if="plan.plan_kind !== 'topup' && plan.weekly_limit_usd != null" class="flex items-center justify-between">
           <span class="text-gray-400 dark:text-dark-500">{{ t('payment.planCard.weeklyLimit') }}</span>
           <span class="font-medium text-gray-700 dark:text-gray-300">${{ plan.weekly_limit_usd }}</span>
         </div>
-        <div v-if="plan.monthly_limit_usd != null" class="flex items-center justify-between">
+        <div v-if="plan.plan_kind !== 'topup' && plan.monthly_limit_usd != null" class="flex items-center justify-between">
           <span class="text-gray-400 dark:text-dark-500">{{ t('payment.planCard.monthlyLimit') }}</span>
           <span class="font-medium text-gray-700 dark:text-gray-300">${{ plan.monthly_limit_usd }}</span>
         </div>
-        <div v-if="plan.daily_limit_usd == null && plan.weekly_limit_usd == null && plan.monthly_limit_usd == null" class="flex items-center justify-between">
+        <div v-if="plan.plan_kind === 'topup'" class="col-span-2 flex items-center justify-between">
+          <span class="text-gray-400 dark:text-dark-500">{{ t('payment.planCard.quota') }}</span>
+          <span class="font-semibold text-gray-700 dark:text-gray-300">+${{ plan.quota_usd ?? 0 }} {{ t('payment.currentCycle') }}</span>
+        </div>
+        <div v-if="plan.plan_kind === 'topup' && !canSelect" class="col-span-2 text-[11px] text-amber-600 dark:text-amber-300">
+          {{ t('payment.topupRequiresActive') }}
+        </div>
+        <div v-if="requiresTopup" class="col-span-2 text-[11px] text-amber-600 dark:text-amber-300">
+          {{ t('payment.activeBaseRequiresTopup') }}
+        </div>
+        <div v-if="plan.plan_kind !== 'topup' && plan.daily_limit_usd == null && plan.weekly_limit_usd == null && plan.monthly_limit_usd == null" class="flex items-center justify-between">
           <span class="text-gray-400 dark:text-dark-500">{{ t('payment.planCard.quota') }}</span>
           <span class="font-medium text-gray-700 dark:text-gray-300">{{ t('payment.planCard.unlimited') }}</span>
         </div>
@@ -95,10 +106,11 @@
       <!-- Subscribe Button -->
       <button
         type="button"
-        :class="['w-full rounded-xl py-2.5 text-sm font-semibold transition-all active:scale-[0.98]', btnClass]"
+        :disabled="!canSelect"
+        :class="['w-full rounded-xl py-2.5 text-sm font-semibold transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50', btnClass]"
         @click="emit('select', plan)"
       >
-        {{ isRenewal ? t('payment.renewNow') : t('payment.subscribeNow') }}
+        {{ plan.plan_kind === 'topup' ? t('payment.buyQuotaTopup') : (requiresTopup ? t('payment.quotaTopups') : (isRenewal ? t('payment.renewNow') : t('payment.subscribeNow'))) }}
       </button>
     </div>
   </div>
@@ -130,8 +142,10 @@ const { t } = useI18n()
 
 const platform = computed(() => props.plan.group_platform || '')
 const isRenewal = computed(() =>
-  props.activeSubscriptions?.some(s => s.group_id === props.plan.group_id && s.status === 'active') ?? false
+	props.plan.plan_kind !== 'topup' && (props.activeSubscriptions?.some(s => s.group_id === props.plan.group_id && s.status === 'active') ?? false)
 )
+const requiresTopup = computed(() => props.plan.plan_kind !== 'topup' && isRenewal.value && props.plan.allow_active_renewal === false)
+const canSelect = computed(() => !requiresTopup.value && (props.plan.plan_kind !== 'topup' || (props.activeSubscriptions?.some(s => s.group_id === props.plan.group_id && s.status === 'active') ?? false)))
 
 // Derived color classes from central config
 const accentClass = computed(() => platformAccentBarClass(platform.value))

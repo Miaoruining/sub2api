@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createPinia } from "pinia";
 import { createI18n } from "vue-i18n";
 import type { SubscriptionPlan } from "@/types/payment";
+import type { UserSubscription } from "@/types";
 import SubscriptionPlanCard from "../SubscriptionPlanCard.vue";
 
 const i18n = createI18n({
@@ -24,12 +25,39 @@ const i18n = createI18n({
           unlimited: "Unlimited",
         },
         subscribeNow: "Subscribe now",
+        buyQuotaTopup: "Buy quota top-up",
+        quotaTopup: "Quota top-up",
+        topupRequiresActive: "An active subscription in this group is required",
+        activeBaseRequiresTopup: "Use a quota top-up while this subscription is active",
+        quotaTopups: "Use quota top-ups",
+        currentCycle: "current cycle",
       },
     },
   },
 });
 
-const mountPlanCard = (groupPlatform: string, overrides: Partial<SubscriptionPlan> = {}) =>
+const activeSubscription = (groupId = 10): UserSubscription => ({
+  id: 7,
+  user_id: 42,
+  group_id: groupId,
+  status: "active",
+  starts_at: "2026-09-01T00:00:00Z",
+  daily_usage_usd: 0,
+  weekly_usage_usd: 0,
+  monthly_usage_usd: 0,
+  daily_window_start: null,
+  weekly_window_start: null,
+  monthly_window_start: null,
+  created_at: "2026-09-01T00:00:00Z",
+  updated_at: "2026-09-01T00:00:00Z",
+  expires_at: "2026-10-01T00:00:00Z",
+});
+
+const mountPlanCard = (
+  groupPlatform: string,
+  overrides: Partial<SubscriptionPlan> = {},
+  activeSubscriptions: UserSubscription[] = [],
+) =>
   mount(SubscriptionPlanCard, {
     props: {
       plan: {
@@ -47,6 +75,7 @@ const mountPlanCard = (groupPlatform: string, overrides: Partial<SubscriptionPla
         is_active: true,
         ...overrides,
       },
+      activeSubscriptions,
     },
     global: { plugins: [i18n, createPinia()] },
   });
@@ -147,5 +176,63 @@ describe("SubscriptionPlanCard", () => {
       "justify-end",
     ]));
     expect(badge?.element.parentElement?.textContent).toContain("/ 30payment.days");
+  });
+
+  it("disables an active base plan when renewal is not allowed and guides to top-ups", () => {
+    const wrapper = mountPlanCard(
+      "openai",
+      { plan_kind: "base", allow_active_renewal: false },
+      [activeSubscription()],
+    );
+
+    const button = wrapper.get("button");
+    expect(button.attributes("disabled")).toBeDefined();
+    expect(button.text()).toBe("payment.quotaTopups");
+    expect(wrapper.text()).toContain("payment.activeBaseRequiresTopup");
+  });
+
+  it("does not allow buying a top-up without an active subscription in the same group", () => {
+    const wrapper = mountPlanCard("openai", {
+      plan_kind: "topup",
+      quota_usd: 11,
+      price: 10,
+    });
+
+    const button = wrapper.get("button");
+    expect(button.attributes("disabled")).toBeDefined();
+    expect(button.text()).toBe("payment.buyQuotaTopup");
+    expect(wrapper.text()).toContain("payment.topupRequiresActive");
+  });
+
+  it("shows only the additional quota and current-cycle wording on a top-up card", () => {
+    const text = mountPlanCard(
+      "openai",
+      {
+        plan_kind: "topup",
+        quota_usd: 11,
+        price: 10,
+        monthly_limit_usd: 55,
+        validity_days: 30,
+      },
+      [activeSubscription()],
+    ).text();
+
+    expect(text).toContain("+$11 payment.currentCycle");
+    expect(text).not.toContain("$55");
+    expect(text).not.toContain("30payment.days");
+  });
+
+  it("allows a same-group top-up and states that it follows the current cycle", () => {
+    const wrapper = mountPlanCard(
+      "openai",
+      { plan_kind: "topup", quota_usd: 11, price: 10 },
+      [activeSubscription()],
+    );
+
+    const button = wrapper.get("button");
+    expect(button.attributes("disabled")).toBeUndefined();
+    expect(button.text()).toBe("payment.buyQuotaTopup");
+    expect(wrapper.text()).toContain("payment.currentCycle");
+    expect(wrapper.text()).not.toContain("30payment.days");
   });
 });
