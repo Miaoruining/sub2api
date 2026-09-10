@@ -72,7 +72,7 @@ func TestPublicSEOEndpoints(t *testing.T) {
 		assert.Contains(t, response.Body.String(), `<?xml version="1.0" encoding="UTF-8"?>`)
 		assert.Contains(t, response.Body.String(), "https://modelport.top/")
 		assert.Contains(t, response.Body.String(), "https://modelport.top/learn")
-		assert.Equal(t, 8, strings.Count(response.Body.String(), "<loc>"), "root plus seven editorial pages")
+		assert.Equal(t, 1+len(publicSEOPages), strings.Count(response.Body.String(), "<loc>"), "root plus all editorial pages")
 		assert.NotContains(t, response.Body.String(), "evil.example")
 		assert.NotContains(t, response.Body.String(), "/home")
 		assert.NotContains(t, response.Body.String(), "/model-plaza")
@@ -130,12 +130,47 @@ func TestAllPublicSEOPagesRenderTrustedHTMLAndValidJSONLD(t *testing.T) {
 			require.NoError(t, json.Unmarshal([]byte(body[scriptStart:scriptEnd]), &jsonLD))
 			assert.Equal(t, page.Title, jsonLD["name"])
 			assert.Equal(t, "https://modelport.top"+normalizeSEOPath(page.Path), jsonLD["url"])
+			assert.Equal(t, "zh-CN", jsonLD["inLanguage"])
+			crumbs, ok := jsonLD["breadcrumb"].(map[string]any)
+			require.True(t, ok)
+			assert.Equal(t, "BreadcrumbList", crumbs["@type"])
+			items, ok := crumbs["itemListElement"].([]any)
+			require.True(t, ok)
+			count := 3
+			if page.Path == "/learn" {
+				count = 2
+			}
+			require.Len(t, items, count)
+			for i, raw := range items {
+				item := raw.(map[string]any)
+				assert.Equal(t, float64(i+1), item["position"])
+				assert.Contains(t, body, item["name"])
+				assert.True(t, strings.HasPrefix(item["item"].(string), modelPortCanonicalOrigin+"/"))
+			}
+			assert.Equal(t, canonicalSEOURL(page.Path), items[len(items)-1].(map[string]any)["item"])
+			assert.Contains(t, body, `aria-label="面包屑"`)
+			assert.Equal(t, 1, strings.Count(body, `aria-current="page"`))
 
 			for _, match := range internalLearnHref.FindAllStringSubmatch(body, -1) {
 				_, exists := knownPages[normalizeSEOPath(match[1])]
 				assert.True(t, exists, "internal learn link must target a published page: %s", match[1])
 			}
 		})
+	}
+}
+
+func TestPublicSEOEditorialDiscovery(t *testing.T) {
+	index, ok := publicSEOPageForPath("/learn")
+	require.True(t, ok)
+	titles := map[string]bool{}
+	paths := map[string]bool{}
+	for _, page := range publicSEOPages {
+		assert.False(t, titles[page.Title], "duplicate title: %s", page.Title)
+		assert.False(t, paths[page.Path], "duplicate path: %s", page.Path)
+		titles[page.Title], paths[page.Path] = true, true
+		if page.Path != "/learn" {
+			assert.Contains(t, index.Body, `href="`+page.Path+`"`, "every guide must be discoverable from the directory body")
+		}
 	}
 }
 

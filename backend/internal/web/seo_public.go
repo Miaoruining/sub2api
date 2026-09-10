@@ -52,10 +52,17 @@ type publicSEOTemplatePage struct {
 }
 
 type publicSEOTemplateData struct {
-	Page      publicSEOTemplatePage
-	Canonical string
-	JSONLD    template.JS
-	Nonce     string
+	Page        publicSEOTemplatePage
+	Canonical   string
+	JSONLD      template.JS
+	Nonce       string
+	Breadcrumbs []publicSEOBreadcrumb
+}
+
+type publicSEOBreadcrumb struct {
+	Name    string
+	URL     string
+	Current bool
 }
 
 // publicSEOSettings is intentionally a small allowlist of settings.  It is
@@ -440,12 +447,25 @@ func renderPublicSEOPage(page publicSEOPage, nonce string) ([]byte, error) {
 	if path != "/learn" && !strings.HasPrefix(path, "/learn/") {
 		return nil, errors.New("invalid public seo page path")
 	}
+	// One source supplies both visible navigation and machine-readable ancestry.
+	crumbs := []publicSEOBreadcrumb{{Name: "首页", URL: canonicalSEOURL("/")}, {Name: "使用指南", URL: canonicalSEOURL("/learn")}}
+	if path != "/learn" {
+		crumbs = append(crumbs, publicSEOBreadcrumb{Name: page.Title, URL: canonicalSEOURL(path)})
+	}
+	crumbs[len(crumbs)-1].Current = true
+	items := make([]map[string]any, 0, len(crumbs))
+	for i, crumb := range crumbs {
+		items = append(items, map[string]any{"@type": "ListItem", "position": i + 1, "name": crumb.Name, "item": crumb.URL})
+	}
 	jsonLD, err := json.Marshal(map[string]any{
 		"@context":    "https://schema.org",
 		"@type":       "WebPage",
+		"@id":         canonicalSEOURL(path) + "#webpage",
+		"inLanguage":  "zh-CN",
 		"name":        page.Title,
 		"description": page.Description,
 		"url":         canonicalSEOURL(path),
+		"breadcrumb":  map[string]any{"@type": "BreadcrumbList", "itemListElement": items},
 		"isPartOf": map[string]string{
 			"@type": "WebSite",
 			"name":  "ModelPort",
@@ -462,9 +482,10 @@ func renderPublicSEOPage(page publicSEOPage, nonce string) ([]byte, error) {
 			Description: page.Description,
 			Body:        template.HTML(page.Body), // page body is compile-time trusted HTML
 		},
-		Canonical: canonicalSEOURL(path),
-		JSONLD:    template.JS(jsonLD), // json.Marshal output, not arbitrary input
-		Nonce:     nonce,
+		Canonical:   canonicalSEOURL(path),
+		JSONLD:      template.JS(jsonLD), // json.Marshal output, not arbitrary input
+		Nonce:       nonce,
+		Breadcrumbs: crumbs,
 	}
 	var rendered bytes.Buffer
 	if err := publicSEOTemplate.Execute(&rendered, data); err != nil {
