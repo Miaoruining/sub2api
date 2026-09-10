@@ -3,10 +3,39 @@ package service
 import (
 	"math"
 	"testing"
+	"time"
 
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 )
+
+func TestUsageBillingFingerprintIncludesSubscriptionCycle(t *testing.T) {
+	t.Parallel()
+
+	firstCycle := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	secondCycle := firstCycle.Add(30 * 24 * time.Hour)
+	newCommand := func(cycle time.Time) *UsageBillingCommand {
+		return &UsageBillingCommand{
+			RequestID:              "subscription-request",
+			UserID:                 7,
+			AccountID:              8,
+			SubscriptionID:         subscriptionCycleIDPtr(9),
+			SubscriptionCycleStart: &cycle,
+			SubscriptionCost:       1.25,
+		}
+	}
+
+	first := newCommand(firstCycle)
+	second := newCommand(secondCycle)
+	first.Normalize()
+	second.Normalize()
+
+	if first.RequestFingerprint == second.RequestFingerprint {
+		t.Fatal("billing fingerprints must differ when the subscription cycle changes")
+	}
+}
+
+func subscriptionCycleIDPtr(value int64) *int64 { return &value }
 
 // decimalPlaces 返回 float64 最短十进制表示的小数位数，
 // 即 PostgreSQL 把 float8 参数转成 numeric 时看到的刻度。

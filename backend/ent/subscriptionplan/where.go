@@ -59,6 +59,21 @@ func GroupID(v int64) predicate.SubscriptionPlan {
 	return predicate.SubscriptionPlan(sql.FieldEQ(FieldGroupID, v))
 }
 
+// PlanKind applies equality check predicate on the "plan_kind" field. It's identical to PlanKindEQ.
+func PlanKind(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldEQ(FieldPlanKind, v))
+}
+
+// QuotaUsd applies equality check predicate on the "quota_usd" field. It's identical to QuotaUsdEQ.
+func QuotaUsd(v float64) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldEQ(FieldQuotaUsd, v))
+}
+
+// AllowActiveRenewal applies equality check predicate on the "allow_active_renewal" field. It's identical to AllowActiveRenewalEQ.
+func AllowActiveRenewal(v bool) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldEQ(FieldAllowActiveRenewal, v))
+}
+
 // Name applies equality check predicate on the "name" field. It's identical to NameEQ.
 func Name(v string) predicate.SubscriptionPlan {
 	return predicate.SubscriptionPlan(sql.FieldEQ(FieldName, v))
@@ -162,6 +177,131 @@ func GroupIDLT(v int64) predicate.SubscriptionPlan {
 // GroupIDLTE applies the LTE predicate on the "group_id" field.
 func GroupIDLTE(v int64) predicate.SubscriptionPlan {
 	return predicate.SubscriptionPlan(sql.FieldLTE(FieldGroupID, v))
+}
+
+// PlanKindEQ applies the EQ predicate on the "plan_kind" field.
+func PlanKindEQ(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldEQ(FieldPlanKind, v))
+}
+
+// PlanKindNEQ applies the NEQ predicate on the "plan_kind" field.
+func PlanKindNEQ(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldNEQ(FieldPlanKind, v))
+}
+
+// PlanKindIn applies the In predicate on the "plan_kind" field.
+func PlanKindIn(vs ...string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldIn(FieldPlanKind, vs...))
+}
+
+// PlanKindNotIn applies the NotIn predicate on the "plan_kind" field.
+func PlanKindNotIn(vs ...string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldNotIn(FieldPlanKind, vs...))
+}
+
+// PlanKindGT applies the GT predicate on the "plan_kind" field.
+func PlanKindGT(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldGT(FieldPlanKind, v))
+}
+
+// PlanKindGTE applies the GTE predicate on the "plan_kind" field.
+func PlanKindGTE(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldGTE(FieldPlanKind, v))
+}
+
+// PlanKindLT applies the LT predicate on the "plan_kind" field.
+func PlanKindLT(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldLT(FieldPlanKind, v))
+}
+
+// PlanKindLTE applies the LTE predicate on the "plan_kind" field.
+func PlanKindLTE(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldLTE(FieldPlanKind, v))
+}
+
+// PlanKindContains applies the Contains predicate on the "plan_kind" field.
+func PlanKindContains(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldContains(FieldPlanKind, v))
+}
+
+// PlanKindHasPrefix applies the HasPrefix predicate on the "plan_kind" field.
+func PlanKindHasPrefix(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldHasPrefix(FieldPlanKind, v))
+}
+
+// PlanKindHasSuffix applies the HasSuffix predicate on the "plan_kind" field.
+func PlanKindHasSuffix(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldHasSuffix(FieldPlanKind, v))
+}
+
+// PlanKindEqualFold applies the EqualFold predicate on the "plan_kind" field.
+func PlanKindEqualFold(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldEqualFold(FieldPlanKind, v))
+}
+
+// PlanKindContainsFold applies the ContainsFold predicate on the "plan_kind" field.
+func PlanKindContainsFold(v string) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldContainsFold(FieldPlanKind, v))
+}
+
+// QuotaUsdEQ applies the EQ predicate on the "quota_usd" field.
+func QuotaUsdEQ(v float64) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldEQ(FieldQuotaUsd, v))
+}
+
+// QuotaUsdNEQ applies the NEQ predicate on the "quota_usd" field.
+func QuotaUsdNEQ(v float64) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldNEQ(FieldQuotaUsd, v))
+}
+
+// QuotaUsdIn applies the In predicate on the "quota_usd" field.
+func QuotaUsdIn(vs ...float64) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldIn(FieldQuotaUsd, vs...))
+}
+
+// QuotaUsdNotIn applies the NotIn predicate on the "quota_usd" field.
+func QuotaUsdNotIn(vs ...float64) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldNotIn(FieldQuotaUsd, vs...))
+}
+
+// QuotaUsdGT applies the GT predicate on the "quota_usd" field.
+func QuotaUsdGT(v float64) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldGT(FieldQuotaUsd, v))
+}
+
+// QuotaUsdGTE applies the GTE predicate on the "quota_usd" field.
+func QuotaUsdGTE(v float64) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldGTE(FieldQuotaUsd, v))
+}
+
+// QuotaUsdLT applies the LT predicate on the "quota_usd" field.
+func QuotaUsdLT(v float64) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldLT(FieldQuotaUsd, v))
+}
+
+// QuotaUsdLTE applies the LTE predicate on the "quota_usd" field.
+func QuotaUsdLTE(v float64) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldLTE(FieldQuotaUsd, v))
+}
+
+// QuotaUsdIsNil applies the IsNil predicate on the "quota_usd" field.
+func QuotaUsdIsNil() predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldIsNull(FieldQuotaUsd))
+}
+
+// QuotaUsdNotNil applies the NotNil predicate on the "quota_usd" field.
+func QuotaUsdNotNil() predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldNotNull(FieldQuotaUsd))
+}
+
+// AllowActiveRenewalEQ applies the EQ predicate on the "allow_active_renewal" field.
+func AllowActiveRenewalEQ(v bool) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldEQ(FieldAllowActiveRenewal, v))
+}
+
+// AllowActiveRenewalNEQ applies the NEQ predicate on the "allow_active_renewal" field.
+func AllowActiveRenewalNEQ(v bool) predicate.SubscriptionPlan {
+	return predicate.SubscriptionPlan(sql.FieldNEQ(FieldAllowActiveRenewal, v))
 }
 
 // NameEQ applies the EQ predicate on the "name" field.

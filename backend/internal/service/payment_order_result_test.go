@@ -264,6 +264,20 @@ func TestCalculateCreateOrderPayAmountForSubscriptionKeepsDirectPriceWhenRateDis
 	}
 }
 
+func TestCalculateCreateOrderPayAmountForSubscriptionTopupKeepsDirectPrice(t *testing.T) {
+	t.Parallel()
+
+	// 额度包金额是人民币直付金额；subscription 汇率只适用于基础订阅，
+	// 否则 10 元→11 额度等价关系会被错误转换成外币金额。
+	amountStr, amount, err := calculateCreateOrderPayAmountForOrderType(10, 0, "CNY", payment.OrderTypeSubscriptionTopup, 7.15)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if amountStr != "10.00" || amount != 10 {
+		t.Fatalf("top-up CNY pay amount = (%q, %v), want (10.00, 10)", amountStr, amount)
+	}
+}
+
 // 汇率只作用于订阅订单，余额充值订单不受影响。
 func TestCalculateCreateOrderPayAmountForBalanceIgnoresSubscriptionRate(t *testing.T) {
 	t.Parallel()

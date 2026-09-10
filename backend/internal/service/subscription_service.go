@@ -1079,13 +1079,15 @@ func (s *SubscriptionService) RecordUsage(ctx context.Context, subscriptionID in
 
 // SubscriptionProgress 订阅进度
 type SubscriptionProgress struct {
-	ID            int64                `json:"id"`
-	GroupName     string               `json:"group_name"`
-	ExpiresAt     time.Time            `json:"expires_at"`
-	ExpiresInDays int                  `json:"expires_in_days"`
-	Daily         *UsageWindowProgress `json:"daily,omitempty"`
-	Weekly        *UsageWindowProgress `json:"weekly,omitempty"`
-	Monthly       *UsageWindowProgress `json:"monthly,omitempty"`
+	ID              int64                `json:"id"`
+	GroupName       string               `json:"group_name"`
+	ExpiresAt       time.Time            `json:"expires_at"`
+	ExpiresInDays   int                  `json:"expires_in_days"`
+	Daily           *UsageWindowProgress `json:"daily,omitempty"`
+	Weekly          *UsageWindowProgress `json:"weekly,omitempty"`
+	Monthly         *UsageWindowProgress `json:"monthly,omitempty"`
+	TopupGrantedUSD float64              `json:"topup_granted_usd"`
+	TopupUsedUSD    float64              `json:"topup_used_usd"`
 }
 
 // UsageWindowProgress 使用窗口进度
@@ -1182,7 +1184,7 @@ func (s *SubscriptionService) calculateProgress(sub *UserSubscription, group *Gr
 
 	// 月进度
 	if group.HasMonthlyLimit() && sub.MonthlyWindowStart != nil {
-		limit := *group.MonthlyLimitUSD
+		limit := *group.MonthlyLimitUSD + sub.TopupGrantedUSD
 		resetsAt := sub.MonthlyWindowStart.Add(30 * 24 * time.Hour)
 		if monthlyResetTime := sub.MonthlyResetTime(); monthlyResetTime != nil {
 			resetsAt = *monthlyResetTime
@@ -1206,6 +1208,8 @@ func (s *SubscriptionService) calculateProgress(sub *UserSubscription, group *Gr
 			progress.Monthly.ResetsInSeconds = 0
 		}
 	}
+	progress.TopupGrantedUSD = sub.TopupGrantedUSD
+	progress.TopupUsedUSD = sub.TopupUsedUSD
 
 	return progress
 }

@@ -3,8 +3,11 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -55,6 +58,18 @@ func (r *usageBillingRepository) Apply(ctx context.Context, cmd *service.UsageBi
 	}
 	result := &service.UsageBillingApplyResult{Applied: true}
 	if err := r.applyUsageBillingEffects(ctx, tx, cmd, result); err != nil {
+		if errors.Is(err, service.ErrSubscriptionCycleMismatch) {
+			// The normal billing transaction must remain all-or-nothing: do not
+			// commit a dedup claim, pool settlement, or any balance/quota effect
+			// for a request that belongs to an older subscription cycle. Preserve a
+			// durable, idempotent reconciliation record in a separate transaction
+			// after rolling back this transaction.
+			_ = tx.Rollback()
+			tx = nil
+			if persistErr := r.persistSubscriptionBillingFailure(ctx, cmd, err); persistErr != nil {
+				return nil, fmt.Errorf("%w; persist subscription billing failure: %v", err, persistErr)
+			}
+		}
 		return nil, err
 	}
 
@@ -176,7 +191,7 @@ func (r *usageBillingRepository) applyBatchImageBalanceHold(
 
 func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillingCommand, result *service.UsageBillingApplyResult) error {
 	if cmd.SubscriptionCost > 0 && cmd.SubscriptionID != nil {
-		if err := incrementUsageBillingSubscription(ctx, tx, *cmd.SubscriptionID, cmd.SubscriptionCost); err != nil {
+		if err := incrementUsageBillingSubscription(ctx, tx, *cmd.SubscriptionID, cmd.SubscriptionCycleStart, cmd.SubscriptionCost); err != nil {
 			return err
 		}
 	}
@@ -215,32 +230,159 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 	return nil
 }
 
-func incrementUsageBillingSubscription(ctx context.Context, tx *sql.Tx, subscriptionID int64, costUSD float64) error {
-	const updateSQL = `
-		UPDATE user_subscriptions us
-		SET
-			daily_usage_usd = us.daily_usage_usd + $1,
-			weekly_usage_usd = us.weekly_usage_usd + $1,
-			monthly_usage_usd = us.monthly_usage_usd + $1,
+func incrementUsageBillingSubscription(ctx context.Context, tx *sql.Tx, subscriptionID int64, cycleSnapshot *time.Time, costUSD float64) error {
+	var oldMonthly float64
+	var monthlyLimit sql.NullFloat64
+	var currentCycleStart time.Time
+	err := tx.QueryRowContext(ctx, `
+		SELECT us.monthly_usage_usd, g.monthly_limit_usd, us.starts_at
+		FROM user_subscriptions us
+		JOIN groups g ON g.id = us.group_id AND g.deleted_at IS NULL
+		WHERE us.id = $1 AND us.deleted_at IS NULL
+			AND ($2::timestamptz IS NULL OR us.starts_at = $2::timestamptz)
+		FOR UPDATE
+	`, subscriptionID, cycleSnapshot).Scan(&oldMonthly, &monthlyLimit, &currentCycleStart)
+	if errors.Is(err, sql.ErrNoRows) {
+		if cycleSnapshot != nil {
+			var persistedCycleStart time.Time
+			cycleErr := tx.QueryRowContext(ctx, `
+				SELECT starts_at
+				FROM user_subscriptions
+				WHERE id = $1 AND deleted_at IS NULL
+				FOR UPDATE
+			`, subscriptionID).Scan(&persistedCycleStart)
+			if errors.Is(cycleErr, sql.ErrNoRows) {
+				return service.ErrSubscriptionNotFound
+			}
+			if cycleErr != nil {
+				return cycleErr
+			}
+			if !persistedCycleStart.Equal(*cycleSnapshot) {
+				return service.ErrSubscriptionCycleMismatch
+			}
+		}
+		return service.ErrSubscriptionNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE user_subscriptions
+		SET daily_usage_usd = daily_usage_usd + $1,
+			weekly_usage_usd = weekly_usage_usd + $1,
+			monthly_usage_usd = monthly_usage_usd + $1,
 			updated_at = NOW()
-		FROM groups g
-		WHERE us.id = $2
-			AND us.deleted_at IS NULL
-			AND us.group_id = g.id
-			AND g.deleted_at IS NULL
-	`
-	res, err := tx.ExecContext(ctx, updateSQL, costUSD, subscriptionID)
-	if err != nil {
+		WHERE id = $2 AND deleted_at IS NULL
+	`, costUSD, subscriptionID); err != nil {
 		return err
 	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if affected > 0 {
+	if !monthlyLimit.Valid {
 		return nil
 	}
-	return service.ErrSubscriptionNotFound
+	oldOverflow := quotaMaxFloat(0, oldMonthly-monthlyLimit.Float64)
+	newOverflow := quotaMaxFloat(0, oldMonthly+costUSD-monthlyLimit.Float64)
+	return allocateSubscriptionTopupUsageSQL(ctx, tx, subscriptionID, currentCycleStart, newOverflow-oldOverflow)
+}
+
+func allocateSubscriptionTopupUsageSQL(ctx context.Context, tx *sql.Tx, subscriptionID int64, cycleStart time.Time, amount float64) error {
+	if amount <= 0.00000001 {
+		return nil
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, granted_usd, used_usd
+		FROM subscription_quota_grants
+		WHERE subscription_id = $1 AND cycle_start = $2 AND status = 'active'
+		ORDER BY created_at, id
+		FOR UPDATE
+	`, subscriptionID, cycleStart)
+	if err != nil {
+		return err
+	}
+	type topupGrantUsage struct {
+		id      int64
+		granted float64
+		used    float64
+	}
+	var grants []topupGrantUsage
+	for rows.Next() {
+		var id int64
+		var granted, used float64
+		if err := rows.Scan(&id, &granted, &used); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		grants = append(grants, topupGrantUsage{id: id, granted: granted, used: used})
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+
+	remaining := amount
+	for _, grant := range grants {
+		id, granted, used := grant.id, grant.granted, grant.used
+		available := granted - used
+		if available <= 0.00000001 {
+			continue
+		}
+		consumed := quotaMinFloat(available, remaining)
+		if _, err := tx.ExecContext(ctx, `UPDATE subscription_quota_grants SET used_usd = $1, updated_at = NOW() WHERE id = $2`, used+consumed, id); err != nil {
+			return err
+		}
+		remaining -= consumed
+		if remaining <= 0.00000001 {
+			return nil
+		}
+	}
+	if len(grants) > 0 {
+		_, err = tx.ExecContext(ctx, `UPDATE subscription_quota_grants SET status = 'consumption_ambiguous', updated_at = NOW() WHERE subscription_id = $1 AND cycle_start = $2 AND status = 'active'`, subscriptionID, cycleStart)
+		return err
+	}
+	return nil
+}
+
+func (r *usageBillingRepository) persistSubscriptionBillingFailure(ctx context.Context, cmd *service.UsageBillingCommand, reason error) error {
+	if r == nil || r.db == nil {
+		return errors.New("usage billing repository db is nil")
+	}
+	if cmd == nil || cmd.SubscriptionID == nil || cmd.SubscriptionCycleStart == nil {
+		return errors.New("subscription billing failure is missing cycle binding")
+	}
+	commandJSON, err := json.Marshal(cmd)
+	if err != nil {
+		return fmt.Errorf("marshal subscription billing command: %w", err)
+	}
+	reasonText := "subscription cycle mismatch"
+	if reason != nil && strings.TrimSpace(reason.Error()) != "" {
+		reasonText = reason.Error()
+	}
+	_, err = r.db.ExecContext(ctx, `
+		INSERT INTO subscription_billing_failures
+			(request_id, api_key_id, subscription_id, cycle_snapshot, command, reason)
+		VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+		ON CONFLICT (request_id, api_key_id) DO NOTHING
+	`, cmd.RequestID, cmd.APIKeyID, *cmd.SubscriptionID, *cmd.SubscriptionCycleStart, commandJSON, reasonText)
+	if err != nil {
+		return fmt.Errorf("insert subscription billing failure: %w", err)
+	}
+	return nil
+}
+
+func quotaMaxFloat(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func quotaMinFloat(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func deductUsageBillingBalance(ctx context.Context, tx *sql.Tx, userID int64, amount float64) (float64, bool, error) {

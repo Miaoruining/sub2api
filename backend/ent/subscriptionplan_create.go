@@ -28,6 +28,48 @@ func (_c *SubscriptionPlanCreate) SetGroupID(v int64) *SubscriptionPlanCreate {
 	return _c
 }
 
+// SetPlanKind sets the "plan_kind" field.
+func (_c *SubscriptionPlanCreate) SetPlanKind(v string) *SubscriptionPlanCreate {
+	_c.mutation.SetPlanKind(v)
+	return _c
+}
+
+// SetNillablePlanKind sets the "plan_kind" field if the given value is not nil.
+func (_c *SubscriptionPlanCreate) SetNillablePlanKind(v *string) *SubscriptionPlanCreate {
+	if v != nil {
+		_c.SetPlanKind(*v)
+	}
+	return _c
+}
+
+// SetQuotaUsd sets the "quota_usd" field.
+func (_c *SubscriptionPlanCreate) SetQuotaUsd(v float64) *SubscriptionPlanCreate {
+	_c.mutation.SetQuotaUsd(v)
+	return _c
+}
+
+// SetNillableQuotaUsd sets the "quota_usd" field if the given value is not nil.
+func (_c *SubscriptionPlanCreate) SetNillableQuotaUsd(v *float64) *SubscriptionPlanCreate {
+	if v != nil {
+		_c.SetQuotaUsd(*v)
+	}
+	return _c
+}
+
+// SetAllowActiveRenewal sets the "allow_active_renewal" field.
+func (_c *SubscriptionPlanCreate) SetAllowActiveRenewal(v bool) *SubscriptionPlanCreate {
+	_c.mutation.SetAllowActiveRenewal(v)
+	return _c
+}
+
+// SetNillableAllowActiveRenewal sets the "allow_active_renewal" field if the given value is not nil.
+func (_c *SubscriptionPlanCreate) SetNillableAllowActiveRenewal(v *bool) *SubscriptionPlanCreate {
+	if v != nil {
+		_c.SetAllowActiveRenewal(*v)
+	}
+	return _c
+}
+
 // SetName sets the "name" field.
 func (_c *SubscriptionPlanCreate) SetName(v string) *SubscriptionPlanCreate {
 	_c.mutation.SetName(v)
@@ -229,6 +271,14 @@ func (_c *SubscriptionPlanCreate) ExecX(ctx context.Context) {
 
 // defaults sets the default values of the builder before save.
 func (_c *SubscriptionPlanCreate) defaults() {
+	if _, ok := _c.mutation.PlanKind(); !ok {
+		v := subscriptionplan.DefaultPlanKind
+		_c.mutation.SetPlanKind(v)
+	}
+	if _, ok := _c.mutation.AllowActiveRenewal(); !ok {
+		v := subscriptionplan.DefaultAllowActiveRenewal
+		_c.mutation.SetAllowActiveRenewal(v)
+	}
 	if _, ok := _c.mutation.Description(); !ok {
 		v := subscriptionplan.DefaultDescription
 		_c.mutation.SetDescription(v)
@@ -275,6 +325,17 @@ func (_c *SubscriptionPlanCreate) defaults() {
 func (_c *SubscriptionPlanCreate) check() error {
 	if _, ok := _c.mutation.GroupID(); !ok {
 		return &ValidationError{Name: "group_id", err: errors.New(`ent: missing required field "SubscriptionPlan.group_id"`)}
+	}
+	if _, ok := _c.mutation.PlanKind(); !ok {
+		return &ValidationError{Name: "plan_kind", err: errors.New(`ent: missing required field "SubscriptionPlan.plan_kind"`)}
+	}
+	if v, ok := _c.mutation.PlanKind(); ok {
+		if err := subscriptionplan.PlanKindValidator(v); err != nil {
+			return &ValidationError{Name: "plan_kind", err: fmt.Errorf(`ent: validator failed for field "SubscriptionPlan.plan_kind": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.AllowActiveRenewal(); !ok {
+		return &ValidationError{Name: "allow_active_renewal", err: errors.New(`ent: missing required field "SubscriptionPlan.allow_active_renewal"`)}
 	}
 	if _, ok := _c.mutation.Name(); !ok {
 		return &ValidationError{Name: "name", err: errors.New(`ent: missing required field "SubscriptionPlan.name"`)}
@@ -362,6 +423,18 @@ func (_c *SubscriptionPlanCreate) createSpec() (*SubscriptionPlan, *sqlgraph.Cre
 	if value, ok := _c.mutation.GroupID(); ok {
 		_spec.SetField(subscriptionplan.FieldGroupID, field.TypeInt64, value)
 		_node.GroupID = value
+	}
+	if value, ok := _c.mutation.PlanKind(); ok {
+		_spec.SetField(subscriptionplan.FieldPlanKind, field.TypeString, value)
+		_node.PlanKind = value
+	}
+	if value, ok := _c.mutation.QuotaUsd(); ok {
+		_spec.SetField(subscriptionplan.FieldQuotaUsd, field.TypeFloat64, value)
+		_node.QuotaUsd = &value
+	}
+	if value, ok := _c.mutation.AllowActiveRenewal(); ok {
+		_spec.SetField(subscriptionplan.FieldAllowActiveRenewal, field.TypeBool, value)
+		_node.AllowActiveRenewal = value
 	}
 	if value, ok := _c.mutation.Name(); ok {
 		_spec.SetField(subscriptionplan.FieldName, field.TypeString, value)
@@ -482,6 +555,54 @@ func (u *SubscriptionPlanUpsert) UpdateGroupID() *SubscriptionPlanUpsert {
 // AddGroupID adds v to the "group_id" field.
 func (u *SubscriptionPlanUpsert) AddGroupID(v int64) *SubscriptionPlanUpsert {
 	u.Add(subscriptionplan.FieldGroupID, v)
+	return u
+}
+
+// SetPlanKind sets the "plan_kind" field.
+func (u *SubscriptionPlanUpsert) SetPlanKind(v string) *SubscriptionPlanUpsert {
+	u.Set(subscriptionplan.FieldPlanKind, v)
+	return u
+}
+
+// UpdatePlanKind sets the "plan_kind" field to the value that was provided on create.
+func (u *SubscriptionPlanUpsert) UpdatePlanKind() *SubscriptionPlanUpsert {
+	u.SetExcluded(subscriptionplan.FieldPlanKind)
+	return u
+}
+
+// SetQuotaUsd sets the "quota_usd" field.
+func (u *SubscriptionPlanUpsert) SetQuotaUsd(v float64) *SubscriptionPlanUpsert {
+	u.Set(subscriptionplan.FieldQuotaUsd, v)
+	return u
+}
+
+// UpdateQuotaUsd sets the "quota_usd" field to the value that was provided on create.
+func (u *SubscriptionPlanUpsert) UpdateQuotaUsd() *SubscriptionPlanUpsert {
+	u.SetExcluded(subscriptionplan.FieldQuotaUsd)
+	return u
+}
+
+// AddQuotaUsd adds v to the "quota_usd" field.
+func (u *SubscriptionPlanUpsert) AddQuotaUsd(v float64) *SubscriptionPlanUpsert {
+	u.Add(subscriptionplan.FieldQuotaUsd, v)
+	return u
+}
+
+// ClearQuotaUsd clears the value of the "quota_usd" field.
+func (u *SubscriptionPlanUpsert) ClearQuotaUsd() *SubscriptionPlanUpsert {
+	u.SetNull(subscriptionplan.FieldQuotaUsd)
+	return u
+}
+
+// SetAllowActiveRenewal sets the "allow_active_renewal" field.
+func (u *SubscriptionPlanUpsert) SetAllowActiveRenewal(v bool) *SubscriptionPlanUpsert {
+	u.Set(subscriptionplan.FieldAllowActiveRenewal, v)
+	return u
+}
+
+// UpdateAllowActiveRenewal sets the "allow_active_renewal" field to the value that was provided on create.
+func (u *SubscriptionPlanUpsert) UpdateAllowActiveRenewal() *SubscriptionPlanUpsert {
+	u.SetExcluded(subscriptionplan.FieldAllowActiveRenewal)
 	return u
 }
 
@@ -722,6 +843,62 @@ func (u *SubscriptionPlanUpsertOne) AddGroupID(v int64) *SubscriptionPlanUpsertO
 func (u *SubscriptionPlanUpsertOne) UpdateGroupID() *SubscriptionPlanUpsertOne {
 	return u.Update(func(s *SubscriptionPlanUpsert) {
 		s.UpdateGroupID()
+	})
+}
+
+// SetPlanKind sets the "plan_kind" field.
+func (u *SubscriptionPlanUpsertOne) SetPlanKind(v string) *SubscriptionPlanUpsertOne {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.SetPlanKind(v)
+	})
+}
+
+// UpdatePlanKind sets the "plan_kind" field to the value that was provided on create.
+func (u *SubscriptionPlanUpsertOne) UpdatePlanKind() *SubscriptionPlanUpsertOne {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.UpdatePlanKind()
+	})
+}
+
+// SetQuotaUsd sets the "quota_usd" field.
+func (u *SubscriptionPlanUpsertOne) SetQuotaUsd(v float64) *SubscriptionPlanUpsertOne {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.SetQuotaUsd(v)
+	})
+}
+
+// AddQuotaUsd adds v to the "quota_usd" field.
+func (u *SubscriptionPlanUpsertOne) AddQuotaUsd(v float64) *SubscriptionPlanUpsertOne {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.AddQuotaUsd(v)
+	})
+}
+
+// UpdateQuotaUsd sets the "quota_usd" field to the value that was provided on create.
+func (u *SubscriptionPlanUpsertOne) UpdateQuotaUsd() *SubscriptionPlanUpsertOne {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.UpdateQuotaUsd()
+	})
+}
+
+// ClearQuotaUsd clears the value of the "quota_usd" field.
+func (u *SubscriptionPlanUpsertOne) ClearQuotaUsd() *SubscriptionPlanUpsertOne {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.ClearQuotaUsd()
+	})
+}
+
+// SetAllowActiveRenewal sets the "allow_active_renewal" field.
+func (u *SubscriptionPlanUpsertOne) SetAllowActiveRenewal(v bool) *SubscriptionPlanUpsertOne {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.SetAllowActiveRenewal(v)
+	})
+}
+
+// UpdateAllowActiveRenewal sets the "allow_active_renewal" field to the value that was provided on create.
+func (u *SubscriptionPlanUpsertOne) UpdateAllowActiveRenewal() *SubscriptionPlanUpsertOne {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.UpdateAllowActiveRenewal()
 	})
 }
 
@@ -1157,6 +1334,62 @@ func (u *SubscriptionPlanUpsertBulk) AddGroupID(v int64) *SubscriptionPlanUpsert
 func (u *SubscriptionPlanUpsertBulk) UpdateGroupID() *SubscriptionPlanUpsertBulk {
 	return u.Update(func(s *SubscriptionPlanUpsert) {
 		s.UpdateGroupID()
+	})
+}
+
+// SetPlanKind sets the "plan_kind" field.
+func (u *SubscriptionPlanUpsertBulk) SetPlanKind(v string) *SubscriptionPlanUpsertBulk {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.SetPlanKind(v)
+	})
+}
+
+// UpdatePlanKind sets the "plan_kind" field to the value that was provided on create.
+func (u *SubscriptionPlanUpsertBulk) UpdatePlanKind() *SubscriptionPlanUpsertBulk {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.UpdatePlanKind()
+	})
+}
+
+// SetQuotaUsd sets the "quota_usd" field.
+func (u *SubscriptionPlanUpsertBulk) SetQuotaUsd(v float64) *SubscriptionPlanUpsertBulk {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.SetQuotaUsd(v)
+	})
+}
+
+// AddQuotaUsd adds v to the "quota_usd" field.
+func (u *SubscriptionPlanUpsertBulk) AddQuotaUsd(v float64) *SubscriptionPlanUpsertBulk {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.AddQuotaUsd(v)
+	})
+}
+
+// UpdateQuotaUsd sets the "quota_usd" field to the value that was provided on create.
+func (u *SubscriptionPlanUpsertBulk) UpdateQuotaUsd() *SubscriptionPlanUpsertBulk {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.UpdateQuotaUsd()
+	})
+}
+
+// ClearQuotaUsd clears the value of the "quota_usd" field.
+func (u *SubscriptionPlanUpsertBulk) ClearQuotaUsd() *SubscriptionPlanUpsertBulk {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.ClearQuotaUsd()
+	})
+}
+
+// SetAllowActiveRenewal sets the "allow_active_renewal" field.
+func (u *SubscriptionPlanUpsertBulk) SetAllowActiveRenewal(v bool) *SubscriptionPlanUpsertBulk {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.SetAllowActiveRenewal(v)
+	})
+}
+
+// UpdateAllowActiveRenewal sets the "allow_active_renewal" field to the value that was provided on create.
+func (u *SubscriptionPlanUpsertBulk) UpdateAllowActiveRenewal() *SubscriptionPlanUpsertBulk {
+	return u.Update(func(s *SubscriptionPlanUpsert) {
+		s.UpdateAllowActiveRenewal()
 	})
 }
 

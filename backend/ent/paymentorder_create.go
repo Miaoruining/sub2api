@@ -211,6 +211,62 @@ func (_c *PaymentOrderCreate) SetNillableSubscriptionDays(v *int) *PaymentOrderC
 	return _c
 }
 
+// SetSubscriptionID sets the "subscription_id" field.
+func (_c *PaymentOrderCreate) SetSubscriptionID(v int64) *PaymentOrderCreate {
+	_c.mutation.SetSubscriptionID(v)
+	return _c
+}
+
+// SetNillableSubscriptionID sets the "subscription_id" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableSubscriptionID(v *int64) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetSubscriptionID(*v)
+	}
+	return _c
+}
+
+// SetSubscriptionCycleStart sets the "subscription_cycle_start" field.
+func (_c *PaymentOrderCreate) SetSubscriptionCycleStart(v time.Time) *PaymentOrderCreate {
+	_c.mutation.SetSubscriptionCycleStart(v)
+	return _c
+}
+
+// SetNillableSubscriptionCycleStart sets the "subscription_cycle_start" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableSubscriptionCycleStart(v *time.Time) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetSubscriptionCycleStart(*v)
+	}
+	return _c
+}
+
+// SetQuotaUsd sets the "quota_usd" field.
+func (_c *PaymentOrderCreate) SetQuotaUsd(v float64) *PaymentOrderCreate {
+	_c.mutation.SetQuotaUsd(v)
+	return _c
+}
+
+// SetNillableQuotaUsd sets the "quota_usd" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableQuotaUsd(v *float64) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetQuotaUsd(*v)
+	}
+	return _c
+}
+
+// SetSubscriptionAllowActiveRenewal sets the "subscription_allow_active_renewal" field.
+func (_c *PaymentOrderCreate) SetSubscriptionAllowActiveRenewal(v bool) *PaymentOrderCreate {
+	_c.mutation.SetSubscriptionAllowActiveRenewal(v)
+	return _c
+}
+
+// SetNillableSubscriptionAllowActiveRenewal sets the "subscription_allow_active_renewal" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableSubscriptionAllowActiveRenewal(v *bool) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetSubscriptionAllowActiveRenewal(*v)
+	}
+	return _c
+}
+
 // SetProviderInstanceID sets the "provider_instance_id" field.
 func (_c *PaymentOrderCreate) SetProviderInstanceID(v string) *PaymentOrderCreate {
 	_c.mutation.SetProviderInstanceID(v)
@@ -525,6 +581,10 @@ func (_c *PaymentOrderCreate) defaults() {
 		v := paymentorder.DefaultOrderType
 		_c.mutation.SetOrderType(v)
 	}
+	if _, ok := _c.mutation.SubscriptionAllowActiveRenewal(); !ok {
+		v := paymentorder.DefaultSubscriptionAllowActiveRenewal
+		_c.mutation.SetSubscriptionAllowActiveRenewal(v)
+	}
 	if _, ok := _c.mutation.Status(); !ok {
 		v := paymentorder.DefaultStatus
 		_c.mutation.SetStatus(v)
@@ -616,6 +676,9 @@ func (_c *PaymentOrderCreate) check() error {
 		if err := paymentorder.OrderTypeValidator(v); err != nil {
 			return &ValidationError{Name: "order_type", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.order_type": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.SubscriptionAllowActiveRenewal(); !ok {
+		return &ValidationError{Name: "subscription_allow_active_renewal", err: errors.New(`ent: missing required field "PaymentOrder.subscription_allow_active_renewal"`)}
 	}
 	if v, ok := _c.mutation.ProviderInstanceID(); ok {
 		if err := paymentorder.ProviderInstanceIDValidator(v); err != nil {
@@ -768,6 +831,22 @@ func (_c *PaymentOrderCreate) createSpec() (*PaymentOrder, *sqlgraph.CreateSpec)
 	if value, ok := _c.mutation.SubscriptionDays(); ok {
 		_spec.SetField(paymentorder.FieldSubscriptionDays, field.TypeInt, value)
 		_node.SubscriptionDays = &value
+	}
+	if value, ok := _c.mutation.SubscriptionID(); ok {
+		_spec.SetField(paymentorder.FieldSubscriptionID, field.TypeInt64, value)
+		_node.SubscriptionID = &value
+	}
+	if value, ok := _c.mutation.SubscriptionCycleStart(); ok {
+		_spec.SetField(paymentorder.FieldSubscriptionCycleStart, field.TypeTime, value)
+		_node.SubscriptionCycleStart = &value
+	}
+	if value, ok := _c.mutation.QuotaUsd(); ok {
+		_spec.SetField(paymentorder.FieldQuotaUsd, field.TypeFloat64, value)
+		_node.QuotaUsd = &value
+	}
+	if value, ok := _c.mutation.SubscriptionAllowActiveRenewal(); ok {
+		_spec.SetField(paymentorder.FieldSubscriptionAllowActiveRenewal, field.TypeBool, value)
+		_node.SubscriptionAllowActiveRenewal = value
 	}
 	if value, ok := _c.mutation.ProviderInstanceID(); ok {
 		_spec.SetField(paymentorder.FieldProviderInstanceID, field.TypeString, value)
@@ -1213,6 +1292,84 @@ func (u *PaymentOrderUpsert) AddSubscriptionDays(v int) *PaymentOrderUpsert {
 // ClearSubscriptionDays clears the value of the "subscription_days" field.
 func (u *PaymentOrderUpsert) ClearSubscriptionDays() *PaymentOrderUpsert {
 	u.SetNull(paymentorder.FieldSubscriptionDays)
+	return u
+}
+
+// SetSubscriptionID sets the "subscription_id" field.
+func (u *PaymentOrderUpsert) SetSubscriptionID(v int64) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldSubscriptionID, v)
+	return u
+}
+
+// UpdateSubscriptionID sets the "subscription_id" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdateSubscriptionID() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldSubscriptionID)
+	return u
+}
+
+// AddSubscriptionID adds v to the "subscription_id" field.
+func (u *PaymentOrderUpsert) AddSubscriptionID(v int64) *PaymentOrderUpsert {
+	u.Add(paymentorder.FieldSubscriptionID, v)
+	return u
+}
+
+// ClearSubscriptionID clears the value of the "subscription_id" field.
+func (u *PaymentOrderUpsert) ClearSubscriptionID() *PaymentOrderUpsert {
+	u.SetNull(paymentorder.FieldSubscriptionID)
+	return u
+}
+
+// SetSubscriptionCycleStart sets the "subscription_cycle_start" field.
+func (u *PaymentOrderUpsert) SetSubscriptionCycleStart(v time.Time) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldSubscriptionCycleStart, v)
+	return u
+}
+
+// UpdateSubscriptionCycleStart sets the "subscription_cycle_start" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdateSubscriptionCycleStart() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldSubscriptionCycleStart)
+	return u
+}
+
+// ClearSubscriptionCycleStart clears the value of the "subscription_cycle_start" field.
+func (u *PaymentOrderUpsert) ClearSubscriptionCycleStart() *PaymentOrderUpsert {
+	u.SetNull(paymentorder.FieldSubscriptionCycleStart)
+	return u
+}
+
+// SetQuotaUsd sets the "quota_usd" field.
+func (u *PaymentOrderUpsert) SetQuotaUsd(v float64) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldQuotaUsd, v)
+	return u
+}
+
+// UpdateQuotaUsd sets the "quota_usd" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdateQuotaUsd() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldQuotaUsd)
+	return u
+}
+
+// AddQuotaUsd adds v to the "quota_usd" field.
+func (u *PaymentOrderUpsert) AddQuotaUsd(v float64) *PaymentOrderUpsert {
+	u.Add(paymentorder.FieldQuotaUsd, v)
+	return u
+}
+
+// ClearQuotaUsd clears the value of the "quota_usd" field.
+func (u *PaymentOrderUpsert) ClearQuotaUsd() *PaymentOrderUpsert {
+	u.SetNull(paymentorder.FieldQuotaUsd)
+	return u
+}
+
+// SetSubscriptionAllowActiveRenewal sets the "subscription_allow_active_renewal" field.
+func (u *PaymentOrderUpsert) SetSubscriptionAllowActiveRenewal(v bool) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldSubscriptionAllowActiveRenewal, v)
+	return u
+}
+
+// UpdateSubscriptionAllowActiveRenewal sets the "subscription_allow_active_renewal" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdateSubscriptionAllowActiveRenewal() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldSubscriptionAllowActiveRenewal)
 	return u
 }
 
@@ -1925,6 +2082,97 @@ func (u *PaymentOrderUpsertOne) UpdateSubscriptionDays() *PaymentOrderUpsertOne 
 func (u *PaymentOrderUpsertOne) ClearSubscriptionDays() *PaymentOrderUpsertOne {
 	return u.Update(func(s *PaymentOrderUpsert) {
 		s.ClearSubscriptionDays()
+	})
+}
+
+// SetSubscriptionID sets the "subscription_id" field.
+func (u *PaymentOrderUpsertOne) SetSubscriptionID(v int64) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetSubscriptionID(v)
+	})
+}
+
+// AddSubscriptionID adds v to the "subscription_id" field.
+func (u *PaymentOrderUpsertOne) AddSubscriptionID(v int64) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.AddSubscriptionID(v)
+	})
+}
+
+// UpdateSubscriptionID sets the "subscription_id" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdateSubscriptionID() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateSubscriptionID()
+	})
+}
+
+// ClearSubscriptionID clears the value of the "subscription_id" field.
+func (u *PaymentOrderUpsertOne) ClearSubscriptionID() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearSubscriptionID()
+	})
+}
+
+// SetSubscriptionCycleStart sets the "subscription_cycle_start" field.
+func (u *PaymentOrderUpsertOne) SetSubscriptionCycleStart(v time.Time) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetSubscriptionCycleStart(v)
+	})
+}
+
+// UpdateSubscriptionCycleStart sets the "subscription_cycle_start" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdateSubscriptionCycleStart() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateSubscriptionCycleStart()
+	})
+}
+
+// ClearSubscriptionCycleStart clears the value of the "subscription_cycle_start" field.
+func (u *PaymentOrderUpsertOne) ClearSubscriptionCycleStart() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearSubscriptionCycleStart()
+	})
+}
+
+// SetQuotaUsd sets the "quota_usd" field.
+func (u *PaymentOrderUpsertOne) SetQuotaUsd(v float64) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetQuotaUsd(v)
+	})
+}
+
+// AddQuotaUsd adds v to the "quota_usd" field.
+func (u *PaymentOrderUpsertOne) AddQuotaUsd(v float64) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.AddQuotaUsd(v)
+	})
+}
+
+// UpdateQuotaUsd sets the "quota_usd" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdateQuotaUsd() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateQuotaUsd()
+	})
+}
+
+// ClearQuotaUsd clears the value of the "quota_usd" field.
+func (u *PaymentOrderUpsertOne) ClearQuotaUsd() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearQuotaUsd()
+	})
+}
+
+// SetSubscriptionAllowActiveRenewal sets the "subscription_allow_active_renewal" field.
+func (u *PaymentOrderUpsertOne) SetSubscriptionAllowActiveRenewal(v bool) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetSubscriptionAllowActiveRenewal(v)
+	})
+}
+
+// UpdateSubscriptionAllowActiveRenewal sets the "subscription_allow_active_renewal" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdateSubscriptionAllowActiveRenewal() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateSubscriptionAllowActiveRenewal()
 	})
 }
 
@@ -2857,6 +3105,97 @@ func (u *PaymentOrderUpsertBulk) UpdateSubscriptionDays() *PaymentOrderUpsertBul
 func (u *PaymentOrderUpsertBulk) ClearSubscriptionDays() *PaymentOrderUpsertBulk {
 	return u.Update(func(s *PaymentOrderUpsert) {
 		s.ClearSubscriptionDays()
+	})
+}
+
+// SetSubscriptionID sets the "subscription_id" field.
+func (u *PaymentOrderUpsertBulk) SetSubscriptionID(v int64) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetSubscriptionID(v)
+	})
+}
+
+// AddSubscriptionID adds v to the "subscription_id" field.
+func (u *PaymentOrderUpsertBulk) AddSubscriptionID(v int64) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.AddSubscriptionID(v)
+	})
+}
+
+// UpdateSubscriptionID sets the "subscription_id" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdateSubscriptionID() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateSubscriptionID()
+	})
+}
+
+// ClearSubscriptionID clears the value of the "subscription_id" field.
+func (u *PaymentOrderUpsertBulk) ClearSubscriptionID() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearSubscriptionID()
+	})
+}
+
+// SetSubscriptionCycleStart sets the "subscription_cycle_start" field.
+func (u *PaymentOrderUpsertBulk) SetSubscriptionCycleStart(v time.Time) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetSubscriptionCycleStart(v)
+	})
+}
+
+// UpdateSubscriptionCycleStart sets the "subscription_cycle_start" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdateSubscriptionCycleStart() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateSubscriptionCycleStart()
+	})
+}
+
+// ClearSubscriptionCycleStart clears the value of the "subscription_cycle_start" field.
+func (u *PaymentOrderUpsertBulk) ClearSubscriptionCycleStart() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearSubscriptionCycleStart()
+	})
+}
+
+// SetQuotaUsd sets the "quota_usd" field.
+func (u *PaymentOrderUpsertBulk) SetQuotaUsd(v float64) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetQuotaUsd(v)
+	})
+}
+
+// AddQuotaUsd adds v to the "quota_usd" field.
+func (u *PaymentOrderUpsertBulk) AddQuotaUsd(v float64) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.AddQuotaUsd(v)
+	})
+}
+
+// UpdateQuotaUsd sets the "quota_usd" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdateQuotaUsd() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateQuotaUsd()
+	})
+}
+
+// ClearQuotaUsd clears the value of the "quota_usd" field.
+func (u *PaymentOrderUpsertBulk) ClearQuotaUsd() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearQuotaUsd()
+	})
+}
+
+// SetSubscriptionAllowActiveRenewal sets the "subscription_allow_active_renewal" field.
+func (u *PaymentOrderUpsertBulk) SetSubscriptionAllowActiveRenewal(v bool) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetSubscriptionAllowActiveRenewal(v)
+	})
+}
+
+// UpdateSubscriptionAllowActiveRenewal sets the "subscription_allow_active_renewal" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdateSubscriptionAllowActiveRenewal() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateSubscriptionAllowActiveRenewal()
 	})
 }
 

@@ -49,6 +49,61 @@ func (_u *SubscriptionPlanUpdate) AddGroupID(v int64) *SubscriptionPlanUpdate {
 	return _u
 }
 
+// SetPlanKind sets the "plan_kind" field.
+func (_u *SubscriptionPlanUpdate) SetPlanKind(v string) *SubscriptionPlanUpdate {
+	_u.mutation.SetPlanKind(v)
+	return _u
+}
+
+// SetNillablePlanKind sets the "plan_kind" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdate) SetNillablePlanKind(v *string) *SubscriptionPlanUpdate {
+	if v != nil {
+		_u.SetPlanKind(*v)
+	}
+	return _u
+}
+
+// SetQuotaUsd sets the "quota_usd" field.
+func (_u *SubscriptionPlanUpdate) SetQuotaUsd(v float64) *SubscriptionPlanUpdate {
+	_u.mutation.ResetQuotaUsd()
+	_u.mutation.SetQuotaUsd(v)
+	return _u
+}
+
+// SetNillableQuotaUsd sets the "quota_usd" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdate) SetNillableQuotaUsd(v *float64) *SubscriptionPlanUpdate {
+	if v != nil {
+		_u.SetQuotaUsd(*v)
+	}
+	return _u
+}
+
+// AddQuotaUsd adds value to the "quota_usd" field.
+func (_u *SubscriptionPlanUpdate) AddQuotaUsd(v float64) *SubscriptionPlanUpdate {
+	_u.mutation.AddQuotaUsd(v)
+	return _u
+}
+
+// ClearQuotaUsd clears the value of the "quota_usd" field.
+func (_u *SubscriptionPlanUpdate) ClearQuotaUsd() *SubscriptionPlanUpdate {
+	_u.mutation.ClearQuotaUsd()
+	return _u
+}
+
+// SetAllowActiveRenewal sets the "allow_active_renewal" field.
+func (_u *SubscriptionPlanUpdate) SetAllowActiveRenewal(v bool) *SubscriptionPlanUpdate {
+	_u.mutation.SetAllowActiveRenewal(v)
+	return _u
+}
+
+// SetNillableAllowActiveRenewal sets the "allow_active_renewal" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdate) SetNillableAllowActiveRenewal(v *bool) *SubscriptionPlanUpdate {
+	if v != nil {
+		_u.SetAllowActiveRenewal(*v)
+	}
+	return _u
+}
+
 // SetName sets the "name" field.
 func (_u *SubscriptionPlanUpdate) SetName(v string) *SubscriptionPlanUpdate {
 	_u.mutation.SetName(v)
@@ -286,6 +341,11 @@ func (_u *SubscriptionPlanUpdate) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *SubscriptionPlanUpdate) check() error {
+	if v, ok := _u.mutation.PlanKind(); ok {
+		if err := subscriptionplan.PlanKindValidator(v); err != nil {
+			return &ValidationError{Name: "plan_kind", err: fmt.Errorf(`ent: validator failed for field "SubscriptionPlan.plan_kind": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Name(); ok {
 		if err := subscriptionplan.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "SubscriptionPlan.name": %w`, err)}
@@ -326,6 +386,21 @@ func (_u *SubscriptionPlanUpdate) sqlSave(ctx context.Context) (_node int, err e
 	}
 	if value, ok := _u.mutation.AddedGroupID(); ok {
 		_spec.AddField(subscriptionplan.FieldGroupID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.PlanKind(); ok {
+		_spec.SetField(subscriptionplan.FieldPlanKind, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.QuotaUsd(); ok {
+		_spec.SetField(subscriptionplan.FieldQuotaUsd, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedQuotaUsd(); ok {
+		_spec.AddField(subscriptionplan.FieldQuotaUsd, field.TypeFloat64, value)
+	}
+	if _u.mutation.QuotaUsdCleared() {
+		_spec.ClearField(subscriptionplan.FieldQuotaUsd, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.AllowActiveRenewal(); ok {
+		_spec.SetField(subscriptionplan.FieldAllowActiveRenewal, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(subscriptionplan.FieldName, field.TypeString, value)
@@ -416,6 +491,61 @@ func (_u *SubscriptionPlanUpdateOne) SetNillableGroupID(v *int64) *SubscriptionP
 // AddGroupID adds value to the "group_id" field.
 func (_u *SubscriptionPlanUpdateOne) AddGroupID(v int64) *SubscriptionPlanUpdateOne {
 	_u.mutation.AddGroupID(v)
+	return _u
+}
+
+// SetPlanKind sets the "plan_kind" field.
+func (_u *SubscriptionPlanUpdateOne) SetPlanKind(v string) *SubscriptionPlanUpdateOne {
+	_u.mutation.SetPlanKind(v)
+	return _u
+}
+
+// SetNillablePlanKind sets the "plan_kind" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdateOne) SetNillablePlanKind(v *string) *SubscriptionPlanUpdateOne {
+	if v != nil {
+		_u.SetPlanKind(*v)
+	}
+	return _u
+}
+
+// SetQuotaUsd sets the "quota_usd" field.
+func (_u *SubscriptionPlanUpdateOne) SetQuotaUsd(v float64) *SubscriptionPlanUpdateOne {
+	_u.mutation.ResetQuotaUsd()
+	_u.mutation.SetQuotaUsd(v)
+	return _u
+}
+
+// SetNillableQuotaUsd sets the "quota_usd" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdateOne) SetNillableQuotaUsd(v *float64) *SubscriptionPlanUpdateOne {
+	if v != nil {
+		_u.SetQuotaUsd(*v)
+	}
+	return _u
+}
+
+// AddQuotaUsd adds value to the "quota_usd" field.
+func (_u *SubscriptionPlanUpdateOne) AddQuotaUsd(v float64) *SubscriptionPlanUpdateOne {
+	_u.mutation.AddQuotaUsd(v)
+	return _u
+}
+
+// ClearQuotaUsd clears the value of the "quota_usd" field.
+func (_u *SubscriptionPlanUpdateOne) ClearQuotaUsd() *SubscriptionPlanUpdateOne {
+	_u.mutation.ClearQuotaUsd()
+	return _u
+}
+
+// SetAllowActiveRenewal sets the "allow_active_renewal" field.
+func (_u *SubscriptionPlanUpdateOne) SetAllowActiveRenewal(v bool) *SubscriptionPlanUpdateOne {
+	_u.mutation.SetAllowActiveRenewal(v)
+	return _u
+}
+
+// SetNillableAllowActiveRenewal sets the "allow_active_renewal" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdateOne) SetNillableAllowActiveRenewal(v *bool) *SubscriptionPlanUpdateOne {
+	if v != nil {
+		_u.SetAllowActiveRenewal(*v)
+	}
 	return _u
 }
 
@@ -669,6 +799,11 @@ func (_u *SubscriptionPlanUpdateOne) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *SubscriptionPlanUpdateOne) check() error {
+	if v, ok := _u.mutation.PlanKind(); ok {
+		if err := subscriptionplan.PlanKindValidator(v); err != nil {
+			return &ValidationError{Name: "plan_kind", err: fmt.Errorf(`ent: validator failed for field "SubscriptionPlan.plan_kind": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Name(); ok {
 		if err := subscriptionplan.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "SubscriptionPlan.name": %w`, err)}
@@ -726,6 +861,21 @@ func (_u *SubscriptionPlanUpdateOne) sqlSave(ctx context.Context) (_node *Subscr
 	}
 	if value, ok := _u.mutation.AddedGroupID(); ok {
 		_spec.AddField(subscriptionplan.FieldGroupID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.PlanKind(); ok {
+		_spec.SetField(subscriptionplan.FieldPlanKind, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.QuotaUsd(); ok {
+		_spec.SetField(subscriptionplan.FieldQuotaUsd, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedQuotaUsd(); ok {
+		_spec.AddField(subscriptionplan.FieldQuotaUsd, field.TypeFloat64, value)
+	}
+	if _u.mutation.QuotaUsdCleared() {
+		_spec.ClearField(subscriptionplan.FieldQuotaUsd, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.AllowActiveRenewal(); ok {
+		_spec.SetField(subscriptionplan.FieldAllowActiveRenewal, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(subscriptionplan.FieldName, field.TypeString, value)

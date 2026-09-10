@@ -50,6 +50,14 @@ const (
 	FieldSubscriptionGroupID = "subscription_group_id"
 	// FieldSubscriptionDays holds the string denoting the subscription_days field in the database.
 	FieldSubscriptionDays = "subscription_days"
+	// FieldSubscriptionID holds the string denoting the subscription_id field in the database.
+	FieldSubscriptionID = "subscription_id"
+	// FieldSubscriptionCycleStart holds the string denoting the subscription_cycle_start field in the database.
+	FieldSubscriptionCycleStart = "subscription_cycle_start"
+	// FieldQuotaUsd holds the string denoting the quota_usd field in the database.
+	FieldQuotaUsd = "quota_usd"
+	// FieldSubscriptionAllowActiveRenewal holds the string denoting the subscription_allow_active_renewal field in the database.
+	FieldSubscriptionAllowActiveRenewal = "subscription_allow_active_renewal"
 	// FieldProviderInstanceID holds the string denoting the provider_instance_id field in the database.
 	FieldProviderInstanceID = "provider_instance_id"
 	// FieldProviderKey holds the string denoting the provider_key field in the database.
@@ -126,6 +134,10 @@ var Columns = []string{
 	FieldPlanID,
 	FieldSubscriptionGroupID,
 	FieldSubscriptionDays,
+	FieldSubscriptionID,
+	FieldSubscriptionCycleStart,
+	FieldQuotaUsd,
+	FieldSubscriptionAllowActiveRenewal,
 	FieldProviderInstanceID,
 	FieldProviderKey,
 	FieldProviderSnapshot,
@@ -180,6 +192,8 @@ var (
 	DefaultOrderType string
 	// OrderTypeValidator is a validator for the "order_type" field. It is called by the builders before save.
 	OrderTypeValidator func(string) error
+	// DefaultSubscriptionAllowActiveRenewal holds the default value on creation for the "subscription_allow_active_renewal" field.
+	DefaultSubscriptionAllowActiveRenewal bool
 	// ProviderInstanceIDValidator is a validator for the "provider_instance_id" field. It is called by the builders before save.
 	ProviderInstanceIDValidator func(string) error
 	// ProviderKeyValidator is a validator for the "provider_key" field. It is called by the builders before save.
@@ -302,6 +316,26 @@ func BySubscriptionGroupID(opts ...sql.OrderTermOption) OrderOption {
 // BySubscriptionDays orders the results by the subscription_days field.
 func BySubscriptionDays(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSubscriptionDays, opts...).ToFunc()
+}
+
+// BySubscriptionID orders the results by the subscription_id field.
+func BySubscriptionID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSubscriptionID, opts...).ToFunc()
+}
+
+// BySubscriptionCycleStart orders the results by the subscription_cycle_start field.
+func BySubscriptionCycleStart(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSubscriptionCycleStart, opts...).ToFunc()
+}
+
+// ByQuotaUsd orders the results by the quota_usd field.
+func ByQuotaUsd(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldQuotaUsd, opts...).ToFunc()
+}
+
+// BySubscriptionAllowActiveRenewal orders the results by the subscription_allow_active_renewal field.
+func BySubscriptionAllowActiveRenewal(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSubscriptionAllowActiveRenewal, opts...).ToFunc()
 }
 
 // ByProviderInstanceID orders the results by the provider_instance_id field.

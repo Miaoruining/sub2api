@@ -2059,6 +2059,8 @@ export interface UserSubscription {
   daily_usage_usd: number
   weekly_usage_usd: number
   monthly_usage_usd: number
+  topup_granted_usd?: number
+  topup_used_usd?: number
   daily_window_start: string | null
   weekly_window_start: string | null
   monthly_window_start: string | null

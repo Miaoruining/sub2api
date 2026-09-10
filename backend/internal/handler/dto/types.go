@@ -764,6 +764,8 @@ type UserSubscription struct {
 	DailyUsageUSD   float64 `json:"daily_usage_usd"`
 	WeeklyUsageUSD  float64 `json:"weekly_usage_usd"`
 	MonthlyUsageUSD float64 `json:"monthly_usage_usd"`
+	TopupGrantedUSD float64 `json:"topup_granted_usd"`
+	TopupUsedUSD    float64 `json:"topup_used_usd"`
 
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`

@@ -92,6 +92,63 @@ func TestListPlazaGroups_DedupFirstWinsWithPricingUpgrade(t *testing.T) {
 	require.NotNil(t, out[0].Models[0].Pricing.InputPrice)
 }
 
+func TestListPlazaGroups_ModelAllowlistFiltersSharedChannelModels(t *testing.T) {
+	shared := plazaPricedChannel(1, "shared", []int64{10, 20}, PlatformOpenAI,
+		"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.5", "gpt-4o")
+	groups := []Group{
+		{
+			ID:             10,
+			Name:           "plus",
+			Platform:       PlatformOpenAI,
+			RateMultiplier: 1,
+			ModelAllowlist: GroupModelAllowlist{Enabled: true, Models: []string{"gpt-5.6-*"}},
+		},
+		{
+			ID:             20,
+			Name:           "pro",
+			Platform:       PlatformOpenAI,
+			RateMultiplier: 1,
+			ModelAllowlist: GroupModelAllowlist{Enabled: true, Models: []string{"GPT-5.6-sol", "gpt-5.5"}},
+		},
+	}
+
+	out, err := newPlazaService([]Channel{shared}, groups, nil).ListGroups(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, out, 2)
+	byName := make(map[string][]PlazaModel, len(out))
+	for _, group := range out {
+		byName[group.Name] = group.Models
+	}
+	require.Equal(t, []string{"gpt-5.6-sol", "gpt-5.6-terra"}, modelNames(byName["plus"]))
+	require.Equal(t, []string{"gpt-5.5", "gpt-5.6-sol"}, modelNames(byName["pro"]))
+}
+
+func TestListPlazaGroups_DisabledModelAllowlistKeepsAllChannelModels(t *testing.T) {
+	ch := plazaPricedChannel(1, "shared", []int64{10}, PlatformOpenAI, "gpt-5.6-sol", "gpt-5.5")
+	groups := []Group{{
+		ID:             10,
+		Name:           "legacy",
+		Platform:       PlatformOpenAI,
+		RateMultiplier: 1,
+		ModelAllowlist: GroupModelAllowlist{Enabled: false, Models: []string{"only-this-model"}},
+	}}
+
+	out, err := newPlazaService([]Channel{ch}, groups, nil).ListGroups(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.Equal(t, []string{"gpt-5.5", "gpt-5.6-sol"}, modelNames(out[0].Models))
+}
+
+func modelNames(models []PlazaModel) []string {
+	names := make([]string, len(models))
+	for i, model := range models {
+		names[i] = model.Name
+	}
+	return names
+}
+
 func TestListPlazaGroups_PlatformIsolation(t *testing.T) {
 	// 渠道同时有 anthropic/openai 定价,anthropic 分组只应看到 anthropic 模型。
 	ch := Channel{

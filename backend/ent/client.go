@@ -45,6 +45,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionquotagrant"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -123,6 +124,8 @@ type Client struct {
 	Setting *SettingClient
 	// SubscriptionPlan is the client for interacting with the SubscriptionPlan builders.
 	SubscriptionPlan *SubscriptionPlanClient
+	// SubscriptionQuotaGrant is the client for interacting with the SubscriptionQuotaGrant builders.
+	SubscriptionQuotaGrant *SubscriptionQuotaGrantClient
 	// TLSFingerprintProfile is the client for interacting with the TLSFingerprintProfile builders.
 	TLSFingerprintProfile *TLSFingerprintProfileClient
 	// UsageCleanupTask is the client for interacting with the UsageCleanupTask builders.
@@ -182,6 +185,7 @@ func (c *Client) init() {
 	c.SecuritySecret = NewSecuritySecretClient(c.config)
 	c.Setting = NewSettingClient(c.config)
 	c.SubscriptionPlan = NewSubscriptionPlanClient(c.config)
+	c.SubscriptionQuotaGrant = NewSubscriptionQuotaGrantClient(c.config)
 	c.TLSFingerprintProfile = NewTLSFingerprintProfileClient(c.config)
 	c.UsageCleanupTask = NewUsageCleanupTaskClient(c.config)
 	c.UsageLog = NewUsageLogClient(c.config)
@@ -313,6 +317,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		SecuritySecret:                NewSecuritySecretClient(cfg),
 		Setting:                       NewSettingClient(cfg),
 		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
+		SubscriptionQuotaGrant:        NewSubscriptionQuotaGrantClient(cfg),
 		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
@@ -371,6 +376,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		SecuritySecret:                NewSecuritySecretClient(cfg),
 		Setting:                       NewSettingClient(cfg),
 		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
+		SubscriptionQuotaGrant:        NewSubscriptionQuotaGrantClient(cfg),
 		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
@@ -417,9 +423,9 @@ func (c *Client) Use(hooks ...Hook) {
 		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
 		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
 		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
-		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
-		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.SubscriptionQuotaGrant, c.TLSFingerprintProfile, c.UsageCleanupTask,
+		c.UsageLog, c.User, c.UserAllowedGroup, c.UserAttributeDefinition,
+		c.UserAttributeValue, c.UserPlatformQuota, c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -437,9 +443,9 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.IdentityAdoptionDecision, c.PaymentAuditLog, c.PaymentOrder,
 		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
 		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
-		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
-		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.SubscriptionQuotaGrant, c.TLSFingerprintProfile, c.UsageCleanupTask,
+		c.UsageLog, c.User, c.UserAllowedGroup, c.UserAttributeDefinition,
+		c.UserAttributeValue, c.UserPlatformQuota, c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -508,6 +514,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Setting.mutate(ctx, m)
 	case *SubscriptionPlanMutation:
 		return c.SubscriptionPlan.mutate(ctx, m)
+	case *SubscriptionQuotaGrantMutation:
+		return c.SubscriptionQuotaGrant.mutate(ctx, m)
 	case *TLSFingerprintProfileMutation:
 		return c.TLSFingerprintProfile.mutate(ctx, m)
 	case *UsageCleanupTaskMutation:
@@ -5218,6 +5226,139 @@ func (c *SubscriptionPlanClient) mutate(ctx context.Context, m *SubscriptionPlan
 	}
 }
 
+// SubscriptionQuotaGrantClient is a client for the SubscriptionQuotaGrant schema.
+type SubscriptionQuotaGrantClient struct {
+	config
+}
+
+// NewSubscriptionQuotaGrantClient returns a client for the SubscriptionQuotaGrant from the given config.
+func NewSubscriptionQuotaGrantClient(c config) *SubscriptionQuotaGrantClient {
+	return &SubscriptionQuotaGrantClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `subscriptionquotagrant.Hooks(f(g(h())))`.
+func (c *SubscriptionQuotaGrantClient) Use(hooks ...Hook) {
+	c.hooks.SubscriptionQuotaGrant = append(c.hooks.SubscriptionQuotaGrant, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `subscriptionquotagrant.Intercept(f(g(h())))`.
+func (c *SubscriptionQuotaGrantClient) Intercept(interceptors ...Interceptor) {
+	c.inters.SubscriptionQuotaGrant = append(c.inters.SubscriptionQuotaGrant, interceptors...)
+}
+
+// Create returns a builder for creating a SubscriptionQuotaGrant entity.
+func (c *SubscriptionQuotaGrantClient) Create() *SubscriptionQuotaGrantCreate {
+	mutation := newSubscriptionQuotaGrantMutation(c.config, OpCreate)
+	return &SubscriptionQuotaGrantCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of SubscriptionQuotaGrant entities.
+func (c *SubscriptionQuotaGrantClient) CreateBulk(builders ...*SubscriptionQuotaGrantCreate) *SubscriptionQuotaGrantCreateBulk {
+	return &SubscriptionQuotaGrantCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SubscriptionQuotaGrantClient) MapCreateBulk(slice any, setFunc func(*SubscriptionQuotaGrantCreate, int)) *SubscriptionQuotaGrantCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SubscriptionQuotaGrantCreateBulk{err: fmt.Errorf("calling to SubscriptionQuotaGrantClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SubscriptionQuotaGrantCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SubscriptionQuotaGrantCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for SubscriptionQuotaGrant.
+func (c *SubscriptionQuotaGrantClient) Update() *SubscriptionQuotaGrantUpdate {
+	mutation := newSubscriptionQuotaGrantMutation(c.config, OpUpdate)
+	return &SubscriptionQuotaGrantUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SubscriptionQuotaGrantClient) UpdateOne(_m *SubscriptionQuotaGrant) *SubscriptionQuotaGrantUpdateOne {
+	mutation := newSubscriptionQuotaGrantMutation(c.config, OpUpdateOne, withSubscriptionQuotaGrant(_m))
+	return &SubscriptionQuotaGrantUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SubscriptionQuotaGrantClient) UpdateOneID(id int64) *SubscriptionQuotaGrantUpdateOne {
+	mutation := newSubscriptionQuotaGrantMutation(c.config, OpUpdateOne, withSubscriptionQuotaGrantID(id))
+	return &SubscriptionQuotaGrantUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for SubscriptionQuotaGrant.
+func (c *SubscriptionQuotaGrantClient) Delete() *SubscriptionQuotaGrantDelete {
+	mutation := newSubscriptionQuotaGrantMutation(c.config, OpDelete)
+	return &SubscriptionQuotaGrantDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SubscriptionQuotaGrantClient) DeleteOne(_m *SubscriptionQuotaGrant) *SubscriptionQuotaGrantDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SubscriptionQuotaGrantClient) DeleteOneID(id int64) *SubscriptionQuotaGrantDeleteOne {
+	builder := c.Delete().Where(subscriptionquotagrant.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SubscriptionQuotaGrantDeleteOne{builder}
+}
+
+// Query returns a query builder for SubscriptionQuotaGrant.
+func (c *SubscriptionQuotaGrantClient) Query() *SubscriptionQuotaGrantQuery {
+	return &SubscriptionQuotaGrantQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSubscriptionQuotaGrant},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a SubscriptionQuotaGrant entity by its id.
+func (c *SubscriptionQuotaGrantClient) Get(ctx context.Context, id int64) (*SubscriptionQuotaGrant, error) {
+	return c.Query().Where(subscriptionquotagrant.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SubscriptionQuotaGrantClient) GetX(ctx context.Context, id int64) *SubscriptionQuotaGrant {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *SubscriptionQuotaGrantClient) Hooks() []Hook {
+	return c.hooks.SubscriptionQuotaGrant
+}
+
+// Interceptors returns the client interceptors.
+func (c *SubscriptionQuotaGrantClient) Interceptors() []Interceptor {
+	return c.inters.SubscriptionQuotaGrant
+}
+
+func (c *SubscriptionQuotaGrantClient) mutate(ctx context.Context, m *SubscriptionQuotaGrantMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SubscriptionQuotaGrantCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SubscriptionQuotaGrantUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SubscriptionQuotaGrantUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SubscriptionQuotaGrantDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown SubscriptionQuotaGrant mutation op: %q", m.Op())
+	}
+}
+
 // TLSFingerprintProfileClient is a client for the TLSFingerprintProfile schema.
 type TLSFingerprintProfileClient struct {
 	config
@@ -6848,9 +6989,9 @@ type (
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
 		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
-		UserSubscription []ent.Hook
+		SubscriptionQuotaGrant, TLSFingerprintProfile, UsageCleanupTask, UsageLog,
+		User, UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		UserPlatformQuota, UserSubscription []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
@@ -6860,9 +7001,9 @@ type (
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
 		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
-		UserSubscription []ent.Interceptor
+		SubscriptionQuotaGrant, TLSFingerprintProfile, UsageCleanupTask, UsageLog,
+		User, UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		UserPlatformQuota, UserSubscription []ent.Interceptor
 	}
 )
 

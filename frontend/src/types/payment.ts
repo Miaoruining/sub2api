@@ -21,7 +21,7 @@ export type OrderStatus =
 
 export type PaymentType = 'alipay' | 'wxpay' | 'alipay_direct' | 'wxpay_direct' | 'stripe' | 'easypay' | 'airwallex'
 
-export type OrderType = 'balance' | 'subscription'
+export type OrderType = 'balance' | 'subscription' | 'subscription_topup'
 
 // ==================== Configuration ====================
 
@@ -104,6 +104,9 @@ export interface PaymentOrder {
   refund_request_reason?: string
   plan_id?: number
   provider_instance_id?: string
+  subscription_id?: number
+  subscription_cycle_start?: string
+  quota_usd?: number
 }
 
 // ==================== Plans & Channels ====================
@@ -134,6 +137,9 @@ export interface SubscriptionPlan {
   features: string[]
   for_sale: boolean
   sort_order: number
+  plan_kind?: 'base' | 'topup'
+  quota_usd?: number | null
+  allow_active_renewal?: boolean
 }
 
 export interface PaymentChannel {

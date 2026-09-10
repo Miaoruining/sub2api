@@ -15,6 +15,12 @@ const (
 	FieldID = "id"
 	// FieldGroupID holds the string denoting the group_id field in the database.
 	FieldGroupID = "group_id"
+	// FieldPlanKind holds the string denoting the plan_kind field in the database.
+	FieldPlanKind = "plan_kind"
+	// FieldQuotaUsd holds the string denoting the quota_usd field in the database.
+	FieldQuotaUsd = "quota_usd"
+	// FieldAllowActiveRenewal holds the string denoting the allow_active_renewal field in the database.
+	FieldAllowActiveRenewal = "allow_active_renewal"
 	// FieldName holds the string denoting the name field in the database.
 	FieldName = "name"
 	// FieldDescription holds the string denoting the description field in the database.
@@ -49,6 +55,9 @@ const (
 var Columns = []string{
 	FieldID,
 	FieldGroupID,
+	FieldPlanKind,
+	FieldQuotaUsd,
+	FieldAllowActiveRenewal,
 	FieldName,
 	FieldDescription,
 	FieldPrice,
@@ -75,6 +84,12 @@ func ValidColumn(column string) bool {
 }
 
 var (
+	// DefaultPlanKind holds the default value on creation for the "plan_kind" field.
+	DefaultPlanKind string
+	// PlanKindValidator is a validator for the "plan_kind" field. It is called by the builders before save.
+	PlanKindValidator func(string) error
+	// DefaultAllowActiveRenewal holds the default value on creation for the "allow_active_renewal" field.
+	DefaultAllowActiveRenewal bool
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
 	// DefaultDescription holds the default value on creation for the "description" field.
@@ -118,6 +133,21 @@ func ByID(opts ...sql.OrderTermOption) OrderOption {
 // ByGroupID orders the results by the group_id field.
 func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldGroupID, opts...).ToFunc()
+}
+
+// ByPlanKind orders the results by the plan_kind field.
+func ByPlanKind(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPlanKind, opts...).ToFunc()
+}
+
+// ByQuotaUsd orders the results by the quota_usd field.
+func ByQuotaUsd(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldQuotaUsd, opts...).ToFunc()
+}
+
+// ByAllowActiveRenewal orders the results by the allow_active_renewal field.
+func ByAllowActiveRenewal(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAllowActiveRenewal, opts...).ToFunc()
 }
 
 // ByName orders the results by the name field.

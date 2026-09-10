@@ -39,8 +39,14 @@ const (
 
 // Order types distinguish balance recharges from subscription purchases.
 const (
-	OrderTypeBalance      = "balance"
-	OrderTypeSubscription = "subscription"
+	OrderTypeBalance           = "balance"
+	OrderTypeSubscription      = "subscription"
+	OrderTypeSubscriptionTopup = "subscription_topup"
+)
+
+const (
+	SubscriptionPlanKindBase  = "base"
+	SubscriptionPlanKindTopup = "topup"
 )
 
 // Entity statuses shared across users, groups, etc.
@@ -50,9 +56,10 @@ const (
 
 // Deduction types for refund flow.
 const (
-	DeductionTypeBalance      = "balance"
-	DeductionTypeSubscription = "subscription"
-	DeductionTypeNone         = "none"
+	DeductionTypeBalance           = "balance"
+	DeductionTypeSubscription      = "subscription"
+	DeductionTypeSubscriptionTopup = "subscription_topup"
+	DeductionTypeNone              = "none"
 )
 
 // Payment notification status values.

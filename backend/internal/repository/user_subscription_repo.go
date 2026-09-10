@@ -8,6 +8,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionquotagrant"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -72,7 +73,7 @@ func (r *userSubscriptionRepository) GetByID(ctx context.Context, id int64) (*se
 	if err != nil {
 		return nil, translatePersistenceError(err, service.ErrSubscriptionNotFound, nil)
 	}
-	return userSubscriptionEntityToService(m), nil
+	return r.withQuotaGrants(ctx, client, userSubscriptionEntityToService(m))
 }
 
 func (r *userSubscriptionRepository) GetByIDForUpdate(ctx context.Context, id int64) (*service.UserSubscription, error) {
@@ -84,7 +85,7 @@ func (r *userSubscriptionRepository) GetByIDForUpdate(ctx context.Context, id in
 	if err != nil {
 		return nil, translatePersistenceError(err, service.ErrSubscriptionNotFound, nil)
 	}
-	return userSubscriptionEntityToService(m), nil
+	return r.withQuotaGrants(ctx, client, userSubscriptionEntityToService(m))
 }
 
 func (r *userSubscriptionRepository) GetByIDIncludeDeleted(ctx context.Context, id int64) (*service.UserSubscription, error) {
@@ -99,7 +100,7 @@ func (r *userSubscriptionRepository) GetByIDIncludeDeleted(ctx context.Context, 
 	if err != nil {
 		return nil, translatePersistenceError(err, service.ErrSubscriptionNotFound, nil)
 	}
-	return userSubscriptionEntityToServicePreserveStatus(m), nil
+	return r.withQuotaGrants(queryCtx, client, userSubscriptionEntityToServicePreserveStatus(m))
 }
 
 func (r *userSubscriptionRepository) GetByUserIDAndGroupID(ctx context.Context, userID, groupID int64) (*service.UserSubscription, error) {
@@ -111,7 +112,7 @@ func (r *userSubscriptionRepository) GetByUserIDAndGroupID(ctx context.Context, 
 	if err != nil {
 		return nil, translatePersistenceError(err, service.ErrSubscriptionNotFound, nil)
 	}
-	return userSubscriptionEntityToService(m), nil
+	return r.withQuotaGrants(ctx, client, userSubscriptionEntityToService(m))
 }
 
 func (r *userSubscriptionRepository) GetActiveByUserIDAndGroupID(ctx context.Context, userID, groupID int64) (*service.UserSubscription, error) {
@@ -128,7 +129,7 @@ func (r *userSubscriptionRepository) GetActiveByUserIDAndGroupID(ctx context.Con
 	if err != nil {
 		return nil, translatePersistenceError(err, service.ErrSubscriptionNotFound, nil)
 	}
-	return userSubscriptionEntityToService(m), nil
+	return r.withQuotaGrants(ctx, client, userSubscriptionEntityToService(m))
 }
 
 func (r *userSubscriptionRepository) Update(ctx context.Context, sub *service.UserSubscription) error {
@@ -192,7 +193,7 @@ func (r *userSubscriptionRepository) ListByUserID(ctx context.Context, userID in
 	if err != nil {
 		return nil, err
 	}
-	return userSubscriptionEntitiesToService(subs), nil
+	return r.withQuotaGrantsMany(ctx, client, userSubscriptionEntitiesToService(subs))
 }
 
 func (r *userSubscriptionRepository) ListActiveByUserID(ctx context.Context, userID int64) ([]service.UserSubscription, error) {
@@ -209,7 +210,7 @@ func (r *userSubscriptionRepository) ListActiveByUserID(ctx context.Context, use
 	if err != nil {
 		return nil, err
 	}
-	return userSubscriptionEntitiesToService(subs), nil
+	return r.withQuotaGrantsMany(ctx, client, userSubscriptionEntitiesToService(subs))
 }
 
 func (r *userSubscriptionRepository) ListByGroupID(ctx context.Context, groupID int64, params pagination.PaginationParams) ([]service.UserSubscription, *pagination.PaginationResult, error) {
@@ -232,7 +233,11 @@ func (r *userSubscriptionRepository) ListByGroupID(ctx context.Context, groupID 
 		return nil, nil, err
 	}
 
-	return userSubscriptionEntitiesToService(subs), paginationResultFromTotal(int64(total), params), nil
+	result, err := r.withQuotaGrantsMany(ctx, client, userSubscriptionEntitiesToService(subs))
+	if err != nil {
+		return nil, nil, err
+	}
+	return result, paginationResultFromTotal(int64(total), params), nil
 }
 
 func (r *userSubscriptionRepository) List(ctx context.Context, params pagination.PaginationParams, userID, groupID *int64, status, platform, sortBy, sortOrder string) ([]service.UserSubscription, *pagination.PaginationResult, error) {
@@ -324,6 +329,9 @@ func (r *userSubscriptionRepository) List(ctx context.Context, params pagination
 	}
 
 	result := userSubscriptionEntitiesToService(subs)
+	if result, err = r.withQuotaGrantsMany(queryCtx, client, result); err != nil {
+		return nil, nil, err
+	}
 	if includeSoftDeleted {
 		if err := r.attachUserSubscriptionRelations(ctx, result); err != nil {
 			return nil, nil, err
@@ -469,37 +477,119 @@ func (r *userSubscriptionRepository) translateConditionalWindowReset(ctx context
 // 限额检查已在请求前由 BillingCacheService.CheckBillingEligibility 完成，
 // 此处仅负责记录实际消费，确保消费数据的完整性。
 func (r *userSubscriptionRepository) IncrementUsage(ctx context.Context, id int64, costUSD float64) error {
-	const updateSQL = `
-		UPDATE user_subscriptions us
-		SET
-			daily_usage_usd = us.daily_usage_usd + $1,
-			weekly_usage_usd = us.weekly_usage_usd + $1,
-			monthly_usage_usd = us.monthly_usage_usd + $1,
-			updated_at = NOW()
-		FROM groups g
-		WHERE us.id = $2
-			AND us.deleted_at IS NULL
-			AND us.group_id = g.id
-			AND g.deleted_at IS NULL
-	`
-
 	client := clientFromContext(ctx, r.client)
-	result, err := client.ExecContext(ctx, updateSQL, costUSD, id)
+	if tx := dbent.TxFromContext(ctx); tx == nil {
+		tx, err := client.Tx(ctx)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
+		err = r.incrementUsageInTx(dbent.NewTxContext(ctx, tx), tx.Client(), id, nil, costUSD)
+		if err != nil {
+			return err
+		}
+		return tx.Commit()
+	}
+	return r.incrementUsageInTx(ctx, client, id, nil, costUSD)
+}
+
+func (r *userSubscriptionRepository) IncrementUsageForCycle(ctx context.Context, id int64, cycleStart time.Time, costUSD float64) error {
+	client := clientFromContext(ctx, r.client)
+	if tx := dbent.TxFromContext(ctx); tx == nil {
+		tx, err := client.Tx(ctx)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
+		if err := r.incrementUsageInTx(dbent.NewTxContext(ctx, tx), tx.Client(), id, &cycleStart, costUSD); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}
+	return r.incrementUsageInTx(ctx, client, id, &cycleStart, costUSD)
+}
+
+func (r *userSubscriptionRepository) incrementUsageInTx(ctx context.Context, client *dbent.Client, id int64, expectedCycle *time.Time, costUSD float64) error {
+	sub, err := client.UserSubscription.Query().Where(usersubscription.IDEQ(id)).ForUpdate().Only(ctx)
+	if err != nil {
+		return service.ErrSubscriptionNotFound
+	}
+	if expectedCycle != nil && !sub.StartsAt.Equal(*expectedCycle) {
+		return service.ErrSubscriptionCycleMismatch
+	}
+	groupModel, err := client.Group.Get(ctx, sub.GroupID)
 	if err != nil {
 		return err
 	}
-
-	affected, err := result.RowsAffected()
-	if err != nil {
+	oldMonthly := sub.MonthlyUsageUsd
+	if _, err := client.UserSubscription.UpdateOneID(id).
+		SetDailyUsageUsd(sub.DailyUsageUsd + costUSD).
+		SetWeeklyUsageUsd(sub.WeeklyUsageUsd + costUSD).
+		SetMonthlyUsageUsd(sub.MonthlyUsageUsd + costUSD).
+		Save(ctx); err != nil {
 		return err
 	}
-
-	if affected > 0 {
+	if groupModel.MonthlyLimitUsd == nil {
 		return nil
 	}
+	oldOverflow := quotaMaxFloatRepo(0, oldMonthly-*groupModel.MonthlyLimitUsd)
+	newOverflow := quotaMaxFloatRepo(0, oldMonthly+costUSD-*groupModel.MonthlyLimitUsd)
+	return r.allocateTopupUsage(ctx, client, sub.ID, sub.StartsAt, newOverflow-oldOverflow)
+}
 
-	// affected == 0：订阅不存在或已删除
-	return service.ErrSubscriptionNotFound
+func (r *userSubscriptionRepository) allocateTopupUsage(ctx context.Context, client *dbent.Client, subscriptionID int64, cycleStart time.Time, amount float64) error {
+	if amount <= 0.00000001 {
+		return nil
+	}
+	grants, err := client.SubscriptionQuotaGrant.Query().Where(
+		subscriptionquotagrant.SubscriptionIDEQ(subscriptionID),
+		subscriptionquotagrant.CycleStartEQ(cycleStart),
+		subscriptionquotagrant.StatusEQ("active"),
+	).Order(dbent.Asc(subscriptionquotagrant.FieldCreatedAt)).ForUpdate().All(ctx)
+	if err != nil {
+		return err
+	}
+	remaining := amount
+	for _, grant := range grants {
+		available := grant.GrantedUsd - grant.UsedUsd
+		if available <= 0.00000001 {
+			continue
+		}
+		used := quotaMinFloatRepo(available, remaining)
+		if _, err := client.SubscriptionQuotaGrant.UpdateOneID(grant.ID).
+			SetUsedUsd(grant.UsedUsd + used).Save(ctx); err != nil {
+			return err
+		}
+		remaining -= used
+		if remaining <= 0.00000001 {
+			return nil
+		}
+	}
+	// A missing grant means the usage cannot be safely attributed. Mark all
+	// current-cycle grants ambiguous so automatic refunds are blocked.
+	if len(grants) > 0 {
+		_, err = client.SubscriptionQuotaGrant.Update().Where(
+			subscriptionquotagrant.SubscriptionIDEQ(subscriptionID),
+			subscriptionquotagrant.CycleStartEQ(cycleStart),
+			subscriptionquotagrant.StatusEQ("active"),
+		).SetStatus("consumption_ambiguous").Save(ctx)
+		return err
+	}
+	return nil
+}
+
+func quotaMaxFloatRepo(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func quotaMinFloatRepo(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (r *userSubscriptionRepository) BatchUpdateExpiredStatus(ctx context.Context) (int64, error) {
@@ -680,6 +770,34 @@ func userSubscriptionEntitiesToService(models []*dbent.UserSubscription) []servi
 		}
 	}
 	return out
+}
+
+func (r *userSubscriptionRepository) withQuotaGrants(ctx context.Context, client *dbent.Client, sub *service.UserSubscription) (*service.UserSubscription, error) {
+	if sub == nil {
+		return nil, nil
+	}
+	grants, err := client.SubscriptionQuotaGrant.Query().Where(
+		subscriptionquotagrant.SubscriptionIDEQ(sub.ID),
+		subscriptionquotagrant.CycleStartEQ(sub.StartsAt),
+		subscriptionquotagrant.StatusIn(service.SubscriptionQuotaGrantStatusActive, service.SubscriptionQuotaGrantStatusAmbiguous),
+	).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, grant := range grants {
+		sub.TopupGrantedUSD += grant.GrantedUsd
+		sub.TopupUsedUSD += grant.UsedUsd
+	}
+	return sub, nil
+}
+
+func (r *userSubscriptionRepository) withQuotaGrantsMany(ctx context.Context, client *dbent.Client, subs []service.UserSubscription) ([]service.UserSubscription, error) {
+	for i := range subs {
+		if _, err := r.withQuotaGrants(ctx, client, &subs[i]); err != nil {
+			return nil, err
+		}
+	}
+	return subs, nil
 }
 
 func applyUserSubscriptionEntityToService(dst *service.UserSubscription, src *dbent.UserSubscription) {

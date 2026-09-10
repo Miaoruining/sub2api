@@ -20,6 +20,17 @@
           </Select>
         </div>
       </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="input-label">{{ t('payment.admin.planKind') }}</label>
+          <Select v-model="planForm.plan_kind" :options="planKindOptions" />
+        </div>
+        <div v-if="planForm.plan_kind === 'topup'">
+          <label class="input-label">{{ t('payment.admin.quotaUSD') }} <span class="text-red-500">*</span></label>
+          <input v-model.number="planForm.quota_usd" type="number" step="0.01" min="0.01" class="input" required />
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.quotaUSDHint') }}</p>
+        </div>
+      </div>
 
       <!-- Group Info Preview -->
       <div v-if="selectedGroupInfo" class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-600 dark:bg-dark-800">
@@ -80,6 +91,13 @@
           ]" />
         </button>
       </div>
+      <div v-if="planForm.plan_kind === 'base'" class="flex items-center gap-3">
+        <label class="text-sm text-gray-700 dark:text-gray-300">{{ t('payment.admin.allowActiveRenewal') }}</label>
+        <button type="button" :class="['relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors', planForm.allow_active_renewal ? 'bg-primary-500' : 'bg-gray-300 dark:bg-dark-600']" @click="planForm.allow_active_renewal = !planForm.allow_active_renewal">
+          <span :class="['pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition', planForm.allow_active_renewal ? 'translate-x-5' : 'translate-x-0']" />
+        </button>
+        <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.allowActiveRenewalHint') }}</span>
+      </div>
     </form>
     <template #footer>
       <div class="flex justify-end gap-3">
@@ -122,13 +140,17 @@ const { t } = useI18n()
 const appStore = useAppStore()
 
 const saving = ref(false)
-const planForm = reactive({ name: '', group_id: null as number | null, description: '', price: 0, original_price: 0, currency: '', validity_days: 30, validity_unit: 'days', sort_order: 0, for_sale: true })
+const planForm = reactive({ name: '', group_id: null as number | null, description: '', price: 0, original_price: 0, currency: '', validity_days: 30, validity_unit: 'days', sort_order: 0, for_sale: true, plan_kind: 'base' as 'base' | 'topup', quota_usd: 0, allow_active_renewal: false })
 const planFeaturesText = ref('')
 
 const validityUnitOptions = computed(() => [
   { value: 'days', label: t('payment.admin.days') },
   { value: 'weeks', label: t('payment.admin.weeks') },
   { value: 'months', label: t('payment.admin.months') },
+])
+const planKindOptions = computed(() => [
+  { value: 'base', label: t('payment.admin.basePlan') },
+  { value: 'topup', label: t('payment.admin.quotaTopupPlan') },
 ])
 
 const groupOptions = computed(() =>
@@ -175,10 +197,10 @@ const subscriptionCnyPreview = computed(() => {
 watch(() => props.show, (visible) => {
   if (!visible) return
   if (props.plan) {
-    Object.assign(planForm, { name: props.plan.name, group_id: props.plan.group_id, description: props.plan.description, price: props.plan.price, original_price: props.plan.original_price || 0, currency: props.plan.currency || '', validity_days: props.plan.validity_days, validity_unit: props.plan.validity_unit || 'days', sort_order: props.plan.sort_order || 0, for_sale: props.plan.for_sale })
+    Object.assign(planForm, { name: props.plan.name, group_id: props.plan.group_id, description: props.plan.description, price: props.plan.price, original_price: props.plan.original_price || 0, currency: props.plan.currency || '', validity_days: props.plan.validity_days, validity_unit: props.plan.validity_unit || 'days', sort_order: props.plan.sort_order || 0, for_sale: props.plan.for_sale, plan_kind: props.plan.plan_kind || 'base', quota_usd: props.plan.quota_usd || 0, allow_active_renewal: props.plan.allow_active_renewal === true })
     planFeaturesText.value = (props.plan.features || []).join('\n')
   } else {
-    Object.assign(planForm, { name: '', group_id: null, description: '', price: 0, original_price: 0, currency: '', validity_days: 30, validity_unit: 'days', sort_order: 0, for_sale: true })
+    Object.assign(planForm, { name: '', group_id: null, description: '', price: 0, original_price: 0, currency: '', validity_days: 30, validity_unit: 'days', sort_order: 0, for_sale: true, plan_kind: 'base', quota_usd: 0, allow_active_renewal: false })
     planFeaturesText.value = ''
   }
 })
@@ -198,6 +220,9 @@ function buildPlanPayload() {
     sort_order: planForm.sort_order,
     for_sale: planForm.for_sale,
     features,
+    plan_kind: planForm.plan_kind,
+    quota_usd: planForm.plan_kind === 'topup' ? planForm.quota_usd : undefined,
+    allow_active_renewal: planForm.plan_kind === 'base' && planForm.allow_active_renewal,
   }
 }
 

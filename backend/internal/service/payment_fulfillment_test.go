@@ -1005,6 +1005,11 @@ func TestExecuteSubscriptionFulfillmentRecoversCommittedAssignmentWithoutExtendi
 	ensurePaymentAuditOrderActionUniqueIndex(t, ctx, client)
 	staleAt := time.Now().Add(-paymentFulfillmentLeaseDuration - time.Minute)
 	order := createPaymentFulfillmentSubscriptionOrder(t, ctx, client, OrderStatusRecharging, staleAt)
+	persistedGroup, err := client.Group.Create().SetName(t.Name()).SetPlatform(PlatformOpenAI).
+		SetSubscriptionType(SubscriptionTypeSubscription).Save(ctx)
+	require.NoError(t, err)
+	order, err = client.PaymentOrder.UpdateOneID(order.ID).SetSubscriptionGroupID(persistedGroup.ID).SetUpdatedAt(staleAt).Save(ctx)
+	require.NoError(t, err)
 
 	expiresAt := time.Now().Add(30 * 24 * time.Hour).Truncate(time.Second)
 	subRepo := newSubscriptionUserSubRepoStub()
@@ -1017,6 +1022,14 @@ func TestExecuteSubscriptionFulfillmentRecoversCommittedAssignmentWithoutExtendi
 		Status:    SubscriptionStatusActive,
 		Notes:     "manual note\n" + paymentSubscriptionOrderNote(order.ID) + "\nretained note",
 	})
+	// Recovery now reads the committed row under a transaction lock; mirror
+	// the repository fixture in the database so the test represents a real
+	// committed assignment rather than only an in-memory subscription.
+	_, err = client.UserSubscription.Create().SetUserID(order.UserID).
+		SetGroupID(*order.SubscriptionGroupID).SetStartsAt(time.Now().Add(-time.Hour)).
+		SetExpiresAt(expiresAt).SetStatus(SubscriptionStatusActive).
+		SetNotes("manual note\n" + paymentSubscriptionOrderNote(order.ID) + "\nretained note").Save(ctx)
+	require.NoError(t, err)
 	groupRepo := &subscriptionGroupRepoStub{
 		group: &Group{ID: 7, Status: payment.EntityStatusActive, SubscriptionType: SubscriptionTypeSubscription},
 	}

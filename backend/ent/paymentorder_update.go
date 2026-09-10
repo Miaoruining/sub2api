@@ -365,6 +365,94 @@ func (_u *PaymentOrderUpdate) ClearSubscriptionDays() *PaymentOrderUpdate {
 	return _u
 }
 
+// SetSubscriptionID sets the "subscription_id" field.
+func (_u *PaymentOrderUpdate) SetSubscriptionID(v int64) *PaymentOrderUpdate {
+	_u.mutation.ResetSubscriptionID()
+	_u.mutation.SetSubscriptionID(v)
+	return _u
+}
+
+// SetNillableSubscriptionID sets the "subscription_id" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableSubscriptionID(v *int64) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetSubscriptionID(*v)
+	}
+	return _u
+}
+
+// AddSubscriptionID adds value to the "subscription_id" field.
+func (_u *PaymentOrderUpdate) AddSubscriptionID(v int64) *PaymentOrderUpdate {
+	_u.mutation.AddSubscriptionID(v)
+	return _u
+}
+
+// ClearSubscriptionID clears the value of the "subscription_id" field.
+func (_u *PaymentOrderUpdate) ClearSubscriptionID() *PaymentOrderUpdate {
+	_u.mutation.ClearSubscriptionID()
+	return _u
+}
+
+// SetSubscriptionCycleStart sets the "subscription_cycle_start" field.
+func (_u *PaymentOrderUpdate) SetSubscriptionCycleStart(v time.Time) *PaymentOrderUpdate {
+	_u.mutation.SetSubscriptionCycleStart(v)
+	return _u
+}
+
+// SetNillableSubscriptionCycleStart sets the "subscription_cycle_start" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableSubscriptionCycleStart(v *time.Time) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetSubscriptionCycleStart(*v)
+	}
+	return _u
+}
+
+// ClearSubscriptionCycleStart clears the value of the "subscription_cycle_start" field.
+func (_u *PaymentOrderUpdate) ClearSubscriptionCycleStart() *PaymentOrderUpdate {
+	_u.mutation.ClearSubscriptionCycleStart()
+	return _u
+}
+
+// SetQuotaUsd sets the "quota_usd" field.
+func (_u *PaymentOrderUpdate) SetQuotaUsd(v float64) *PaymentOrderUpdate {
+	_u.mutation.ResetQuotaUsd()
+	_u.mutation.SetQuotaUsd(v)
+	return _u
+}
+
+// SetNillableQuotaUsd sets the "quota_usd" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableQuotaUsd(v *float64) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetQuotaUsd(*v)
+	}
+	return _u
+}
+
+// AddQuotaUsd adds value to the "quota_usd" field.
+func (_u *PaymentOrderUpdate) AddQuotaUsd(v float64) *PaymentOrderUpdate {
+	_u.mutation.AddQuotaUsd(v)
+	return _u
+}
+
+// ClearQuotaUsd clears the value of the "quota_usd" field.
+func (_u *PaymentOrderUpdate) ClearQuotaUsd() *PaymentOrderUpdate {
+	_u.mutation.ClearQuotaUsd()
+	return _u
+}
+
+// SetSubscriptionAllowActiveRenewal sets the "subscription_allow_active_renewal" field.
+func (_u *PaymentOrderUpdate) SetSubscriptionAllowActiveRenewal(v bool) *PaymentOrderUpdate {
+	_u.mutation.SetSubscriptionAllowActiveRenewal(v)
+	return _u
+}
+
+// SetNillableSubscriptionAllowActiveRenewal sets the "subscription_allow_active_renewal" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableSubscriptionAllowActiveRenewal(v *bool) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetSubscriptionAllowActiveRenewal(*v)
+	}
+	return _u
+}
+
 // SetProviderInstanceID sets the "provider_instance_id" field.
 func (_u *PaymentOrderUpdate) SetProviderInstanceID(v string) *PaymentOrderUpdate {
 	_u.mutation.SetProviderInstanceID(v)
@@ -941,6 +1029,33 @@ func (_u *PaymentOrderUpdate) sqlSave(ctx context.Context) (_node int, err error
 	if _u.mutation.SubscriptionDaysCleared() {
 		_spec.ClearField(paymentorder.FieldSubscriptionDays, field.TypeInt)
 	}
+	if value, ok := _u.mutation.SubscriptionID(); ok {
+		_spec.SetField(paymentorder.FieldSubscriptionID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedSubscriptionID(); ok {
+		_spec.AddField(paymentorder.FieldSubscriptionID, field.TypeInt64, value)
+	}
+	if _u.mutation.SubscriptionIDCleared() {
+		_spec.ClearField(paymentorder.FieldSubscriptionID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.SubscriptionCycleStart(); ok {
+		_spec.SetField(paymentorder.FieldSubscriptionCycleStart, field.TypeTime, value)
+	}
+	if _u.mutation.SubscriptionCycleStartCleared() {
+		_spec.ClearField(paymentorder.FieldSubscriptionCycleStart, field.TypeTime)
+	}
+	if value, ok := _u.mutation.QuotaUsd(); ok {
+		_spec.SetField(paymentorder.FieldQuotaUsd, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedQuotaUsd(); ok {
+		_spec.AddField(paymentorder.FieldQuotaUsd, field.TypeFloat64, value)
+	}
+	if _u.mutation.QuotaUsdCleared() {
+		_spec.ClearField(paymentorder.FieldQuotaUsd, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.SubscriptionAllowActiveRenewal(); ok {
+		_spec.SetField(paymentorder.FieldSubscriptionAllowActiveRenewal, field.TypeBool, value)
+	}
 	if value, ok := _u.mutation.ProviderInstanceID(); ok {
 		_spec.SetField(paymentorder.FieldProviderInstanceID, field.TypeString, value)
 	}
@@ -1425,6 +1540,94 @@ func (_u *PaymentOrderUpdateOne) AddSubscriptionDays(v int) *PaymentOrderUpdateO
 // ClearSubscriptionDays clears the value of the "subscription_days" field.
 func (_u *PaymentOrderUpdateOne) ClearSubscriptionDays() *PaymentOrderUpdateOne {
 	_u.mutation.ClearSubscriptionDays()
+	return _u
+}
+
+// SetSubscriptionID sets the "subscription_id" field.
+func (_u *PaymentOrderUpdateOne) SetSubscriptionID(v int64) *PaymentOrderUpdateOne {
+	_u.mutation.ResetSubscriptionID()
+	_u.mutation.SetSubscriptionID(v)
+	return _u
+}
+
+// SetNillableSubscriptionID sets the "subscription_id" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableSubscriptionID(v *int64) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetSubscriptionID(*v)
+	}
+	return _u
+}
+
+// AddSubscriptionID adds value to the "subscription_id" field.
+func (_u *PaymentOrderUpdateOne) AddSubscriptionID(v int64) *PaymentOrderUpdateOne {
+	_u.mutation.AddSubscriptionID(v)
+	return _u
+}
+
+// ClearSubscriptionID clears the value of the "subscription_id" field.
+func (_u *PaymentOrderUpdateOne) ClearSubscriptionID() *PaymentOrderUpdateOne {
+	_u.mutation.ClearSubscriptionID()
+	return _u
+}
+
+// SetSubscriptionCycleStart sets the "subscription_cycle_start" field.
+func (_u *PaymentOrderUpdateOne) SetSubscriptionCycleStart(v time.Time) *PaymentOrderUpdateOne {
+	_u.mutation.SetSubscriptionCycleStart(v)
+	return _u
+}
+
+// SetNillableSubscriptionCycleStart sets the "subscription_cycle_start" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableSubscriptionCycleStart(v *time.Time) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetSubscriptionCycleStart(*v)
+	}
+	return _u
+}
+
+// ClearSubscriptionCycleStart clears the value of the "subscription_cycle_start" field.
+func (_u *PaymentOrderUpdateOne) ClearSubscriptionCycleStart() *PaymentOrderUpdateOne {
+	_u.mutation.ClearSubscriptionCycleStart()
+	return _u
+}
+
+// SetQuotaUsd sets the "quota_usd" field.
+func (_u *PaymentOrderUpdateOne) SetQuotaUsd(v float64) *PaymentOrderUpdateOne {
+	_u.mutation.ResetQuotaUsd()
+	_u.mutation.SetQuotaUsd(v)
+	return _u
+}
+
+// SetNillableQuotaUsd sets the "quota_usd" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableQuotaUsd(v *float64) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetQuotaUsd(*v)
+	}
+	return _u
+}
+
+// AddQuotaUsd adds value to the "quota_usd" field.
+func (_u *PaymentOrderUpdateOne) AddQuotaUsd(v float64) *PaymentOrderUpdateOne {
+	_u.mutation.AddQuotaUsd(v)
+	return _u
+}
+
+// ClearQuotaUsd clears the value of the "quota_usd" field.
+func (_u *PaymentOrderUpdateOne) ClearQuotaUsd() *PaymentOrderUpdateOne {
+	_u.mutation.ClearQuotaUsd()
+	return _u
+}
+
+// SetSubscriptionAllowActiveRenewal sets the "subscription_allow_active_renewal" field.
+func (_u *PaymentOrderUpdateOne) SetSubscriptionAllowActiveRenewal(v bool) *PaymentOrderUpdateOne {
+	_u.mutation.SetSubscriptionAllowActiveRenewal(v)
+	return _u
+}
+
+// SetNillableSubscriptionAllowActiveRenewal sets the "subscription_allow_active_renewal" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableSubscriptionAllowActiveRenewal(v *bool) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetSubscriptionAllowActiveRenewal(*v)
+	}
 	return _u
 }
 
@@ -2033,6 +2236,33 @@ func (_u *PaymentOrderUpdateOne) sqlSave(ctx context.Context) (_node *PaymentOrd
 	}
 	if _u.mutation.SubscriptionDaysCleared() {
 		_spec.ClearField(paymentorder.FieldSubscriptionDays, field.TypeInt)
+	}
+	if value, ok := _u.mutation.SubscriptionID(); ok {
+		_spec.SetField(paymentorder.FieldSubscriptionID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedSubscriptionID(); ok {
+		_spec.AddField(paymentorder.FieldSubscriptionID, field.TypeInt64, value)
+	}
+	if _u.mutation.SubscriptionIDCleared() {
+		_spec.ClearField(paymentorder.FieldSubscriptionID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.SubscriptionCycleStart(); ok {
+		_spec.SetField(paymentorder.FieldSubscriptionCycleStart, field.TypeTime, value)
+	}
+	if _u.mutation.SubscriptionCycleStartCleared() {
+		_spec.ClearField(paymentorder.FieldSubscriptionCycleStart, field.TypeTime)
+	}
+	if value, ok := _u.mutation.QuotaUsd(); ok {
+		_spec.SetField(paymentorder.FieldQuotaUsd, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedQuotaUsd(); ok {
+		_spec.AddField(paymentorder.FieldQuotaUsd, field.TypeFloat64, value)
+	}
+	if _u.mutation.QuotaUsdCleared() {
+		_spec.ClearField(paymentorder.FieldQuotaUsd, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.SubscriptionAllowActiveRenewal(); ok {
+		_spec.SetField(paymentorder.FieldSubscriptionAllowActiveRenewal, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.ProviderInstanceID(); ok {
 		_spec.SetField(paymentorder.FieldProviderInstanceID, field.TypeString, value)

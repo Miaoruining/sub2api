@@ -87,6 +87,18 @@ func (PaymentOrder) Fields() []ent.Field {
 		field.Int("subscription_days").
 			Optional().
 			Nillable(),
+		field.Int64("subscription_id").
+			Optional().
+			Nillable(),
+		field.Time("subscription_cycle_start").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
+		field.Float("quota_usd").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20, 8)"}).
+			Optional().
+			Nillable(),
+		field.Bool("subscription_allow_active_renewal").Default(true),
 		field.String("provider_instance_id").
 			Optional().
 			Nillable().

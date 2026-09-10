@@ -31,6 +31,15 @@ func (SubscriptionPlan) Annotations() []schema.Annotation {
 func (SubscriptionPlan) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("group_id"),
+		field.String("plan_kind").
+			MaxLen(20).
+			Default("base"),
+		field.Float("quota_usd").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20, 8)"}).
+			Optional().
+			Nillable(),
+		field.Bool("allow_active_renewal").
+			Default(false),
 		field.String("name").
 			MaxLen(100).
 			NotEmpty(),

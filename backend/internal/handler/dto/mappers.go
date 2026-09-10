@@ -897,6 +897,8 @@ func userSubscriptionFromServiceBase(sub *service.UserSubscription) UserSubscrip
 		DailyUsageUSD:      sub.DailyUsageUSD,
 		WeeklyUsageUSD:     sub.WeeklyUsageUSD,
 		MonthlyUsageUSD:    sub.MonthlyUsageUSD,
+		TopupGrantedUSD:    sub.TopupGrantedUSD,
+		TopupUsedUSD:       sub.TopupUsedUSD,
 		CreatedAt:          sub.CreatedAt,
 		UpdatedAt:          sub.UpdatedAt,
 		RevokedAt:          sub.DeletedAt,
