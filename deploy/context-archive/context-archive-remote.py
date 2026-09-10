@@ -185,7 +185,8 @@ SELECT json_build_object(
       || COALESCE(r.message_count::text, '') || COALESCE(r.created_at::text, '')
   )), 0)
 )::text
-FROM high h LEFT JOIN rows_in_range r ON TRUE;
+FROM high h LEFT JOIN rows_in_range r ON TRUE
+GROUP BY h.to_id;
 COMMIT;
 """.format(from_id=from_id)
     return psql(sql)
