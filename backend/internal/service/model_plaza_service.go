@@ -97,6 +97,7 @@ func NewModelPlazaService(
 //   - token 模型的单价与阶梯按实收口径合成（见 ResolveContextPricingSchedule），
 //     图片计费模型的档位价按实收口径合成（见 plazaImageDisplayPricing）；
 //   - 每个模型附带官方参考价（查不到为 nil）；
+//   - 分组启用模型白名单时，先按该分组的准入匹配规则过滤模型，再组装展示定价；
 //   - 只返回 Models 非空的分组；分组按 SortOrder 升序（同序号按 ID），
 //     组内模型按名称排序。
 //
@@ -173,6 +174,9 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 						continue
 					}
 				} else if m.Platform != pg.Platform {
+					continue
+				}
+				if group := groupEnt[gid]; group != nil && group.ModelAllowlist.Enabled && !group.ModelAllowlist.Allows(m.Name) {
 					continue
 				}
 				key := modelKey{platform: m.Platform, name: m.Name}
