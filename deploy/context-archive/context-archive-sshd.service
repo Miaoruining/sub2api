@@ -1,0 +1,14 @@
+[Unit]
+Description=ModelPort context archive restricted SSH endpoint
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/sshd -D -f /etc/ssh/sshd_config_context_archive
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

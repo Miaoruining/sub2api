@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+# Fixed PostgreSQL transport for the root-owned forced-command helper.
+# It accepts SQL only on stdin and exposes no caller-controlled arguments.
+[ "$#" -eq 0 ] || exit 64
+
+exec /usr/bin/docker exec -i \
+  -e PGAPPNAME=context-archive \
+  -e PGCLIENTENCODING=UTF8 \
+  sub2api-postgres \
+  psql -X -qAt -v ON_ERROR_STOP=1 --no-password -U sub2api -d sub2api

@@ -67,6 +67,7 @@ const DefaultModelsListReadMaxBytes int64 = 8 * 1024 * 1024
 
 type Config struct {
 	Server                  ServerConfig                  `mapstructure:"server"`
+	PromptArchive           PromptArchiveConfig           `mapstructure:"prompt_archive"`
 	Log                     LogConfig                     `mapstructure:"log"`
 	CORS                    CORSConfig                    `mapstructure:"cors"`
 	Security                SecurityConfig                `mapstructure:"security"`
@@ -104,6 +105,14 @@ type Config struct {
 	BatchImage              BatchImageConfig              `mapstructure:"batch_image"`
 	ImageStorage            ImageStorageConfig            `mapstructure:"image_storage"`
 	Plugins                 PluginConfig                  `mapstructure:"plugins"`
+}
+
+// PromptArchiveConfig controls the opt-in request prompt archive. It is kept
+// in the server configuration because archival is intentionally independent of
+// the administrator-managed Prompt Guard policy and never calls an external
+// moderation model.
+type PromptArchiveConfig struct {
+	Enabled bool `mapstructure:"enabled"`
 }
 
 // PluginConfig 控制管理员手动上传的本地进程插件。
@@ -1999,6 +2008,10 @@ func setDefaults() {
 	viper.SetDefault("server.max_header_bytes", 64*1024)
 	viper.SetDefault("server.idle_timeout", 120) // 120秒空闲超时
 	viper.SetDefault("server.max_request_body_size", int64(256*1024*1024))
+	// Prompt archival is an explicit server-side opt-in and is disabled by
+	// default. Registering the key keeps PROMPT_ARCHIVE_ENABLED reachable when
+	// a deployment has no config file.
+	viper.SetDefault("prompt_archive.enabled", false)
 	// H2C 默认配置
 	viper.SetDefault("server.h2c.enabled", false)
 	viper.SetDefault("server.h2c.max_concurrent_streams", uint32(50))      // 50 个并发流

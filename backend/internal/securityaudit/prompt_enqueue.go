@@ -2,7 +2,9 @@ package securityaudit
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 )
 
 type Enqueuer struct {
@@ -90,6 +92,73 @@ func (e *Enqueuer) Enqueue(ctx context.Context, req Request) error {
 		e.metrics.IncEnqueued()
 	}
 	return nil
+}
+
+// Archive persists one request's textual context without entering the Prompt
+// Guard queue. It is called only by PromptService's optional ArchiveRequest
+// hook.
+func (e *Enqueuer) Archive(ctx context.Context, req Request) error {
+	if e == nil || e.repo == nil {
+		return errors.New("prompt archive enqueuer unavailable")
+	}
+	archiveRepo, ok := e.repo.(ArchiveRepository)
+	if !ok {
+		return errors.New("prompt archive repository unavailable")
+	}
+	if isPromptArchiveHealthCheck(req.Body) {
+		LogInfo(EventEnqueueSkipped, mergeLogFields(archiveLogFields(req), map[string]any{
+			"status": "skipped", "error_code": "health_check",
+		}))
+		return nil
+	}
+	archive, err := ExtractRequestContextArchive(req)
+	if errors.Is(err, ErrNoPromptText) {
+		LogInfo(EventEnqueueSkipped, mergeLogFields(archiveLogFields(req), map[string]any{
+			"status": "skipped", "error_code": "no_user_text",
+		}))
+		return nil
+	}
+	if err != nil {
+		LogWarn(EventEnqueueDropped, mergeLogFields(archiveLogFields(req), map[string]any{
+			"status": "dropped", "error_code": "archive_payload_invalid",
+		}))
+		return nil
+	}
+	if err := archiveRepo.RecordArchive(ctx, archive); err != nil {
+		LogWarn(EventEnqueueDropped, mergeLogFields(archiveLogFields(req), map[string]any{
+			"status": "dropped", "error_code": "archive_write_failed",
+		}))
+		return err
+	}
+	LogInfo(EventJobEnqueued, mergeLogFields(archiveLogFields(req), map[string]any{
+		"status": "archived", "message_count": archive.MessageCount,
+	}))
+	return nil
+}
+
+// archiveLogFields deliberately excludes user, API-key, group, endpoint, and
+// request-body data. Context archive logs are operational metadata only.
+func archiveLogFields(req Request) map[string]any {
+	return map[string]any{
+		"request_id": req.RequestID,
+		"protocol":   req.Protocol,
+		"model":      req.Model,
+		"stage":      normalizeStage(req.Stage),
+	}
+}
+
+// isPromptArchiveHealthCheck excludes the known Claude Code connectivity
+// probe (max_tokens=1 on a Haiku model). It should not create archive rows
+// merely because a client is checking availability.
+func isPromptArchiveHealthCheck(body []byte) bool {
+	var request struct {
+		Model     string `json:"model"`
+		MaxTokens int    `json:"max_tokens"`
+	}
+	if err := json.Unmarshal(body, &request); err != nil {
+		return false
+	}
+	return request.MaxTokens == 1 && strings.Contains(strings.ToLower(strings.TrimSpace(request.Model)), "haiku")
 }
 
 func (e *Enqueuer) recordDropped() {

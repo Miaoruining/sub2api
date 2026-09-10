@@ -1,0 +1,2 @@
+Defaults:contextarchive env_keep += "SSH_ORIGINAL_COMMAND"
+contextarchive ALL=(root) NOPASSWD: /usr/local/libexec/context-archive-remote

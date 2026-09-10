@@ -45,6 +45,23 @@ func TestDefaultConfigIsOff(t *testing.T) {
 	require.Contains(t, string(publicJSON), `"endpoints":[]`)
 }
 
+func TestArchiveServerConfigIsIndependentFromPromptGuardMode(t *testing.T) {
+	cfg := testTotpKeyConfig()
+	cfg.PromptArchive.Enabled = true
+	manager := NewConfigManager(nil, staticSettingRepository{values: map[string]string{
+		SettingKeyPromptAuditConfig: "",
+		SettingKeyRiskControl:       "false",
+	}}, nil, prefixEncryptor{}, cfg)
+
+	require.Equal(t, ModeOff, manager.EffectiveMode())
+	require.True(t, manager.ArchiveEnabled())
+	require.NoError(t, manager.Reload(context.Background()))
+	require.Equal(t, ModeOff, manager.EffectiveMode())
+	public, err := manager.Public()
+	require.NoError(t, err)
+	require.Equal(t, ModeOff, public.EffectiveMode)
+}
+
 func TestBlockingLatestTurnOnlyConfigRoundTrip(t *testing.T) {
 	manager := &ConfigManager{encryptor: prefixEncryptor{}, encryptionKeyConfigured: true}
 	request := UpdateConfigRequest{

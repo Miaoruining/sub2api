@@ -79,6 +79,15 @@ func TestLoadServerTimingConfig(t *testing.T) {
 	})
 }
 
+func TestLoadPromptArchiveFromEnvironment(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("PROMPT_ARCHIVE_ENABLED", "true")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.True(t, cfg.PromptArchive.Enabled)
+}
+
 func TestLoadRedisUsernameFromEnvironment(t *testing.T) {
 	resetViperWithJWTSecret(t)
 	t.Setenv("REDIS_USERNAME", "app-user")

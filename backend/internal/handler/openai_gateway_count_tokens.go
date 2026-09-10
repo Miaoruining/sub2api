@@ -158,6 +158,16 @@ func (h *OpenAIGatewayHandler) GrokCountTokens(c *gin.Context) {
 		h.anthropicErrorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
 		return
 	}
+	if apiKey, apiKeyOK := middleware2.GetAPIKeyFromContext(c); apiKeyOK {
+		if subject, subjectOK := middleware2.GetAuthSubjectFromContext(c); subjectOK {
+			reqLog := requestLogger(c, "handler.openai_gateway.grok_count_tokens",
+				zap.Int64("user_id", subject.UserID), zap.Int64("api_key_id", apiKey.ID), zap.Any("group_id", apiKey.GroupID))
+			if decision := h.checkSecurityAudit(c, reqLog, apiKey, subject, service.ContentModerationProtocolAnthropicMessages, parsedReq.Model, body); decision != nil && !decision.AllowNextStage {
+				h.anthropicSecurityAuditError(c, decision)
+				return
+			}
+		}
+	}
 
 	estimated, err := service.EstimateGrokCountTokens(parsedReq.Body.Bytes())
 	if err != nil {

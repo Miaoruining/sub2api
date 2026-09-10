@@ -1,0 +1,30 @@
+Port 22222
+ListenAddress 0.0.0.0
+ListenAddress ::
+
+HostKey /etc/ssh/ssh_host_ed25519_key
+HostKey /etc/ssh/ssh_host_ecdsa_key
+HostKey /etc/ssh/ssh_host_rsa_key
+
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitEmptyPasswords no
+PermitRootLogin no
+UsePAM yes
+StrictModes yes
+AuthorizedKeysFile .ssh/authorized_keys
+AllowUsers contextarchive
+
+AllowAgentForwarding no
+AllowTcpForwarding no
+GatewayPorts no
+X11Forwarding no
+PermitTTY no
+PermitUserEnvironment no
+PermitTunnel no
+MaxAuthTries 2
+LoginGraceTime 20
+ClientAliveInterval 30
+ClientAliveCountMax 2
+Subsystem sftp internal-sftp

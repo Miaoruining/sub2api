@@ -47,6 +47,7 @@ func (s *fakeConfigStore) EffectiveMode() Mode {
 	}
 	return s.cfg.EffectiveMode()
 }
+func (s *fakeConfigStore) ArchiveEnabled() bool             { return false }
 func (s *fakeConfigStore) BlockingActivationDegraded() bool { return false }
 func (s *fakeConfigStore) Public() (PublicConfig, error)    { return PublicConfig{}, nil }
 func (s *fakeConfigStore) Save(context.Context, UpdateConfigRequest, int64) (PublicConfig, error) {
@@ -89,6 +90,9 @@ type fakeJobRepository struct {
 	recordBlockingSnapshot PromptSnapshot
 	recordBlockingResult   *NormalizedResult
 	recordBlockingErr      error
+	recordArchiveCalls     int
+	recordArchive          RequestContextArchive
+	recordArchiveErr       error
 }
 
 func (r *fakeJobRepository) record(value string) {
@@ -177,6 +181,14 @@ func (r *fakeJobRepository) RecordBlocking(_ context.Context, snapshot PromptSna
 	r.recordBlockingCalls++
 	r.recordBlockingSnapshot, r.recordBlockingResult = snapshot, result
 	return nil, r.recordBlockingErr
+}
+
+func (r *fakeJobRepository) RecordArchive(_ context.Context, archive RequestContextArchive) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.recordArchiveCalls++
+	r.recordArchive = archive
+	return r.recordArchiveErr
 }
 
 type fakePayloadStore struct {

@@ -74,6 +74,28 @@ func TestCoordinatorModesAndPriority(t *testing.T) {
 	}
 }
 
+type archivePromptEngine struct {
+	fakePromptEngine
+	archiveCalls atomic.Int64
+}
+
+func (f *archivePromptEngine) Archive(context.Context, Request) error {
+	f.archiveCalls.Add(1)
+	return errors.New("archive unavailable")
+}
+
+func TestCoordinatorArchivesIndependentlyBeforeOriginalAuditMode(t *testing.T) {
+	legacy := &fakeLegacyEngine{}
+	prompt := &archivePromptEngine{fakePromptEngine: fakePromptEngine{mode: ModeOff}}
+
+	decision := NewCoordinator(legacy, prompt).Check(context.Background(), Request{Body: []byte(`{"messages":[{"role":"user","content":"request"}]}`)})
+
+	require.Equal(t, DecisionAllow, decision.Kind)
+	require.Equal(t, int64(1), prompt.archiveCalls.Load())
+	require.Equal(t, int64(1), legacy.calls.Load(), "archive hook must not alter the original off-mode legacy path")
+	require.Zero(t, prompt.enqueues.Load())
+}
+
 func TestCoordinatorDoesNotMutateRequestBody(t *testing.T) {
 	body := []byte(`{"messages":[{"role":"user","content":"hello"}]}`)
 	original := append([]byte(nil), body...)

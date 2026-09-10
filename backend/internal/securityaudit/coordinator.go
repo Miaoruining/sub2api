@@ -17,6 +17,14 @@ type PromptEngine interface {
 	Evaluate(ctx context.Context, req Request) (*PromptDecision, error)
 }
 
+// ArchiveRequest is an optional, orthogonal request archive hook. Prompt
+// engines that do not support archival keep the historical audit behavior.
+// Implementations must be best-effort and return promptly; the coordinator
+// ignores the error so archival can never affect gateway behavior.
+type ArchiveRequest interface {
+	Archive(ctx context.Context, req Request) error
+}
+
 type Coordinator struct {
 	legacy LegacyEngine
 	prompt PromptEngine
@@ -32,6 +40,9 @@ func (c *Coordinator) Check(ctx context.Context, req Request) Decision {
 	}
 	mode := ModeOff
 	if c.prompt != nil {
+		if archiver, ok := c.prompt.(ArchiveRequest); ok {
+			_ = archiver.Archive(ctx, req.Clone())
+		}
 		mode = c.prompt.EffectiveMode()
 	}
 	switch mode {

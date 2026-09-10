@@ -43,7 +43,7 @@ func openPromptAuditIntegrationDB(t *testing.T) *sql.DB {
 		);
 	`)
 	require.NoError(t, err)
-	for _, name := range []string{"181_prompt_audit.sql", "182_prompt_audit_full_prompt.sql"} {
+	for _, name := range []string{"181_prompt_audit.sql", "182_prompt_audit_full_prompt.sql", "245_prompt_archive_only.sql"} {
 		migration, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
 		require.NoError(t, err)
 		// The migration runner can retry an interrupted deployment; the migration
@@ -60,7 +60,7 @@ func openPromptAuditIntegrationDB(t *testing.T) *sql.DB {
 
 func resetPromptAuditIntegrationDB(t *testing.T, db *sql.DB) {
 	t.Helper()
-	_, err := db.Exec(`TRUNCATE TABLE prompt_audit_events, prompt_audit_jobs, api_keys, users, groups, settings RESTART IDENTITY CASCADE`)
+	_, err := db.Exec(`TRUNCATE TABLE request_context_archives, prompt_audit_events, prompt_audit_jobs, api_keys, users, groups, settings RESTART IDENTITY CASCADE`)
 	require.NoError(t, err)
 }
 
@@ -196,6 +196,41 @@ func TestPromptAuditDatabasePersistsFullPromptOnEventsOnly(t *testing.T) {
 	require.Equal(t, stableErrorMessage(code), message)
 	require.NotContains(t, message, errorCanary)
 	require.LessOrEqual(t, len([]rune(message)), 160)
+}
+
+func TestRequestContextArchiveUsesIndependentTableAndIdempotency(t *testing.T) {
+	db := openPromptAuditIntegrationDB(t)
+	repo := NewPostgreSQLRepository(db)
+	ctx := context.Background()
+	const currentPrompt = "ARCHIVE_CURRENT_REQUEST_CANARY"
+	const historicalPrompt = "ARCHIVE_HISTORICAL_MESSAGE_CANARY"
+	archive, err := ExtractRequestContextArchive(Request{
+		RequestID: "archive-request", Protocol: "openai_chat_completions", Model: "gpt-test",
+		Stage: "http", Body: []byte(`{"messages":[{"role":"user","content":"` + currentPrompt + `"},{"role":"assistant","content":"` + historicalPrompt + `"}]}`),
+	})
+	require.NoError(t, err)
+	require.NoError(t, repo.RecordArchive(ctx, archive))
+	require.NoError(t, repo.RecordArchive(ctx, archive), "retry must be idempotent")
+
+	var storedPayload string
+	var storedHash string
+	var storedMessageCount int
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT context_payload::text,content_hash,message_count FROM request_context_archives WHERE request_id=$1`, archive.RequestID).Scan(&storedPayload, &storedHash, &storedMessageCount))
+	require.Contains(t, storedPayload, currentPrompt)
+	require.Contains(t, storedPayload, historicalPrompt)
+	require.Equal(t, archive.ContentHash, storedHash)
+	require.Equal(t, archive.MessageCount, storedMessageCount)
+
+	var count int
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM request_context_archives WHERE request_id=$1`, archive.RequestID).Scan(&count))
+	require.Equal(t, 1, count)
+	var auditRows int
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT COUNT(*) FROM prompt_audit_jobs WHERE request_id=$1`, archive.RequestID).Scan(&auditRows))
+	require.Zero(t, auditRows, "context archival must not create Prompt Audit jobs")
+
+	// The archive payload is the ordered message array only; no model response
+	// or request options are introduced by the storage representation.
+	require.JSONEq(t, `[{"role":"user","content":"`+currentPrompt+`"},{"role":"assistant","content":"`+historicalPrompt+`"}]`, storedPayload)
 }
 
 func TestPromptAuditRepositoryAdmissionClaimFencingAndEventTransaction(t *testing.T) {

@@ -23,13 +23,15 @@ type PromptService struct {
 	metrics   *AtomicMetrics
 	clock     Clock
 
-	lifecycleMu  sync.Mutex
-	cancel       context.CancelFunc
-	background   context.Context
-	enqueueWG    sync.WaitGroup
-	enqueueSlots chan struct{}
-	probeMu      sync.RWMutex
-	probes       map[string]ProbeResult
+	lifecycleMu    sync.Mutex
+	cancel         context.CancelFunc
+	background     context.Context
+	enqueueWG      sync.WaitGroup
+	enqueueSlots   chan struct{}
+	archiveSlots   chan struct{}
+	archiveEnabled bool
+	probeMu        sync.RWMutex
+	probes         map[string]ProbeResult
 }
 
 func NewPromptService(
@@ -42,10 +44,15 @@ func NewPromptService(
 	enqueuer := NewEnqueuer(config, repo, payload, metrics)
 	evaluator := NewGuardEvaluator(scanner, repo, metrics)
 	runner := NewRunner(config, repo, payload, scanner, metrics)
+	archiveEnabled := false
+	if archiveConfig, ok := config.(interface{ ArchiveEnabled() bool }); ok {
+		archiveEnabled = archiveConfig.ArchiveEnabled()
+	}
 	return &PromptService{
 		config: config, repo: repo, payload: payload, scanner: scanner, metrics: metrics,
 		enqueuer: enqueuer, evaluator: evaluator, runner: runner, clock: realClock{},
-		enqueueSlots: make(chan struct{}, 128), probes: map[string]ProbeResult{},
+		enqueueSlots: make(chan struct{}, 128), archiveSlots: make(chan struct{}, 128),
+		archiveEnabled: archiveEnabled, probes: map[string]ProbeResult{},
 	}
 }
 
@@ -108,33 +115,57 @@ func (s *PromptService) EffectiveMode() Mode {
 }
 
 func (s *PromptService) Enqueue(_ context.Context, req Request) error {
-	if s == nil || s.enqueuer == nil || s.EffectiveMode() != ModeAsync {
+	if s == nil || s.enqueuer == nil {
 		return nil
 	}
+	if s.EffectiveMode() != ModeAsync {
+		return nil
+	}
+	return s.enqueueInBackground(req, s.enqueueSlots, true, s.enqueuer.Enqueue)
+}
+
+// Archive asynchronously stores a request snapshot when the independent
+// server-side archive switch is enabled. It intentionally does not inspect or
+// alter Prompt Guard's effective mode.
+func (s *PromptService) Archive(_ context.Context, req Request) error {
+	if s == nil || s.enqueuer == nil || !s.archiveEnabled {
+		return nil
+	}
+	return s.enqueueInBackground(req, s.archiveSlots, false, s.enqueuer.Archive)
+}
+
+func (s *PromptService) enqueueInBackground(
+	req Request,
+	slots chan struct{},
+	recordAuditDrop bool,
+	operation func(context.Context, Request) error,
+) error {
 	select {
-	case s.enqueueSlots <- struct{}{}:
+	case slots <- struct{}{}:
 	default:
-		if s.metrics != nil {
-			s.metrics.IncDropped()
+		if recordAuditDrop {
+			if s.metrics != nil {
+				s.metrics.IncDropped()
+			}
+			LogWarn(EventEnqueueDropped, map[string]any{"request_id": req.RequestID, "status": "dropped", "error_code": "local_enqueue_busy"})
 		}
-		LogWarn(EventEnqueueDropped, map[string]any{"request_id": req.RequestID, "status": "dropped", "error_code": "local_enqueue_busy"})
 		return nil
 	}
 	s.lifecycleMu.Lock()
 	background := s.background
 	s.lifecycleMu.Unlock()
 	if background == nil {
-		<-s.enqueueSlots
+		<-slots
 		return errors.New("prompt audit service not started")
 	}
 	requestCopy := req.Clone()
 	s.enqueueWG.Add(1)
 	go func() {
 		defer s.enqueueWG.Done()
-		defer func() { <-s.enqueueSlots }()
+		defer func() { <-slots }()
 		ctx, cancel := context.WithTimeout(background, 2*time.Second)
 		defer cancel()
-		_ = s.enqueuer.Enqueue(ctx, requestCopy)
+		_ = operation(ctx, requestCopy)
 	}()
 	return nil
 }

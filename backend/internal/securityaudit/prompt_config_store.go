@@ -30,6 +30,10 @@ type ConfigManager struct {
 	redis     *redis.Client
 	encryptor SecretEncryptor
 	clock     Clock
+	// archiveEnabled is a static server-side opt-in. Unlike Prompt Guard's
+	// administrator-managed settings it needs no endpoint, token, scanner or
+	// risk-control setting, and is intentionally independent of those settings.
+	archiveEnabled bool
 	// encryptionKeyConfigured mirrors cfg.Totp.EncryptionKeyConfigured. With an
 	// auto-generated (per-boot) key, newly saved endpoint tokens would become
 	// undecryptable after the next restart, so Save rejects them (issue #4887).
@@ -62,6 +66,7 @@ func NewConfigManager(db *sql.DB, settings service.SettingRepository, redisClien
 	return &ConfigManager{
 		db: db, settings: settings, redis: redisClient, encryptor: encryptor, clock: realClock{},
 		encryptionKeyConfigured: cfg != nil && cfg.Totp.EncryptionKeyConfigured,
+		archiveEnabled:          cfg != nil && cfg.PromptArchive.Enabled,
 	}
 }
 
@@ -228,6 +233,14 @@ func (m *ConfigManager) EffectiveMode() Mode {
 		return ModeOff
 	}
 	return active.EffectiveMode()
+}
+
+// ArchiveEnabled reports the independent static server-side prompt archive
+// switch. It deliberately does not participate in EffectiveMode: enabling the
+// archive must never change, bypass, or disable an existing Prompt Guard or
+// legacy moderation policy.
+func (m *ConfigManager) ArchiveEnabled() bool {
+	return m != nil && m.archiveEnabled
 }
 
 func (m *ConfigManager) markConfigUntrusted() {
