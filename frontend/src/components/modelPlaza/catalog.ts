@@ -53,12 +53,30 @@ export function catalogAutoRoutes(entry: CatalogModel): ModelRoute[] {
   return entry.routes.filter(route => route.model.auto_route_order != null)
 }
 
+/** 模型级来源倍率；入口组只作为旧模型及字段缺失时的兼容回退。 */
+export function routeRate(route: ModelRoute, mode?: string): number {
+  const { group, model } = route
+  const hasSource = model.source_group_id != null
+  const baseRate = hasSource ? (model.rate_multiplier ?? group.rate_multiplier) : group.rate_multiplier
+  const userRate = hasSource ? model.user_rate_multiplier : group.user_rate_multiplier
+  if ((mode ?? model.pricing?.billing_mode) === 'image') {
+    const independent = hasSource ? model.image_rate_independent : group.image_rate_independent
+    if (independent) return hasSource ? (model.image_rate_multiplier ?? 1) : group.image_rate_multiplier
+  }
+  return userRate ?? baseRate
+}
+
+export function routeRatesForGroup(group: ModelPlazaGroup): number[] {
+  const rates = group.models.map(model => routeRate({ group, model }))
+  return [...new Set(rates.filter(rate => Number.isFinite(rate) && rate >= 0))].sort((a, b) => a - b)
+}
+
 export function catalogPrices(entry: CatalogModel, field: 'input_price' | 'output_price' | 'cache_read_price' | 'per_request_price'): number[] {
-  return entry.routes.flatMap(({ group, model }) => {
+  return entry.routes.flatMap(route => {
+    const { model } = route
     const price = model.pricing?.[field]
     if (price == null || !Number.isFinite(price) || price < 0) return []
-    const rate = entry.mode === 'image' && group.image_rate_independent
-      ? group.image_rate_multiplier : group.user_rate_multiplier ?? group.rate_multiplier
+    const rate = routeRate(route, entry.mode)
     if (!Number.isFinite(rate) || rate < 0) return []
     return [price * rate * (field === 'per_request_price' ? 1 : 1_000_000)]
   })

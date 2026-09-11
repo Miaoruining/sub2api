@@ -59,6 +59,18 @@ export interface PlazaModel {
   time_pricing?: PlazaTimePricing
   /** 当前用户默认智能策略的候选顺序快照；实际请求按密钥策略重新评估。 */
   auto_route_order?: number
+  /** Composite alias 的来源分组计价上下文；旧后端模型缺失时沿用外层分组。 */
+  source_group_id?: number
+  source_group_name?: string
+  rate_multiplier?: number
+  user_rate_multiplier?: number
+  image_rate_independent?: boolean
+  image_rate_multiplier?: number
+  peak_rate_enabled?: boolean
+  peak_start?: string
+  peak_end?: string
+  peak_rate_multiplier?: number
+  long_context_pricing_enabled?: boolean
 }
 
 export interface ModelPlazaGroup {

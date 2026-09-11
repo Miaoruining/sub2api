@@ -102,6 +102,16 @@ describe('PlazaModelPricingTable', () => {
     expect(text).toContain('0.8x')
   })
 
+  it('Composite 模型使用来源组倍率,不误用入口组倍率', () => {
+    const wrapper = mountTable([
+      tokenModel({ source_group_id: 23, source_group_name: 'source-023', rate_multiplier: 0.16, user_rate_multiplier: 0.23 })
+    ], 1)
+    const text = wrapper.text()
+    expect(text).toContain('$0.69')
+    expect(text).toContain('0.23x')
+    expect(wrapper.find('td .line-through').text()).toBe('0.16x')
+  })
+
   it('模型按官方输出价从高到低排序,无官方价的排最后', () => {
     const expensive = tokenModel({
       name: 'model-expensive',

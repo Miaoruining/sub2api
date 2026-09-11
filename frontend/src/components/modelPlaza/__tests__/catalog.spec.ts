@@ -33,6 +33,30 @@ describe('model catalog', () => {
     expect(catalog).toHaveLength(3)
     expect(catalogPrices(catalog.find(m => m.mode === 'image')!, 'per_request_price')).toEqual([0.04])
   })
+  it('uses source-group rates per composite alias without replacing the entry route group', () => {
+    const alias = model({
+      source_group_id: 23,
+      source_group_name: 'source-023',
+      rate_multiplier: 0.16,
+      user_rate_multiplier: 0.23
+    })
+    const entryGroup = group(99, { rate_multiplier: 1, models: [alias] })
+    const catalog = buildModelCatalog([entryGroup])
+    expect(catalog[0]!.routes[0]!.group.id).toBe(99)
+    expect(catalogPrices(catalog[0]!, 'input_price')[0]).toBeCloseTo(0.46, 8)
+  })
+  it('uses source image multiplier for image aliases', () => {
+    const alias = model({
+      name: 'image-alias',
+      source_group_id: 11,
+      rate_multiplier: 0.16,
+      image_rate_independent: true,
+      image_rate_multiplier: 0.5,
+      pricing: { billing_mode: 'image', input_price: null, output_price: null, cache_read_price: null, cache_write_price: null, image_input_price: null, image_output_price: null, per_request_price: 0.12, intervals: [] }
+    })
+    const entry = buildModelCatalog([group(99, { rate_multiplier: 1, image_rate_independent: true, image_rate_multiplier: 2, models: [alias] })])[0]!
+    expect(catalogPrices(entry, 'per_request_price')).toEqual([0.06])
+  })
   it('never substitutes official prices or zero for missing customer prices', () => {
     const catalog = buildModelCatalog([group(1, { models: [model({ pricing: null, official_pricing: { input_price: 0.01, output_price: 0.02, cache_read_price: null, cache_write_price: null } })] })])
     expect(catalogPrices(catalog[0], 'input_price')).toEqual([])

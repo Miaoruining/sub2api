@@ -309,11 +309,11 @@
             <div class="space-y-0.5">
               <div>
                 <span v-if="usesIndependentImageRate(m)" class="font-bold text-gray-700 dark:text-gray-300">{{ requestRate(m) }}x</span>
-                <template v-else-if="hasCustomRate">
-                  <span class="mr-1 text-gray-400 line-through dark:text-dark-500">{{ rateMultiplier }}x</span>
-                  <span class="font-bold text-primary-600 dark:text-primary-400">{{ effectiveRate }}x</span>
+                <template v-else-if="modelHasCustomRate(m)">
+                  <span class="mr-1 text-gray-400 line-through dark:text-dark-500">{{ modelBaseRate(m) }}x</span>
+                  <span class="font-bold text-primary-600 dark:text-primary-400">{{ modelEffectiveRate(m) }}x</span>
                 </template>
-                <span v-else class="font-bold text-gray-700 dark:text-gray-300">{{ effectiveRate }}x</span>
+                <span v-else class="font-bold text-gray-700 dark:text-gray-300">{{ modelEffectiveRate(m) }}x</span>
               </div>
               <div
                 v-for="variant in timePricingVariants(m)"
@@ -343,6 +343,7 @@ import {
 } from '@/constants/channel'
 import type { PlazaModel, PlazaTimePricingPeriod } from '@/api/modelPlaza'
 import type { UserPricingInterval } from '@/api/channels'
+import { formatPeakRateWindow, hasPeakRate, serverTimezoneLabel } from '@/utils/peak-rate'
 
 const props = defineProps<{
   models: PlazaModel[]
@@ -362,6 +363,7 @@ const props = defineProps<{
    */
   peakWindow?: string
   peakRateMultiplier?: number | null
+  serverTimezoneOffset?: string | null
 }>()
 
 const { t } = useI18n()
@@ -392,9 +394,6 @@ const sortedModels = computed(() => {
 })
 
 const effectiveRate = computed(() => props.userRateMultiplier ?? props.rateMultiplier)
-const hasCustomRate = computed(
-  () => props.userRateMultiplier != null && props.userRateMultiplier !== props.rateMultiplier
-)
 
 function billingMode(m: PlazaModel): BillingMode {
   return (m.pricing?.billing_mode || BILLING_MODE_TOKEN) as BillingMode
@@ -515,12 +514,30 @@ function requestPriceLines(m: PlazaModel, value: number | null | undefined): Pri
 
 /** 图片计费模型且分组开启生图独立倍率:实付倍率取独立倍率,与计费口径一致。 */
 function usesIndependentImageRate(m: PlazaModel): boolean {
-  return billingMode(m) === BILLING_MODE_IMAGE && props.imageRateIndependent === true
+  const independent = m.source_group_id != null ? m.image_rate_independent : props.imageRateIndependent
+  return billingMode(m) === BILLING_MODE_IMAGE && independent === true
 }
 
 /** 按次/按图片行的生效倍率。 */
 function requestRate(m: PlazaModel): number {
-  return usesIndependentImageRate(m) ? (props.imageRateMultiplier ?? 1) : effectiveRate.value
+  if (usesIndependentImageRate(m)) {
+    return m.source_group_id != null ? (m.image_rate_multiplier ?? 1) : (props.imageRateMultiplier ?? 1)
+  }
+  return modelEffectiveRate(m)
+}
+
+function modelBaseRate(m: PlazaModel): number {
+  return m.source_group_id != null ? (m.rate_multiplier ?? props.rateMultiplier) : props.rateMultiplier
+}
+
+function modelEffectiveRate(m: PlazaModel): number {
+  return m.source_group_id != null
+    ? (m.user_rate_multiplier ?? modelBaseRate(m))
+    : effectiveRate.value
+}
+
+function modelHasCustomRate(m: PlazaModel): boolean {
+  return modelEffectiveRate(m) !== modelBaseRate(m)
 }
 
 /** 按次 / 按图片单价(乘该行生效倍率,不换算 1M)。 */
@@ -565,13 +582,27 @@ function timePricingRowHint(m: PlazaModel): string {
     ? 'modelPlaza.table.timePricingRowHintWeekdays'
     : 'modelPlaza.table.timePricingRowHint'
   let hint = t(key, { timezone: m.time_pricing?.timezone })
-  if (props.peakWindow) {
+  const peakWindow = modelPeakWindow(m)
+  if (peakWindow) {
     hint += t('modelPlaza.table.timePricingRowHintPeak', {
-      window: props.peakWindow,
-      multiplier: props.peakRateMultiplier ?? 1
+      window: peakWindow,
+      multiplier: m.source_group_id != null ? (m.peak_rate_multiplier ?? 1) : (props.peakRateMultiplier ?? 1)
     })
   }
   return hint
+}
+
+function modelPeakWindow(m: PlazaModel): string {
+  if (m.source_group_id == null) return props.peakWindow ?? ''
+  const peak = {
+    peak_rate_enabled: m.peak_rate_enabled === true,
+    peak_start: m.peak_start ?? '',
+    peak_end: m.peak_end ?? '',
+    peak_rate_multiplier: m.peak_rate_multiplier ?? 1
+  }
+  return hasPeakRate(peak)
+    ? formatPeakRateWindow(peak, serverTimezoneLabel(props.serverTimezoneOffset))
+    : ''
 }
 
 /** “00:30–08:30”;整分钟的 HH:mm:ss 省略秒。 */

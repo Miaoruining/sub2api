@@ -154,6 +154,39 @@ func TestToModelPlazaGroupDTO_UserRateAndFieldWhitelist(t *testing.T) {
 	require.False(t, hasAutoRoute, "非自动路由候选不输出 auto_route_order")
 }
 
+func TestToModelPlazaGroupDTO_SourceModelPricingContext(t *testing.T) {
+	source := &service.Group{
+		ID: 23, Name: "source-023", RateMultiplier: 0.16,
+		ImageRateIndependent: true, ImageRateMultiplier: 0.75,
+		PeakRateEnabled: true, PeakStart: "14:00", PeakEnd: "18:00", PeakRateMultiplier: 1.5,
+		LongContextPricingEnabled: true,
+	}
+	g := service.PlazaGroup{
+		ID: 99, Name: "composite", Platform: "openai", RateMultiplier: 1,
+		Models: []service.PlazaModel{{Name: "gpt-alias", Platform: "openai", SourceGroup: source}},
+	}
+
+	dto := toModelPlazaGroupDTO(&g, map[int64]float64{23: 0.23, 99: 0.99}, nil)
+	raw, err := json.Marshal(dto)
+	require.NoError(t, err)
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(raw, &decoded))
+	model := decoded["models"].([]any)[0].(map[string]any)
+	require.Equal(t, float64(23), model["source_group_id"])
+	require.Equal(t, "source-023", model["source_group_name"])
+	require.InDelta(t, 0.16, model["rate_multiplier"], 1e-9)
+	require.InDelta(t, 0.23, model["user_rate_multiplier"], 1e-9)
+	require.Equal(t, true, model["image_rate_independent"])
+	require.InDelta(t, 0.75, model["image_rate_multiplier"], 1e-9)
+	require.Equal(t, true, model["peak_rate_enabled"])
+	require.Equal(t, "14:00", model["peak_start"])
+	require.Equal(t, "18:00", model["peak_end"])
+	require.InDelta(t, 1.5, model["peak_rate_multiplier"], 1e-9)
+	require.Equal(t, true, model["long_context_pricing_enabled"])
+	_, hasEntryRate := model["source_group_id"].(float64)
+	require.True(t, hasEntryRate)
+}
+
 func TestToModelPlazaOfficialPricing_NilPassthrough(t *testing.T) {
 	require.Nil(t, toModelPlazaOfficialPricing(nil))
 }

@@ -78,6 +78,18 @@ type modelPlazaModel struct {
 	LongContextBasis string `json:"long_context_basis,omitempty"`
 	// TimePricing 分时倍率时段，落在时段内的请求整单乘倍率；无分时省略。
 	TimePricing *modelPlazaTimePricing `json:"time_pricing,omitempty"`
+	// Composite alias 的来源组计价上下文，保留外层组作为路由身份。
+	SourceGroupID             *int64   `json:"source_group_id,omitempty"`
+	SourceGroupName           string   `json:"source_group_name,omitempty"`
+	RateMultiplier            *float64 `json:"rate_multiplier,omitempty"`
+	UserRateMultiplier        *float64 `json:"user_rate_multiplier,omitempty"`
+	ImageRateIndependent      *bool    `json:"image_rate_independent,omitempty"`
+	ImageRateMultiplier       *float64 `json:"image_rate_multiplier,omitempty"`
+	PeakRateEnabled           *bool    `json:"peak_rate_enabled,omitempty"`
+	PeakStart                 string   `json:"peak_start,omitempty"`
+	PeakEnd                   string   `json:"peak_end,omitempty"`
+	PeakRateMultiplier        *float64 `json:"peak_rate_multiplier,omitempty"`
+	LongContextPricingEnabled *bool    `json:"long_context_pricing_enabled,omitempty"`
 }
 
 // modelPlazaGroup 广场分组条目（白名单字段）。
@@ -273,6 +285,9 @@ func toModelPlazaGroupDTO(g *service.PlazaGroup, userRates map[int64]float64, au
 			orderCopy := order
 			model.AutoRouteOrder = &orderCopy
 		}
+		if m.SourceGroup != nil {
+			applyModelSourceGroupContext(&model, m.SourceGroup, userRates)
+		}
 		models = append(models, model)
 	}
 	dto := modelPlazaGroup{
@@ -297,6 +312,29 @@ func toModelPlazaGroupDTO(g *service.PlazaGroup, userRates map[int64]float64, au
 		dto.UserRateMultiplier = &rate
 	}
 	return dto
+}
+
+func applyModelSourceGroupContext(model *modelPlazaModel, source *service.Group, userRates map[int64]float64) {
+	groupID := source.ID
+	rate := source.RateMultiplier
+	imageIndependent := source.ImageRateIndependent
+	imageRate := source.ImageRateMultiplier
+	peakEnabled := source.PeakRateEnabled
+	peakRate := source.PeakRateMultiplier
+	longContext := source.LongContextPricingEnabled
+	model.SourceGroupID = &groupID
+	model.SourceGroupName = source.Name
+	model.RateMultiplier = &rate
+	model.ImageRateIndependent = &imageIndependent
+	model.ImageRateMultiplier = &imageRate
+	model.PeakRateEnabled = &peakEnabled
+	model.PeakStart = source.PeakStart
+	model.PeakEnd = source.PeakEnd
+	model.PeakRateMultiplier = &peakRate
+	model.LongContextPricingEnabled = &longContext
+	if userRate, ok := userRates[source.ID]; ok {
+		model.UserRateMultiplier = &userRate
+	}
 }
 
 // toModelPlazaTimePricing 转换分时倍率；nil 透传（JSON 省略）。

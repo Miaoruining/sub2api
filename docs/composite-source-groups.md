@@ -79,8 +79,13 @@ Claude 的 LLM gateway 仅提供环境变量示例；令牌由用户自行提供
 ```bash
 export ANTHROPIC_BASE_URL="https://modelport.top"
 export ANTHROPIC_AUTH_TOKEN="<用户自己的令牌>"
+export ANTHROPIC_DEFAULT_OPUS_MODEL="gpt-6-astra-023"
+export ANTHROPIC_DEFAULT_SONNET_MODEL="gpt-5.6-sol-023"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="glm-5.3-flash"
 claude --model gpt-5.6-sol-023
 ```
+
+同时映射客户端的 Opus、Sonnet、Haiku 默认型号，避免标题、摘要等辅助请求使用分组未开放的 Claude 型号。这些名称只是客户端档位，实际调用上述 GPT/GLM 模型。映射规则参见 [Claude 模型配置](https://code.claude.com/docs/en/model-config)。
 
 Claude 子 agent 放在 `.claude/agents/*.md`，使用 YAML front matter。`model` 应填写生产验收名单中的完整 model ID：
 
@@ -116,6 +121,7 @@ model: glm-5.3
 ## 本地验证记录
 
 - 前端 287 个测试文件、2091 个用例通过，类型检查和涉及文件 lint 通过。
+- 逐模型来源倍率展示修正后，5 个模型广场测试文件共 45 个用例通过，类型检查、i18n 检查和涉及文件 lint 通过；后端模型广场 DTO 定向测试通过。
 - 前端生产构建通过，Go embed 服务端构建通过。
 - 后端 Composite、模型广场、Gemini Responses 定向测试通过；路由、handler、admin handler、repository 定向测试通过。
 - 新增迁移的结构约束测试通过。

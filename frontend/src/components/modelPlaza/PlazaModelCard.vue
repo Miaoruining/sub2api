@@ -71,7 +71,7 @@ See NEWAPI-LICENSE for the full notice.
     <div class="mt-2 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 sm:mt-4">
       <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <span v-if="primaryRoute" class="text-sm font-medium text-gray-500 dark:text-gray-400">
-          {{ primaryRoute.group.name }}
+          {{ primaryRoute.model.source_group_name || primaryRoute.group.name }}
         </span>
         <span
           class="inline-flex h-5 items-center whitespace-nowrap rounded-full px-1.5 text-sm font-medium"

@@ -86,7 +86,7 @@ See NEWAPI-LICENSE for the full notice.
                       </thead>
                       <tbody>
                         <tr v-for="route in entry.routes" :key="route.group.id" data-test="route-row" class="border-b border-gray-100 last:border-b-0 dark:border-white/[0.07]">
-                          <td class="px-3 py-4 font-semibold"><span class="rounded-full border px-2 py-1" :class="plazaProviderBadge(route.group.platform)">{{ route.group.name }}</span><span v-if="route.model.auto_route_order == null" class="mt-2 block text-xs font-normal text-gray-500">{{ t('modelPlaza.catalog.displayOnly') }}</span></td>
+                          <td class="px-3 py-4 font-semibold"><span class="rounded-full border px-2 py-1" :class="plazaProviderBadge(route.group.platform)">{{ route.model.source_group_name || route.group.name }}</span><span v-if="route.model.source_group_name" class="mt-2 block text-xs font-normal text-gray-500">{{ route.group.name }}</span><span v-if="route.model.auto_route_order == null" class="mt-2 block text-xs font-normal text-gray-500">{{ t('modelPlaza.catalog.displayOnly') }}</span></td>
                           <td class="px-3 py-4 font-mono">{{ effectiveRate(route) }}x</td>
                           <td class="px-3 py-4 font-mono">{{ routePrice(route, 'input_price') }}</td>
                           <td class="px-3 py-4 font-mono">{{ routePrice(route, 'output_price') }}</td>
@@ -124,7 +124,7 @@ import type { GroupPlatform } from '@/types'
 import Icon from '@/components/icons/Icon.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import geminiLogo from '@/assets/model-plaza/gemini.svg'
-import { catalogAutoRoutes, plazaProviderBadge, type CatalogModel, type ModelRoute } from './catalog'
+import { catalogAutoRoutes, plazaProviderBadge, routeRate, type CatalogModel, type ModelRoute } from './catalog'
 
 const props = defineProps<{ show: boolean; entry: CatalogModel | null }>()
 const emit = defineEmits<{ close: []; copy: [name: string] }>()
@@ -154,9 +154,7 @@ function providerLabel(platform: string): string {
 }
 
 function effectiveRate(route: ModelRoute): number {
-  return props.entry?.mode === 'image' && route.group.image_rate_independent
-    ? route.group.image_rate_multiplier
-    : route.group.user_rate_multiplier ?? route.group.rate_multiplier
+  return routeRate(route, props.entry?.mode)
 }
 
 function formatMoney(value: number | null | undefined): string {

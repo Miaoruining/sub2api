@@ -22,7 +22,7 @@ type PlazaOfficialPricing struct {
 // PlazaModel 模型广场中单个模型条目：按实收口径合成的展示定价 + 官方参考价。
 type PlazaModel struct {
 	// SourceGroup is internal pricing context for a source-route alias.
-	SourceGroup     *Group
+	SourceGroup     *Group `json:"-"`
 	Name            string
 	Platform        string
 	Pricing         *ChannelModelPricing
