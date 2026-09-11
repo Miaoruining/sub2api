@@ -36,13 +36,14 @@ type PublicSettingsProvider interface {
 
 // FrontendServer serves the embedded frontend with settings injection
 type FrontendServer struct {
-	distFS      fs.FS
-	fileServer  http.Handler
-	baseHTML    []byte
-	cache       *HTMLCache
-	seoSettings *publicSEOSettingsCache
-	settings    PublicSettingsProvider
-	overrideDir string // local file override directory
+	distFS        fs.FS
+	fileServer    http.Handler
+	baseHTML      []byte
+	cache         *HTMLCache
+	seoSettings   *publicSEOSettingsCache
+	brandingCache *brandingVariantCache
+	settings      PublicSettingsProvider
+	overrideDir   string // local file override directory
 }
 
 // NewFrontendServer creates a new frontend server with settings injection
@@ -68,13 +69,14 @@ func NewFrontendServer(settingsProvider PublicSettingsProvider) (*FrontendServer
 	cache.SetBaseHTML(baseHTML)
 
 	return &FrontendServer{
-		distFS:      distFS,
-		fileServer:  http.FileServer(http.FS(distFS)),
-		baseHTML:    baseHTML,
-		cache:       cache,
-		seoSettings: newPublicSEOSettingsCache(),
-		settings:    settingsProvider,
-		overrideDir: filepath.Join("data", "public"),
+		distFS:        distFS,
+		fileServer:    http.FileServer(http.FS(distFS)),
+		baseHTML:      baseHTML,
+		cache:         cache,
+		seoSettings:   newPublicSEOSettingsCache(),
+		brandingCache: newBrandingVariantCache(),
+		settings:      settingsProvider,
+		overrideDir:   filepath.Join("data", "public"),
 	}, nil
 }
 
@@ -87,6 +89,9 @@ func (s *FrontendServer) InvalidateCache() {
 	}
 	if s != nil && s.cache != nil {
 		s.cache.Invalidate()
+	}
+	if s != nil && s.brandingCache != nil {
+		s.brandingCache.invalidate()
 	}
 }
 
@@ -279,7 +284,9 @@ func (s *FrontendServer) injectSettings(settingsJSON []byte) []byte {
 	// Keep the public settings snapshot and database value unchanged.  Only the
 	// copy embedded in the HTML is rewritten when the logo is a supported,
 	// bounded raster data URL.
-	settingsForHTML, _ := rewriteBrandingLogo(settingsJSON)
+	asset := brandingAssetFromSettings(settingsJSON)
+	variant256 := s.brandingVariant(asset, brandingAppLogoSize)
+	settingsForHTML := rewriteBrandingLogoWithVariant(settingsJSON, asset, variant256)
 
 	// Create the script tag to inject with nonce placeholder
 	// The placeholder will be replaced with actual nonce at request time
@@ -291,13 +298,31 @@ func (s *FrontendServer) injectSettings(settingsJSON []byte) []byte {
 
 	// Apply custom branding before the browser paints the static defaults.
 	result = injectSiteTitle(result, settingsForHTML)
-	result = injectSiteFavicon(result, settingsForHTML)
+	variant48 := s.brandingVariant(asset, brandingFaviconSize)
+	brandingLogoURL := ""
+	if asset != nil {
+		brandingLogoURL = brandingAssetURL(asset)
+		if variant256 != nil {
+			brandingLogoURL = brandingVariantURLForVariant(asset, variant256)
+		}
+	}
+	result = injectSiteFaviconWithVariantAndMarker(result, settingsJSON, asset, variant48, brandingLogoURL)
 
 	return result
 }
 
 // injectSiteFavicon replaces the static favicon with a configured, browser-safe image URL.
 func injectSiteFavicon(html, settingsJSON []byte) []byte {
+	asset := brandingAssetFromSettings(settingsJSON)
+	variant := buildBrandingVariant(asset, brandingFaviconSize)
+	return injectSiteFaviconWithVariant(html, settingsJSON, asset, variant)
+}
+
+func injectSiteFaviconWithVariant(html, settingsJSON []byte, asset *brandingAsset, variant *brandingVariant) []byte {
+	return injectSiteFaviconWithVariantAndMarker(html, settingsJSON, asset, variant, "")
+}
+
+func injectSiteFaviconWithVariantAndMarker(html, settingsJSON []byte, asset *brandingAsset, variant *brandingVariant, brandingLogoURL string) []byte {
 	var cfg struct {
 		SiteLogo string `json:"site_logo"`
 	}
@@ -306,6 +331,12 @@ func injectSiteFavicon(html, settingsJSON []byte) []byte {
 	}
 
 	logoURL := safeImageURL(cfg.SiteLogo)
+	if asset != nil {
+		logoURL = brandingAssetURL(asset)
+		if variant != nil {
+			logoURL = brandingVariantURLForVariant(asset, variant)
+		}
+	}
 	if logoURL == "" {
 		return html
 	}
@@ -319,7 +350,11 @@ func injectSiteFavicon(html, settingsJSON []byte) []byte {
 		return html
 	}
 	linkEnd := linkStart + linkEndOffset + 1
-	replacement := []byte(`<link rel="icon" href="` + htmlpkg.EscapeString(logoURL) + `" />`)
+	marker := ""
+	if brandingLogoURL != "" {
+		marker = ` data-branding-logo="` + htmlpkg.EscapeString(brandingLogoURL) + `"`
+	}
+	replacement := []byte(`<link rel="icon" href="` + htmlpkg.EscapeString(logoURL) + `"` + marker + ` />`)
 
 	var buf bytes.Buffer
 	buf.Write(html[:linkStart])
