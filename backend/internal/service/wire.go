@@ -818,6 +818,18 @@ func ProvideAPIKeyService(
 	return svc
 }
 
+// ProvideModelPlazaService wires source routes into the public model catalog.
+func ProvideModelPlazaService(channels ChannelRepository, groups GroupRepository, pricing *PricingService, billing *BillingService, resolver *ModelPricingResolver, routes CompositeModelRouteRepository) *ModelPlazaService {
+	return NewModelPlazaService(channels, groups, pricing, billing, resolver, routes)
+}
+
+// ProvideCompositeRouteResolver connects source-group validation to group storage.
+func ProvideCompositeRouteResolver(repo CompositeModelRouteRepository, groupRepo GroupRepository) *CompositeRouteResolver {
+	resolver := NewCompositeRouteResolver(repo)
+	resolver.SetGroupRepository(groupRepo)
+	return resolver
+}
+
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
 	// Core services
@@ -828,7 +840,7 @@ var ProviderSet = wire.NewSet(
 	ProvideAPIKeyAuthCacheInvalidator,
 	ProvideAuthCacheInvalidationWorker,
 	NewGroupService,
-	NewCompositeRouteResolver,
+	ProvideCompositeRouteResolver,
 	NewAccountService,
 	NewProxyService,
 	NewRedeemService,
@@ -934,7 +946,7 @@ var ProviderSet = wire.NewSet(
 	NewChannelService,
 	wire.Bind(new(ChannelCacheInvalidator), new(*ChannelService)),
 	NewModelPricingResolver,
-	NewModelPlazaService,
+	ProvideModelPlazaService,
 	NewContentModerationService,
 	NewAffiliateService,
 	NewLotteryService,

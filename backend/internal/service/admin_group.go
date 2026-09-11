@@ -214,6 +214,9 @@ func (s *adminServiceImpl) CreateCompositeRoute(ctx context.Context, groupID int
 	if err != nil {
 		return nil, err
 	}
+	if err := s.validateCompositeRouteSource(ctx, groupID, route); err != nil {
+		return nil, err
+	}
 	if err := s.compositeRouteRepo.Create(ctx, route); err != nil {
 		return nil, err
 	}
@@ -240,6 +243,9 @@ func (s *adminServiceImpl) UpdateCompositeRoute(ctx context.Context, groupID, ro
 		return nil, err
 	}
 	route.ID = routeID
+	if err := s.validateCompositeRouteSource(ctx, groupID, route); err != nil {
+		return nil, err
+	}
 	if err := s.compositeRouteRepo.Update(ctx, route); err != nil {
 		return nil, err
 	}
@@ -275,6 +281,7 @@ func (s *adminServiceImpl) PreviewCompositeRoute(ctx context.Context, groupID in
 	if resolver == nil {
 		resolver = NewCompositeRouteResolver(s.compositeRouteRepo)
 	}
+	resolver.SetGroupRepository(s.groupRepo)
 	decision, err := resolver.Resolve(ctx, groupID, input.Model, input.Endpoint)
 	if err != nil {
 		return nil, err
@@ -306,6 +313,105 @@ func (s *adminServiceImpl) compositeRouteBelongsToGroup(ctx context.Context, gro
 	return false, nil
 }
 
+// validateCompositeRouteSource applies the write-time source-group boundary.
+// Runtime validation in CompositeRouteResolver repeats these checks so stale
+// groups or direct database edits fail closed before an upstream is selected.
+func (s *adminServiceImpl) validateCompositeRouteSource(ctx context.Context, outerGroupID int64, route *CompositeModelRoute) error {
+	if route == nil || route.SourceGroupID == nil {
+		return nil
+	}
+	if s.groupRepo == nil {
+		return fmt.Errorf("group repository is not configured")
+	}
+	sourceGroupID := *route.SourceGroupID
+	if sourceGroupID <= 0 {
+		return fmt.Errorf("source_group_id must be positive")
+	}
+	if sourceGroupID == outerGroupID {
+		return fmt.Errorf("source_group_id cannot reference the composite group itself")
+	}
+	outer, err := s.groupRepo.GetByIDLite(ctx, outerGroupID)
+	if err != nil {
+		return fmt.Errorf("load composite group: %w", err)
+	}
+	if outer == nil || outer.Platform != PlatformComposite {
+		return fmt.Errorf("group %d is not a composite group", outerGroupID)
+	}
+	if outer.SubscriptionType != SubscriptionTypeStandard {
+		return fmt.Errorf("composite group %d must use standard subscription type", outerGroupID)
+	}
+	source, err := s.groupRepo.GetByIDLite(ctx, sourceGroupID)
+	if err != nil {
+		return fmt.Errorf("load source group: %w", err)
+	}
+	if source == nil {
+		return fmt.Errorf("source group %d not found", sourceGroupID)
+	}
+	if source.Status != StatusActive {
+		return fmt.Errorf("source group %d is not active", sourceGroupID)
+	}
+	if source.IsExclusive {
+		return fmt.Errorf("source group %d is exclusive", sourceGroupID)
+	}
+	if source.SubscriptionType != SubscriptionTypeStandard {
+		return fmt.Errorf("source group %d must use standard subscription type", sourceGroupID)
+	}
+
+	targetPlatform := strings.TrimSpace(route.TargetPlatform)
+	if !isConcreteRequestPlatform(targetPlatform) {
+		return fmt.Errorf("target_platform must be a concrete provider")
+	}
+	upstreamModel := strings.TrimSpace(route.UpstreamModel)
+	if upstreamModel == "" {
+		upstreamModel = strings.TrimSpace(route.PublicModel)
+	}
+	if source.ModelAllowlistEnabled() && !source.ModelAllowlist.Allows(upstreamModel) {
+		return fmt.Errorf("upstream model %q is not allowed by source group %d", upstreamModel, sourceGroupID)
+	}
+	if source.Platform != PlatformComposite {
+		if source.Platform != targetPlatform {
+			return fmt.Errorf("source group %d platform %q does not match target platform %q", sourceGroupID, source.Platform, targetPlatform)
+		}
+		return nil
+	}
+
+	if s.compositeRouteRepo == nil {
+		return fmt.Errorf("composite route repository is not configured")
+	}
+	sourceRoutes, err := s.compositeRouteRepo.ListByGroup(ctx, sourceGroupID, true)
+	if err != nil {
+		return fmt.Errorf("list source composite routes: %w", err)
+	}
+	for _, sourceRoute := range sourceRoutes {
+		if sourceRoute.SourceGroupID != nil {
+			return fmt.Errorf("source composite group %d contains a nested source-group route", sourceGroupID)
+		}
+	}
+	if platform, ok := DetectModelPlatform(upstreamModel); ok {
+		if platform != targetPlatform {
+			return fmt.Errorf("upstream model %q resolves to platform %q, target platform is %q", upstreamModel, platform, targetPlatform)
+		}
+		return nil
+	}
+	enabledRoutes := make([]CompositeModelRoute, 0, len(sourceRoutes))
+	for _, sourceRoute := range sourceRoutes {
+		if sourceRoute.Enabled {
+			enabledRoutes = append(enabledRoutes, sourceRoute)
+		}
+	}
+	sourceRoute, ok := matchCompositeRoute(enabledRoutes, upstreamModel, route.Endpoint)
+	if !ok && route.PublicModel != upstreamModel {
+		sourceRoute, ok = matchCompositeRoute(enabledRoutes, route.PublicModel, route.Endpoint)
+	}
+	if ok {
+		if sourceRoute.TargetPlatform != targetPlatform {
+			return fmt.Errorf("source composite route target platform %q does not match %q", sourceRoute.TargetPlatform, targetPlatform)
+		}
+		return nil
+	}
+	return fmt.Errorf("cannot determine concrete platform for source composite group %d model %q", sourceGroupID, upstreamModel)
+}
+
 func compositeRouteFromInput(groupID int64, input CompositeRouteInput) (*CompositeModelRoute, error) {
 	input = normalizeCompositeRouteInput(input)
 	if input.PublicModel == "" {
@@ -319,6 +425,7 @@ func compositeRouteFromInput(groupID int64, input CompositeRouteInput) (*Composi
 	}
 	return &CompositeModelRoute{
 		GroupID:        groupID,
+		SourceGroupID:  input.SourceGroupID,
 		PublicModel:    input.PublicModel,
 		MatchType:      input.MatchType,
 		TargetPlatform: input.TargetPlatform,

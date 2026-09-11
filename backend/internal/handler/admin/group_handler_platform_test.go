@@ -79,3 +79,12 @@ func TestCompositeRouteTargetPlatform_AllowsCNProviders(t *testing.T) {
 		require.Equal(t, platform, req.TargetPlatform)
 	}
 }
+
+func TestCompositeRouteSourceGroupBinding(t *testing.T) {
+	var req CompositeRouteRequest
+	require.NoError(t, bindGroupPlatformJSON(t, &req, `{"public_model":"gpt-pro-16","source_group_id":12,"target_platform":"openai"}`))
+	require.NotNil(t, req.SourceGroupID)
+	require.Equal(t, int64(12), *req.SourceGroupID)
+	input := compositeRouteRequestToInput(req, true)
+	require.Equal(t, req.SourceGroupID, input.SourceGroupID)
+}

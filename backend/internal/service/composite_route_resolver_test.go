@@ -12,6 +12,19 @@ type compositeRouteRepoStub struct {
 	routes []CompositeModelRoute
 }
 
+type compositeRouteGroupRepoStub struct {
+	GroupRepository
+	groups map[int64]*Group
+}
+
+func (s *compositeRouteGroupRepoStub) GetByIDLite(_ context.Context, id int64) (*Group, error) {
+	group := s.groups[id]
+	if group == nil {
+		return nil, ErrGroupNotFound
+	}
+	return group, nil
+}
+
 func (s compositeRouteRepoStub) ListByGroup(ctx context.Context, groupID int64, includeDisabled bool) ([]CompositeModelRoute, error) {
 	routes := make([]CompositeModelRoute, 0, len(s.routes))
 	for _, route := range s.routes {
@@ -68,6 +81,121 @@ func TestCompositeRouteResolverExplicitExactRouteRewritesModel(t *testing.T) {
 	require.Equal(t, "gpt-5", decision.UpstreamModel)
 	require.NotNil(t, decision.Route)
 	require.Equal(t, int64(10), decision.Route.ID)
+}
+
+func TestCompositeRouteResolverSourceGroupCarriesStandardConcreteGroup(t *testing.T) {
+	sourceID := int64(8)
+	resolver := NewCompositeRouteResolver(compositeRouteRepoStub{
+		routes: []CompositeModelRoute{
+			{
+				ID:             10,
+				GroupID:        7,
+				SourceGroupID:  &sourceID,
+				PublicModel:    "gpt-pro-16",
+				MatchType:      CompositeRouteMatchExact,
+				TargetPlatform: PlatformOpenAI,
+				UpstreamModel:  "gpt-5.4",
+				Endpoint:       CompositeRouteEndpointResponses,
+				Enabled:        true,
+			},
+		},
+	})
+	resolver.SetGroupRepository(&compositeRouteGroupRepoStub{groups: map[int64]*Group{
+		7: {ID: 7, Platform: PlatformComposite, Status: StatusActive, SubscriptionType: SubscriptionTypeStandard},
+		8: {ID: 8, Platform: PlatformOpenAI, Status: StatusActive, SubscriptionType: SubscriptionTypeStandard},
+	}})
+
+	decision, err := resolver.Resolve(context.Background(), 7, "gpt-pro-16", CompositeRouteEndpointResponses)
+
+	require.NoError(t, err)
+	require.True(t, decision.Matched)
+	require.Equal(t, &sourceID, decision.SourceGroupID)
+	require.NotNil(t, decision.SourceGroup)
+	require.Equal(t, sourceID, decision.SourceGroup.ID)
+	require.NotNil(t, decision.Route.SourceGroup)
+}
+
+func TestCompositeRouteResolverRejectsInvalidSourceGroup(t *testing.T) {
+	tests := []struct {
+		name       string
+		sourceID   int64
+		source     *Group
+		target     string
+		wantReason string
+	}{
+		{name: "self", sourceID: 7, source: &Group{ID: 7, Platform: PlatformOpenAI, Status: StatusActive, SubscriptionType: SubscriptionTypeStandard}, wantReason: "itself"},
+		{name: "inactive", sourceID: 8, source: &Group{ID: 8, Platform: PlatformOpenAI, Status: StatusDisabled, SubscriptionType: SubscriptionTypeStandard}, wantReason: "not active"},
+		{name: "exclusive", sourceID: 8, source: &Group{ID: 8, Platform: PlatformOpenAI, Status: StatusActive, IsExclusive: true, SubscriptionType: SubscriptionTypeStandard}, wantReason: "exclusive"},
+		{name: "subscription", sourceID: 8, source: &Group{ID: 8, Platform: PlatformOpenAI, Status: StatusActive, SubscriptionType: SubscriptionTypeSubscription}, wantReason: "standard"},
+		{name: "platform mismatch", sourceID: 8, source: &Group{ID: 8, Platform: PlatformGemini, Status: StatusActive, SubscriptionType: SubscriptionTypeStandard}, target: PlatformOpenAI, wantReason: "does not match"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := tt.target
+			if target == "" {
+				target = PlatformOpenAI
+			}
+			sourceID := tt.sourceID
+			resolver := NewCompositeRouteResolver(compositeRouteRepoStub{routes: []CompositeModelRoute{{
+				GroupID: 7, SourceGroupID: &sourceID, PublicModel: "alias", MatchType: CompositeRouteMatchExact,
+				TargetPlatform: target, UpstreamModel: "gpt-5", Endpoint: CompositeRouteEndpointAny, Enabled: true,
+			}}})
+			groups := map[int64]*Group{7: {ID: 7, Platform: PlatformComposite, Status: StatusActive, SubscriptionType: SubscriptionTypeStandard}}
+			if tt.source != nil {
+				groups[tt.source.ID] = tt.source
+			}
+			resolver.SetGroupRepository(&compositeRouteGroupRepoStub{groups: groups})
+
+			decision, err := resolver.Resolve(context.Background(), 7, "alias", CompositeRouteEndpointAny)
+
+			require.NoError(t, err)
+			require.False(t, decision.Matched)
+			require.Contains(t, decision.Reason, tt.wantReason)
+		})
+	}
+}
+
+func TestCompositeRouteResolverCompositeSourceRejectsNestedRoutesAndChecksAllowlist(t *testing.T) {
+	sourceID := int64(8)
+	outerRoute := CompositeModelRoute{
+		ID: 1, GroupID: 7, SourceGroupID: &sourceID, PublicModel: "company-gpt", MatchType: CompositeRouteMatchExact,
+		TargetPlatform: PlatformOpenAI, UpstreamModel: "gpt-5.4", Endpoint: CompositeRouteEndpointResponses, Enabled: true,
+	}
+	resolver := NewCompositeRouteResolver(compositeRouteRepoStub{routes: []CompositeModelRoute{outerRoute}})
+	resolver.SetGroupRepository(&compositeRouteGroupRepoStub{groups: map[int64]*Group{
+		7: {ID: 7, Platform: PlatformComposite, Status: StatusActive, SubscriptionType: SubscriptionTypeStandard},
+		8: {ID: 8, Platform: PlatformComposite, Status: StatusActive, SubscriptionType: SubscriptionTypeStandard,
+			ModelAllowlist: GroupModelAllowlist{Enabled: true, Models: []string{"gpt-5.4"}}},
+	}})
+
+	decision, err := resolver.Resolve(context.Background(), 7, "company-gpt", CompositeRouteEndpointResponses)
+	require.NoError(t, err)
+	require.True(t, decision.Matched)
+
+	resolver = NewCompositeRouteResolver(compositeRouteRepoStub{routes: []CompositeModelRoute{
+		outerRoute,
+		{ID: 2, GroupID: 8, SourceGroupID: &sourceID, PublicModel: "nested", TargetPlatform: PlatformOpenAI, Enabled: true},
+	}})
+	resolver.SetGroupRepository(&compositeRouteGroupRepoStub{groups: map[int64]*Group{
+		7: {ID: 7, Platform: PlatformComposite, Status: StatusActive, SubscriptionType: SubscriptionTypeStandard},
+		8: {ID: 8, Platform: PlatformComposite, Status: StatusActive, SubscriptionType: SubscriptionTypeStandard,
+			ModelAllowlist: GroupModelAllowlist{Enabled: true, Models: []string{"gpt-5.4"}}},
+	}})
+	decision, err = resolver.Resolve(context.Background(), 7, "company-gpt", CompositeRouteEndpointResponses)
+	require.NoError(t, err)
+	require.False(t, decision.Matched)
+	require.Contains(t, decision.Reason, "nested")
+
+	resolver = NewCompositeRouteResolver(compositeRouteRepoStub{routes: []CompositeModelRoute{outerRoute}})
+	resolver.SetGroupRepository(&compositeRouteGroupRepoStub{groups: map[int64]*Group{
+		7: {ID: 7, Platform: PlatformComposite, Status: StatusActive, SubscriptionType: SubscriptionTypeStandard},
+		8: {ID: 8, Platform: PlatformComposite, Status: StatusActive, SubscriptionType: SubscriptionTypeStandard,
+			ModelAllowlist: GroupModelAllowlist{Enabled: true, Models: []string{"other-model"}}},
+	}})
+	decision, err = resolver.Resolve(context.Background(), 7, "company-gpt", CompositeRouteEndpointResponses)
+	require.NoError(t, err)
+	require.False(t, decision.Matched)
+	require.Contains(t, decision.Reason, "not allowed")
 }
 
 // Scenario: 唯一平台的精确别名可路由
@@ -373,4 +501,14 @@ func TestCompositeRouteResolverExplicitRoutesCoverBucketTwoProviders(t *testing.
 			require.Equal(t, tt.wantUpstream, decision.UpstreamModel)
 		})
 	}
+}
+
+func TestCompositeDisabledSourceRouteDoesNotFallback(t *testing.T) {
+	sourceID := int64(19)
+	resolver := NewCompositeRouteResolver(compositeRouteRepoStub{routes: []CompositeModelRoute{{GroupID: 50, SourceGroupID: &sourceID, PublicModel: "gpt-5.6-sol", TargetPlatform: PlatformOpenAI, MatchType: CompositeRouteMatchExact, Enabled: false}}})
+	decision, err := resolver.Resolve(context.Background(), 50, "gpt-5.6-sol", CompositeRouteEndpointResponses)
+	require.NoError(t, err)
+	require.False(t, decision.Matched)
+	require.Equal(t, CompositeRouteSourceExplicit, decision.Source)
+	require.Contains(t, decision.Reason, "no active source route")
 }

@@ -46,6 +46,7 @@ var (
 type CompositeModelRoute struct {
 	ID             int64     `json:"id"`
 	GroupID        int64     `json:"group_id"`
+	SourceGroupID  *int64    `json:"source_group_id"`
 	PublicModel    string    `json:"public_model"`
 	MatchType      string    `json:"match_type"`
 	TargetPlatform string    `json:"target_platform"`
@@ -56,6 +57,9 @@ type CompositeModelRoute struct {
 	Notes          string    `json:"notes"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
+	// SourceGroup is loaded for runtime routing only and is intentionally not
+	// exposed by the admin API payload.
+	SourceGroup *Group `json:"-"`
 }
 
 type CompositeRoutePreviewRequest struct {
@@ -67,16 +71,21 @@ type CompositeRouteDecision struct {
 	Matched        bool                 `json:"matched"`
 	Source         string               `json:"source"`
 	GroupID        int64                `json:"group_id"`
+	SourceGroupID  *int64               `json:"source_group_id"`
 	PublicModel    string               `json:"public_model"`
 	TargetPlatform string               `json:"target_platform"`
 	UpstreamModel  string               `json:"upstream_model"`
 	Endpoint       string               `json:"endpoint"`
 	Route          *CompositeModelRoute `json:"route,omitempty"`
 	Reason         string               `json:"reason,omitempty"`
+	// SourceGroup is carried internally to let gateway routing clone the
+	// source group's scheduling/pricing context without exposing its details.
+	SourceGroup *Group `json:"-"`
 }
 
 type CompositeRouteInput struct {
 	PublicModel    string
+	SourceGroupID  *int64
 	MatchType      string
 	TargetPlatform string
 	UpstreamModel  string

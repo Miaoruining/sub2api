@@ -71,6 +71,20 @@ func (_c *CompositeModelRouteCreate) SetGroupID(v int64) *CompositeModelRouteCre
 	return _c
 }
 
+// SetSourceGroupID sets the "source_group_id" field.
+func (_c *CompositeModelRouteCreate) SetSourceGroupID(v int64) *CompositeModelRouteCreate {
+	_c.mutation.SetSourceGroupID(v)
+	return _c
+}
+
+// SetNillableSourceGroupID sets the "source_group_id" field if the given value is not nil.
+func (_c *CompositeModelRouteCreate) SetNillableSourceGroupID(v *int64) *CompositeModelRouteCreate {
+	if v != nil {
+		_c.SetSourceGroupID(*v)
+	}
+	return _c
+}
+
 // SetPublicModel sets the "public_model" field.
 func (_c *CompositeModelRouteCreate) SetPublicModel(v string) *CompositeModelRouteCreate {
 	_c.mutation.SetPublicModel(v)
@@ -357,6 +371,10 @@ func (_c *CompositeModelRouteCreate) createSpec() (*CompositeModelRoute, *sqlgra
 		_spec.SetField(compositemodelroute.FieldDeletedAt, field.TypeTime, value)
 		_node.DeletedAt = &value
 	}
+	if value, ok := _c.mutation.SourceGroupID(); ok {
+		_spec.SetField(compositemodelroute.FieldSourceGroupID, field.TypeInt64, value)
+		_node.SourceGroupID = &value
+	}
 	if value, ok := _c.mutation.PublicModel(); ok {
 		_spec.SetField(compositemodelroute.FieldPublicModel, field.TypeString, value)
 		_node.PublicModel = value
@@ -497,6 +515,30 @@ func (u *CompositeModelRouteUpsert) SetGroupID(v int64) *CompositeModelRouteUpse
 // UpdateGroupID sets the "group_id" field to the value that was provided on create.
 func (u *CompositeModelRouteUpsert) UpdateGroupID() *CompositeModelRouteUpsert {
 	u.SetExcluded(compositemodelroute.FieldGroupID)
+	return u
+}
+
+// SetSourceGroupID sets the "source_group_id" field.
+func (u *CompositeModelRouteUpsert) SetSourceGroupID(v int64) *CompositeModelRouteUpsert {
+	u.Set(compositemodelroute.FieldSourceGroupID, v)
+	return u
+}
+
+// UpdateSourceGroupID sets the "source_group_id" field to the value that was provided on create.
+func (u *CompositeModelRouteUpsert) UpdateSourceGroupID() *CompositeModelRouteUpsert {
+	u.SetExcluded(compositemodelroute.FieldSourceGroupID)
+	return u
+}
+
+// AddSourceGroupID adds v to the "source_group_id" field.
+func (u *CompositeModelRouteUpsert) AddSourceGroupID(v int64) *CompositeModelRouteUpsert {
+	u.Add(compositemodelroute.FieldSourceGroupID, v)
+	return u
+}
+
+// ClearSourceGroupID clears the value of the "source_group_id" field.
+func (u *CompositeModelRouteUpsert) ClearSourceGroupID() *CompositeModelRouteUpsert {
+	u.SetNull(compositemodelroute.FieldSourceGroupID)
 	return u
 }
 
@@ -699,6 +741,34 @@ func (u *CompositeModelRouteUpsertOne) SetGroupID(v int64) *CompositeModelRouteU
 func (u *CompositeModelRouteUpsertOne) UpdateGroupID() *CompositeModelRouteUpsertOne {
 	return u.Update(func(s *CompositeModelRouteUpsert) {
 		s.UpdateGroupID()
+	})
+}
+
+// SetSourceGroupID sets the "source_group_id" field.
+func (u *CompositeModelRouteUpsertOne) SetSourceGroupID(v int64) *CompositeModelRouteUpsertOne {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.SetSourceGroupID(v)
+	})
+}
+
+// AddSourceGroupID adds v to the "source_group_id" field.
+func (u *CompositeModelRouteUpsertOne) AddSourceGroupID(v int64) *CompositeModelRouteUpsertOne {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.AddSourceGroupID(v)
+	})
+}
+
+// UpdateSourceGroupID sets the "source_group_id" field to the value that was provided on create.
+func (u *CompositeModelRouteUpsertOne) UpdateSourceGroupID() *CompositeModelRouteUpsertOne {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.UpdateSourceGroupID()
+	})
+}
+
+// ClearSourceGroupID clears the value of the "source_group_id" field.
+func (u *CompositeModelRouteUpsertOne) ClearSourceGroupID() *CompositeModelRouteUpsertOne {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.ClearSourceGroupID()
 	})
 }
 
@@ -1085,6 +1155,34 @@ func (u *CompositeModelRouteUpsertBulk) SetGroupID(v int64) *CompositeModelRoute
 func (u *CompositeModelRouteUpsertBulk) UpdateGroupID() *CompositeModelRouteUpsertBulk {
 	return u.Update(func(s *CompositeModelRouteUpsert) {
 		s.UpdateGroupID()
+	})
+}
+
+// SetSourceGroupID sets the "source_group_id" field.
+func (u *CompositeModelRouteUpsertBulk) SetSourceGroupID(v int64) *CompositeModelRouteUpsertBulk {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.SetSourceGroupID(v)
+	})
+}
+
+// AddSourceGroupID adds v to the "source_group_id" field.
+func (u *CompositeModelRouteUpsertBulk) AddSourceGroupID(v int64) *CompositeModelRouteUpsertBulk {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.AddSourceGroupID(v)
+	})
+}
+
+// UpdateSourceGroupID sets the "source_group_id" field to the value that was provided on create.
+func (u *CompositeModelRouteUpsertBulk) UpdateSourceGroupID() *CompositeModelRouteUpsertBulk {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.UpdateSourceGroupID()
+	})
+}
+
+// ClearSourceGroupID clears the value of the "source_group_id" field.
+func (u *CompositeModelRouteUpsertBulk) ClearSourceGroupID() *CompositeModelRouteUpsertBulk {
+	return u.Update(func(s *CompositeModelRouteUpsert) {
+		s.ClearSourceGroupID()
 	})
 }
 

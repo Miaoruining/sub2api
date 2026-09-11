@@ -1118,6 +1118,9 @@ export default {
         matchType: 'Match',
         endpoint: 'Endpoint',
         targetPlatform: 'Target Platform',
+        sourceGroup: 'Source Group',
+        sourceGroupCurrent: 'Use current Composite group',
+        sourceGroupHint: 'Inherit accounts, multiplier, and pricing from this group; leave empty to use the current Composite group.',
         upstreamModel: 'Upstream Model',
         upstreamModelHint: 'Leave empty to pass the original requested model through: under prefix match each matched model forwards verbatim (e.g. deepseek-v4-flash and deepseek-v4-pro each forwarded as-is); set a value to forward every matched request to that fixed model.',
         notes: 'Notes',
@@ -1133,6 +1136,7 @@ export default {
         failedToSave: 'Failed to save composite route',
         failedToDelete: 'Failed to delete composite route',
         failedToPreview: 'Failed to preview composite route',
+        failedToLoadSourceGroups: 'Failed to load source groups',
         deleteConfirm: 'Delete this composite route?',
         endpoints: {
           any: 'Any',

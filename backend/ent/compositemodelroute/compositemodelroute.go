@@ -23,6 +23,8 @@ const (
 	FieldDeletedAt = "deleted_at"
 	// FieldGroupID holds the string denoting the group_id field in the database.
 	FieldGroupID = "group_id"
+	// FieldSourceGroupID holds the string denoting the source_group_id field in the database.
+	FieldSourceGroupID = "source_group_id"
 	// FieldPublicModel holds the string denoting the public_model field in the database.
 	FieldPublicModel = "public_model"
 	// FieldMatchType holds the string denoting the match_type field in the database.
@@ -59,6 +61,7 @@ var Columns = []string{
 	FieldUpdatedAt,
 	FieldDeletedAt,
 	FieldGroupID,
+	FieldSourceGroupID,
 	FieldPublicModel,
 	FieldMatchType,
 	FieldTargetPlatform,
@@ -143,6 +146,11 @@ func ByDeletedAt(opts ...sql.OrderTermOption) OrderOption {
 // ByGroupID orders the results by the group_id field.
 func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldGroupID, opts...).ToFunc()
+}
+
+// BySourceGroupID orders the results by the source_group_id field.
+func BySourceGroupID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSourceGroupID, opts...).ToFunc()
 }
 
 // ByPublicModel orders the results by the public_model field.

@@ -69,6 +69,33 @@ func (_u *CompositeModelRouteUpdate) SetNillableGroupID(v *int64) *CompositeMode
 	return _u
 }
 
+// SetSourceGroupID sets the "source_group_id" field.
+func (_u *CompositeModelRouteUpdate) SetSourceGroupID(v int64) *CompositeModelRouteUpdate {
+	_u.mutation.ResetSourceGroupID()
+	_u.mutation.SetSourceGroupID(v)
+	return _u
+}
+
+// SetNillableSourceGroupID sets the "source_group_id" field if the given value is not nil.
+func (_u *CompositeModelRouteUpdate) SetNillableSourceGroupID(v *int64) *CompositeModelRouteUpdate {
+	if v != nil {
+		_u.SetSourceGroupID(*v)
+	}
+	return _u
+}
+
+// AddSourceGroupID adds value to the "source_group_id" field.
+func (_u *CompositeModelRouteUpdate) AddSourceGroupID(v int64) *CompositeModelRouteUpdate {
+	_u.mutation.AddSourceGroupID(v)
+	return _u
+}
+
+// ClearSourceGroupID clears the value of the "source_group_id" field.
+func (_u *CompositeModelRouteUpdate) ClearSourceGroupID() *CompositeModelRouteUpdate {
+	_u.mutation.ClearSourceGroupID()
+	return _u
+}
+
 // SetPublicModel sets the "public_model" field.
 func (_u *CompositeModelRouteUpdate) SetPublicModel(v string) *CompositeModelRouteUpdate {
 	_u.mutation.SetPublicModel(v)
@@ -306,6 +333,15 @@ func (_u *CompositeModelRouteUpdate) sqlSave(ctx context.Context) (_node int, er
 	if _u.mutation.DeletedAtCleared() {
 		_spec.ClearField(compositemodelroute.FieldDeletedAt, field.TypeTime)
 	}
+	if value, ok := _u.mutation.SourceGroupID(); ok {
+		_spec.SetField(compositemodelroute.FieldSourceGroupID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedSourceGroupID(); ok {
+		_spec.AddField(compositemodelroute.FieldSourceGroupID, field.TypeInt64, value)
+	}
+	if _u.mutation.SourceGroupIDCleared() {
+		_spec.ClearField(compositemodelroute.FieldSourceGroupID, field.TypeInt64)
+	}
 	if value, ok := _u.mutation.PublicModel(); ok {
 		_spec.SetField(compositemodelroute.FieldPublicModel, field.TypeString, value)
 	}
@@ -422,6 +458,33 @@ func (_u *CompositeModelRouteUpdateOne) SetNillableGroupID(v *int64) *CompositeM
 	if v != nil {
 		_u.SetGroupID(*v)
 	}
+	return _u
+}
+
+// SetSourceGroupID sets the "source_group_id" field.
+func (_u *CompositeModelRouteUpdateOne) SetSourceGroupID(v int64) *CompositeModelRouteUpdateOne {
+	_u.mutation.ResetSourceGroupID()
+	_u.mutation.SetSourceGroupID(v)
+	return _u
+}
+
+// SetNillableSourceGroupID sets the "source_group_id" field if the given value is not nil.
+func (_u *CompositeModelRouteUpdateOne) SetNillableSourceGroupID(v *int64) *CompositeModelRouteUpdateOne {
+	if v != nil {
+		_u.SetSourceGroupID(*v)
+	}
+	return _u
+}
+
+// AddSourceGroupID adds value to the "source_group_id" field.
+func (_u *CompositeModelRouteUpdateOne) AddSourceGroupID(v int64) *CompositeModelRouteUpdateOne {
+	_u.mutation.AddSourceGroupID(v)
+	return _u
+}
+
+// ClearSourceGroupID clears the value of the "source_group_id" field.
+func (_u *CompositeModelRouteUpdateOne) ClearSourceGroupID() *CompositeModelRouteUpdateOne {
+	_u.mutation.ClearSourceGroupID()
 	return _u
 }
 
@@ -691,6 +754,15 @@ func (_u *CompositeModelRouteUpdateOne) sqlSave(ctx context.Context) (_node *Com
 	}
 	if _u.mutation.DeletedAtCleared() {
 		_spec.ClearField(compositemodelroute.FieldDeletedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.SourceGroupID(); ok {
+		_spec.SetField(compositemodelroute.FieldSourceGroupID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedSourceGroupID(); ok {
+		_spec.AddField(compositemodelroute.FieldSourceGroupID, field.TypeInt64, value)
+	}
+	if _u.mutation.SourceGroupIDCleared() {
+		_spec.ClearField(compositemodelroute.FieldSourceGroupID, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.PublicModel(); ok {
 		_spec.SetField(compositemodelroute.FieldPublicModel, field.TypeString, value)

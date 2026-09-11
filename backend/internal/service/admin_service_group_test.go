@@ -2175,6 +2175,69 @@ func TestAdminService_CreateCompositeRoute_ExactEmptyUpstreamBackfillsPublicMode
 	require.Equal(t, "openrouter/gpt-5", route.UpstreamModel)
 }
 
+func TestAdminService_CreateCompositeRouteValidatesSourceGroup(t *testing.T) {
+	sourceID := int64(8)
+	groupRepo := &groupRepoStubForAdmin{getByIDByID: map[int64]*Group{
+		7: {ID: 7, Platform: PlatformComposite, Status: StatusActive, SubscriptionType: SubscriptionTypeStandard},
+		8: {ID: 8, Platform: PlatformOpenAI, Status: StatusActive, SubscriptionType: SubscriptionTypeStandard},
+	}}
+	routeRepo := &compositeRouteRepoStubForAdmin{nextID: 99}
+	svc := &adminServiceImpl{groupRepo: groupRepo, compositeRouteRepo: routeRepo}
+
+	route, err := svc.CreateCompositeRoute(context.Background(), 7, CompositeRouteInput{
+		PublicModel: "gpt-pro-16", SourceGroupID: &sourceID, TargetPlatform: PlatformOpenAI, Enabled: true,
+		UpstreamModel: "gpt-5.4", Endpoint: CompositeRouteEndpointResponses,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, route)
+	require.Equal(t, &sourceID, route.SourceGroupID)
+
+	groupRepo.getByIDByID[8].Status = StatusDisabled
+	_, err = svc.CreateCompositeRoute(context.Background(), 7, CompositeRouteInput{
+		PublicModel: "gpt-pro-16", SourceGroupID: &sourceID, TargetPlatform: PlatformOpenAI, Enabled: true,
+		UpstreamModel: "gpt-5.4", Endpoint: CompositeRouteEndpointResponses,
+	})
+	require.ErrorContains(t, err, "not active")
+}
+
+func TestAdminService_CreateCompositeRouteRejectsNestedCompositeSource(t *testing.T) {
+	sourceID := int64(8)
+	nestedID := int64(9)
+	groupRepo := &groupRepoStubForAdmin{getByIDByID: map[int64]*Group{
+		7: {ID: 7, Platform: PlatformComposite, Status: StatusActive, SubscriptionType: SubscriptionTypeStandard},
+		8: {ID: 8, Platform: PlatformComposite, Status: StatusActive, SubscriptionType: SubscriptionTypeStandard},
+		9: {ID: 9, Platform: PlatformOpenAI, Status: StatusActive, SubscriptionType: SubscriptionTypeStandard},
+	}}
+	routeRepo := &compositeRouteRepoStubForAdmin{routes: []CompositeModelRoute{{
+		ID: 1, GroupID: 8, SourceGroupID: &nestedID, PublicModel: "nested", TargetPlatform: PlatformOpenAI, Enabled: true,
+	}}}
+	svc := &adminServiceImpl{groupRepo: groupRepo, compositeRouteRepo: routeRepo}
+
+	_, err := svc.CreateCompositeRoute(context.Background(), 7, CompositeRouteInput{
+		PublicModel: "gpt-pro-16", SourceGroupID: &sourceID, TargetPlatform: PlatformOpenAI,
+		UpstreamModel: "gpt-5.4", Enabled: true,
+	})
+	require.ErrorContains(t, err, "nested source-group")
+}
+
+func TestAdminService_CreateCompositeRouteRejectsNonStandardOuterGroup(t *testing.T) {
+	sourceID := int64(8)
+	groupRepo := &groupRepoStubForAdmin{getByIDByID: map[int64]*Group{
+		7: {ID: 7, Platform: PlatformComposite, Status: StatusActive, SubscriptionType: SubscriptionTypeSubscription},
+		8: {ID: 8, Platform: PlatformOpenAI, Status: StatusActive, SubscriptionType: SubscriptionTypeStandard},
+	}}
+	routeRepo := &compositeRouteRepoStubForAdmin{}
+	svc := &adminServiceImpl{groupRepo: groupRepo, compositeRouteRepo: routeRepo}
+
+	_, err := svc.CreateCompositeRoute(context.Background(), 7, CompositeRouteInput{
+		PublicModel: "gpt-pro-16", SourceGroupID: &sourceID, TargetPlatform: PlatformOpenAI,
+		UpstreamModel: "gpt-5.4", Enabled: true,
+	})
+	require.ErrorContains(t, err, "standard subscription type")
+	require.Nil(t, routeRepo.created)
+}
+
 func TestAdminService_UpdateAndDeleteCompositeRouteRequireRouteOwnership(t *testing.T) {
 	groupRepo := &groupRepoStubForAdmin{
 		getByID: &Group{ID: 7, Platform: PlatformComposite},

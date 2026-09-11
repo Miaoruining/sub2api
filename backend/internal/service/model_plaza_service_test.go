@@ -238,6 +238,157 @@ func TestListPlazaGroups_CompositeAndOrdinaryGroupsDoNotLeakPlatforms(t *testing
 	})
 }
 
+func TestListPlazaGroups_CompositeSourceRoutesExposeOnlyAliasesAndInheritSourcePricing(t *testing.T) {
+	sourceInput := 0.11e-6
+	sourceOutput := 0.23e-6
+	sourceCacheWrite := 0.31e-6
+	sourceCacheRead := 0.04e-6
+	sourceTierInput := 0.44e-6
+	sourceTierMax := 200000
+	sourceTime := &ChannelTimePricing{Timezone: "Asia/Shanghai", Periods: []ChannelTimePricingPeriod{{
+		StartTime: "09:00", EndTime: "12:00", Multiplier: 0.5,
+	}}}
+	sourceChannel := Channel{
+		ID: 1, Name: "source", Status: StatusActive, GroupIDs: []int64{19},
+		ModelPricing: []ChannelModelPricing{{
+			Platform: PlatformOpenAI, Models: []string{"gpt-5.4", "source-only-model"}, BillingMode: BillingModeToken,
+			InputPrice: &sourceInput, OutputPrice: &sourceOutput,
+			CacheWritePrice: &sourceCacheWrite, CacheReadPrice: &sourceCacheRead,
+			TimePricing: sourceTime,
+			Intervals:   []PricingInterval{{MinTokens: 0, MaxTokens: &sourceTierMax, InputPrice: &sourceTierInput}},
+		}},
+	}
+	entryChannel := plazaPricedChannel(2, "entry", []int64{50}, PlatformOpenAI, "entry-channel-leak")
+	source := Group{ID: 19, Name: "source", Platform: PlatformOpenAI, Status: StatusActive,
+		SubscriptionType: SubscriptionTypeStandard, RateMultiplier: 0.23}
+	entry := Group{ID: 50, Name: "composite", Platform: PlatformComposite, Status: StatusActive,
+		SubscriptionType: SubscriptionTypeStandard, RateMultiplier: 1}
+	route := CompositeModelRoute{
+		ID: 1, GroupID: entry.ID, SourceGroupID: &source.ID,
+		PublicModel: "public-gpt", MatchType: CompositeRouteMatchExact,
+		TargetPlatform: PlatformOpenAI, UpstreamModel: "gpt-5.4", Endpoint: CompositeRouteEndpointAny,
+		Enabled: true,
+	}
+	repo := &mockChannelRepository{
+		listAllFn: func(context.Context) ([]Channel, error) { return []Channel{sourceChannel, entryChannel}, nil },
+	}
+	svc := NewModelPlazaService(repo, &stubGroupRepoForAvailable{activeGroups: []Group{source, entry}}, nil, nil, nil,
+		compositeRouteRepoStub{routes: []CompositeModelRoute{route}})
+
+	out, err := svc.ListGroups(context.Background())
+	require.NoError(t, err)
+	require.Len(t, out, 2, "the source group keeps its own channel catalog")
+	byID := make(map[int64]PlazaGroup, len(out))
+	for _, group := range out {
+		byID[group.ID] = group
+	}
+	require.Len(t, byID[entry.ID].Models, 1, "route-driven Composite must not leak attached channel models")
+	model := byID[entry.ID].Models[0]
+	require.Equal(t, "public-gpt", model.Name)
+	require.Equal(t, PlatformOpenAI, model.Platform)
+	require.NotNil(t, model.Pricing)
+	require.InDelta(t, sourceInput, *model.Pricing.InputPrice, 1e-15)
+	require.InDelta(t, sourceOutput, *model.Pricing.OutputPrice, 1e-15)
+	require.InDelta(t, sourceCacheWrite, *model.Pricing.CacheWritePrice, 1e-15)
+	require.InDelta(t, sourceCacheRead, *model.Pricing.CacheReadPrice, 1e-15)
+	require.Len(t, model.Pricing.Intervals, 1)
+	require.InDelta(t, sourceTierInput, *model.Pricing.Intervals[0].InputPrice, 1e-15)
+	require.Equal(t, sourceTime, model.Pricing.TimePricing)
+}
+
+func TestListPlazaGroups_CompositeSourceRouteIneligibleFailsClosed(t *testing.T) {
+	source := Group{ID: 19, Name: "source", Platform: PlatformOpenAI, Status: StatusActive,
+		SubscriptionType: SubscriptionTypeSubscription}
+	entry := Group{ID: 50, Name: "composite", Platform: PlatformComposite, Status: StatusActive,
+		SubscriptionType: SubscriptionTypeStandard}
+	entryChannel := plazaPricedChannel(2, "entry", []int64{50}, PlatformOpenAI, "entry-channel-leak")
+	route := CompositeModelRoute{
+		ID: 1, GroupID: entry.ID, SourceGroupID: &source.ID,
+		PublicModel: "public-gpt", MatchType: CompositeRouteMatchExact,
+		TargetPlatform: PlatformOpenAI, UpstreamModel: "gpt-5.4", Enabled: true,
+	}
+	repo := &mockChannelRepository{listAllFn: func(context.Context) ([]Channel, error) { return []Channel{entryChannel}, nil }}
+	svc := NewModelPlazaService(repo, &stubGroupRepoForAvailable{activeGroups: []Group{source, entry}}, nil, nil, nil,
+		compositeRouteRepoStub{routes: []CompositeModelRoute{route}})
+
+	out, err := svc.ListGroups(context.Background())
+	require.NoError(t, err)
+	require.Empty(t, out, "invalid source must not fall back to entry channel models")
+}
+
+func TestListPlazaGroups_CompositeSourcePrefixAllowlistAndDisabledRoutes(t *testing.T) {
+	inputPrice := 11e-6
+	outputPrice := 23e-6
+	cacheWritePrice := 31e-6
+	timePricing := &ChannelTimePricing{Timezone: "Asia/Shanghai", Periods: []ChannelTimePricingPeriod{{
+		StartTime: "09:00", EndTime: "12:00", Multiplier: 0.8,
+	}}}
+	source := Group{
+		ID: 19, Name: "cn-source", Platform: PlatformComposite, Status: StatusActive,
+		SubscriptionType: SubscriptionTypeStandard,
+		ModelAllowlist:   GroupModelAllowlist{Enabled: true, Models: []string{"cn-glm-*"}},
+	}
+	disabledSource := Group{
+		ID: 20, Name: "disabled-source", Platform: PlatformZhipu, Status: StatusDisabled,
+		SubscriptionType: SubscriptionTypeStandard,
+	}
+	entry := Group{ID: 50, Name: "composite", Platform: PlatformComposite, Status: StatusActive,
+		SubscriptionType: SubscriptionTypeStandard}
+	sourceChannel := Channel{
+		ID: 1, Name: "cn-channel", Status: StatusActive, GroupIDs: []int64{source.ID},
+		ModelPricing: []ChannelModelPricing{{
+			Platform: PlatformZhipu, Models: []string{"cn-glm-4.5", "source-only"}, BillingMode: BillingModeToken,
+			InputPrice: &inputPrice, OutputPrice: &outputPrice, CacheWritePrice: &cacheWritePrice,
+			TimePricing: timePricing,
+		}},
+	}
+	entryChannel := plazaPricedChannel(2, "entry", []int64{entry.ID}, PlatformOpenAI, "entry-channel-leak")
+	disabledSourceID := disabledSource.ID
+	routes := []CompositeModelRoute{
+		{
+			ID: 1, GroupID: entry.ID, SourceGroupID: &source.ID, PublicModel: "cn-glm",
+			MatchType: CompositeRouteMatchExact, TargetPlatform: PlatformZhipu, UpstreamModel: "cn-glm-4.5", Enabled: true,
+		},
+		{
+			ID: 2, GroupID: entry.ID, SourceGroupID: &source.ID, PublicModel: "cn-blocked",
+			MatchType: CompositeRouteMatchExact, TargetPlatform: PlatformZhipu, UpstreamModel: "cn-other-5", Enabled: true,
+		},
+		{
+			ID: 3, GroupID: entry.ID, SourceGroupID: &disabledSourceID, PublicModel: "cn-disabled-source",
+			MatchType: CompositeRouteMatchExact, TargetPlatform: PlatformZhipu, UpstreamModel: "cn-glm-4.5", Enabled: true,
+		},
+		{
+			ID: 4, GroupID: entry.ID, SourceGroupID: &source.ID, PublicModel: "cn-disabled-route",
+			MatchType: CompositeRouteMatchExact, TargetPlatform: PlatformZhipu, UpstreamModel: "cn-glm-4.5", Enabled: false,
+		},
+		// The source Composite's ordinary prefix route establishes the provider
+		// for the actual upstream model. It is not recursively substituted.
+		{ID: 5, GroupID: source.ID, PublicModel: "cn-glm-", MatchType: CompositeRouteMatchPrefix, TargetPlatform: PlatformZhipu, Enabled: true},
+		{ID: 6, GroupID: source.ID, PublicModel: "disabled-", MatchType: CompositeRouteMatchPrefix, TargetPlatform: PlatformZhipu, Enabled: false},
+	}
+	repo := &mockChannelRepository{listAllFn: func(context.Context) ([]Channel, error) {
+		return []Channel{sourceChannel, entryChannel}, nil
+	}}
+	svc := NewModelPlazaService(repo, &stubGroupRepoForAvailable{activeGroups: []Group{source, disabledSource, entry}}, nil, nil, nil,
+		compositeRouteRepoStub{routes: routes})
+	out, err := svc.ListGroups(context.Background())
+	require.NoError(t, err)
+	var entryModels []PlazaModel
+	for _, group := range out {
+		if group.ID == entry.ID {
+			entryModels = group.Models
+		}
+	}
+	require.Equal(t, []string{"cn-glm"}, modelNames(entryModels),
+		"仅公开命中的 exact alias；不得泄露 entry 渠道、白名单外模型、禁用来源或禁用路由")
+	model := entryModels[0]
+	require.NotNil(t, model.Pricing)
+	require.InDelta(t, inputPrice, *model.Pricing.InputPrice, 1e-15)
+	require.InDelta(t, outputPrice, *model.Pricing.OutputPrice, 1e-15)
+	require.InDelta(t, cacheWritePrice, *model.Pricing.CacheWritePrice, 1e-15)
+	require.Equal(t, timePricing, model.Pricing.TimePricing)
+}
+
 func TestListPlazaGroups_InactiveChannelSkipped(t *testing.T) {
 	inactive := plazaPricedChannel(1, "off", []int64{10}, "anthropic", "claude-sonnet")
 	inactive.Status = "inactive"

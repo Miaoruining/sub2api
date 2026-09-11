@@ -331,6 +331,7 @@ type UpdateGroupRequest struct {
 
 type CompositeRouteRequest struct {
 	PublicModel    string `json:"public_model" binding:"required"`
+	SourceGroupID  *int64 `json:"source_group_id"`
 	MatchType      string `json:"match_type" binding:"omitempty,oneof=exact prefix"`
 	TargetPlatform string `json:"target_platform" binding:"required,oneof=anthropic openai gemini antigravity grok kimi zhipu deepseek minimax"`
 	UpstreamModel  string `json:"upstream_model"`
@@ -515,6 +516,7 @@ func compositeRouteRequestToInput(req CompositeRouteRequest, defaultEnabled bool
 	}
 	return service.CompositeRouteInput{
 		PublicModel:    req.PublicModel,
+		SourceGroupID:  req.SourceGroupID,
 		MatchType:      req.MatchType,
 		TargetPlatform: req.TargetPlatform,
 		UpstreamModel:  req.UpstreamModel,

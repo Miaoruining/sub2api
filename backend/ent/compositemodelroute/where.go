@@ -75,6 +75,11 @@ func GroupID(v int64) predicate.CompositeModelRoute {
 	return predicate.CompositeModelRoute(sql.FieldEQ(FieldGroupID, v))
 }
 
+// SourceGroupID applies equality check predicate on the "source_group_id" field. It's identical to SourceGroupIDEQ.
+func SourceGroupID(v int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldEQ(FieldSourceGroupID, v))
+}
+
 // PublicModel applies equality check predicate on the "public_model" field. It's identical to PublicModelEQ.
 func PublicModel(v string) predicate.CompositeModelRoute {
 	return predicate.CompositeModelRoute(sql.FieldEQ(FieldPublicModel, v))
@@ -263,6 +268,56 @@ func GroupIDIn(vs ...int64) predicate.CompositeModelRoute {
 // GroupIDNotIn applies the NotIn predicate on the "group_id" field.
 func GroupIDNotIn(vs ...int64) predicate.CompositeModelRoute {
 	return predicate.CompositeModelRoute(sql.FieldNotIn(FieldGroupID, vs...))
+}
+
+// SourceGroupIDEQ applies the EQ predicate on the "source_group_id" field.
+func SourceGroupIDEQ(v int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldEQ(FieldSourceGroupID, v))
+}
+
+// SourceGroupIDNEQ applies the NEQ predicate on the "source_group_id" field.
+func SourceGroupIDNEQ(v int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldNEQ(FieldSourceGroupID, v))
+}
+
+// SourceGroupIDIn applies the In predicate on the "source_group_id" field.
+func SourceGroupIDIn(vs ...int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldIn(FieldSourceGroupID, vs...))
+}
+
+// SourceGroupIDNotIn applies the NotIn predicate on the "source_group_id" field.
+func SourceGroupIDNotIn(vs ...int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldNotIn(FieldSourceGroupID, vs...))
+}
+
+// SourceGroupIDGT applies the GT predicate on the "source_group_id" field.
+func SourceGroupIDGT(v int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldGT(FieldSourceGroupID, v))
+}
+
+// SourceGroupIDGTE applies the GTE predicate on the "source_group_id" field.
+func SourceGroupIDGTE(v int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldGTE(FieldSourceGroupID, v))
+}
+
+// SourceGroupIDLT applies the LT predicate on the "source_group_id" field.
+func SourceGroupIDLT(v int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldLT(FieldSourceGroupID, v))
+}
+
+// SourceGroupIDLTE applies the LTE predicate on the "source_group_id" field.
+func SourceGroupIDLTE(v int64) predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldLTE(FieldSourceGroupID, v))
+}
+
+// SourceGroupIDIsNil applies the IsNil predicate on the "source_group_id" field.
+func SourceGroupIDIsNil() predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldIsNull(FieldSourceGroupID))
+}
+
+// SourceGroupIDNotNil applies the NotNil predicate on the "source_group_id" field.
+func SourceGroupIDNotNil() predicate.CompositeModelRoute {
+	return predicate.CompositeModelRoute(sql.FieldNotNull(FieldSourceGroupID))
 }
 
 // PublicModelEQ applies the EQ predicate on the "public_model" field.

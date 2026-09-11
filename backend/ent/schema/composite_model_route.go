@@ -34,6 +34,10 @@ func (CompositeModelRoute) Mixin() []ent.Mixin {
 func (CompositeModelRoute) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("group_id"),
+		field.Int64("source_group_id").
+			Optional().
+			Nillable().
+			Comment("Optional standard balance group whose accounts, scheduling, and pricing are used."),
 		field.String("public_model").
 			MaxLen(200).
 			NotEmpty().
@@ -78,6 +82,7 @@ func (CompositeModelRoute) Edges() []ent.Edge {
 func (CompositeModelRoute) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("group_id"),
+		index.Fields("source_group_id"),
 		index.Fields("group_id", "enabled"),
 		index.Fields("group_id", "endpoint"),
 		index.Fields("group_id", "target_platform"),

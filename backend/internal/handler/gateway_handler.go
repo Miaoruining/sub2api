@@ -1166,16 +1166,16 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	}
 
 	if platform == service.PlatformComposite {
-		availableModels := h.compositeAvailableModels(c.Request.Context(), groupID)
+		availableModels, routeDriven := h.compositeAvailableModels(c.Request.Context(), groupID)
 		if apiKey != nil && apiKey.Group != nil && apiKey.Group.ModelAllowlistEnabled() {
 			source := availableModels
-			if len(source) == 0 {
+			if len(source) == 0 && !routeDriven {
 				source = defaultModelIDsForPlatform(service.PlatformComposite)
 			}
 			writeAllowlistedModelsList(c, service.PlatformComposite, apiKey.Group.ModelAllowlist.FilterForListing(source))
 			return
 		}
-		if len(availableModels) > 0 {
+		if routeDriven || len(availableModels) > 0 {
 			writeModelsList(c, service.PlatformComposite, availableModels)
 			return
 		}
@@ -1280,16 +1280,16 @@ func (h *GatewayHandler) codexModelIDsForGroup(ctx context.Context, group *servi
 		platform = group.Platform
 	}
 	if platform == service.PlatformComposite {
-		availableModels := h.compositeAvailableModels(ctx, groupID)
+		availableModels, routeDriven := h.compositeAvailableModels(ctx, groupID)
 		fallbackModels := defaultCodexModelIDsForPlatform(service.PlatformComposite)
 		if group.ModelAllowlistEnabled() {
 			source := availableModels
-			if len(source) == 0 {
+			if len(source) == 0 && !routeDriven {
 				source = fallbackModels
 			}
 			return group.ModelAllowlist.FilterForListing(source)
 		}
-		if len(availableModels) > 0 {
+		if routeDriven || len(availableModels) > 0 {
 			return availableModels
 		}
 		return fallbackModels
@@ -1306,9 +1306,14 @@ func (h *GatewayHandler) codexModelIDsForGroup(ctx context.Context, group *servi
 	return fallbackModels
 }
 
-func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *int64) []string {
+func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *int64) ([]string, bool) {
 	if h == nil || h.gatewayService == nil {
-		return nil
+		return nil, false
+	}
+	if groupID != nil {
+		if models, routeDriven := h.gatewayService.GetCompositeAvailableModels(ctx, *groupID); routeDriven {
+			return models, true
+		}
 	}
 	seen := make(map[string]struct{})
 	models := make([]string, 0)
@@ -1334,7 +1339,7 @@ func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *
 			models = append(models, model)
 		}
 	}
-	return models
+	return models, false
 }
 
 func geminiMessagesDispatchPublicModels(group *service.Group, availableModels []string) []string {

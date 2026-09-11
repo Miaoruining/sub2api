@@ -1,12 +1,14 @@
 package routes
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/requestmodel"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -613,7 +615,14 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 				c.Abort()
 				return
 			}
+			if decision.Source == service.CompositeRouteSourceExplicit && !decision.Matched {
+				c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": gin.H{"type": "permission_error", "message": "Composite source route is unavailable"}})
+				return
+			}
 			if decision.Matched {
+				if !applyCompositeSourceGroup(c, apiKey, decision) {
+					return
+				}
 				c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), decision))
 				if upstreamModel := strings.TrimSpace(decision.UpstreamModel); upstreamModel != "" && upstreamModel != model && gjson.ValidBytes(body) {
 					if _, modelPath := requestmodel.JSONModelPathForRoute(routePath, body); modelPath != "" {
@@ -644,8 +653,27 @@ func compositeGeminiTargetPlatformMiddleware(resolver *service.CompositeRouteRes
 					c.Abort()
 					return
 				}
+				if decision.Source == service.CompositeRouteSourceExplicit && !decision.Matched {
+					c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": gin.H{"type": "permission_error", "message": "Composite source route is unavailable"}})
+					return
+				}
 				if decision.Matched {
+					if !applyCompositeSourceGroup(c, apiKey, decision) {
+						return
+					}
 					c.Request = c.Request.WithContext(service.WithCompositeRouteDecision(c.Request.Context(), decision))
+					if decision.SourceGroupID != nil && decision.UpstreamModel != model {
+						for i := range c.Params {
+							switch c.Params[i].Key {
+							case "model":
+								c.Params[i].Value = decision.UpstreamModel
+							case "modelAction":
+								if idx := strings.LastIndexByte(c.Params[i].Value, ':'); idx >= 0 {
+									c.Params[i].Value = decision.UpstreamModel + c.Params[i].Value[idx:]
+								}
+							}
+						}
+					}
 				}
 			}
 			if _, resolved := service.ResolvedTargetPlatformFromContext(c.Request.Context()); !resolved {
@@ -654,6 +682,36 @@ func compositeGeminiTargetPlatformMiddleware(resolver *service.CompositeRouteRes
 		}
 		c.Next()
 	}
+}
+
+// Source routes are standard-balance routing aliases. The authenticated key
+// and its owner/quota stay unchanged; the effective group follows the selected
+// source, just as an explicit auto-group attempt does. This preserves source
+// account pools, pricing, time windows, caching and group rate limits together.
+// Usage is attributed to the actual source group and the original API key.
+func applyCompositeSourceGroup(c *gin.Context, key *service.APIKey, decision service.CompositeRouteDecision) bool {
+	if decision.SourceGroupID == nil {
+		return true
+	}
+	source := decision.SourceGroup
+	if key == nil || key.Group == nil || key.Group.IsSubscriptionType() ||
+		source == nil || source.ID != *decision.SourceGroupID || source.IsSubscriptionType() ||
+		source.IsExclusive || source.Status != service.StatusActive || source.ID == key.Group.ID {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": gin.H{
+			"type": "permission_error", "message": "Composite source group is unavailable",
+		}})
+		return false
+	}
+	clonedKey, clonedGroup := *key, *source
+	// The entry group's Messages opt-in authorizes the adapter for this key;
+	// it must not toggle the source group's own public endpoint setting.
+	clonedGroup.AllowMessagesDispatch = key.Group.AllowMessagesDispatch
+	clonedKey.GroupID = &clonedGroup.ID
+	clonedKey.Group = &clonedGroup
+	c.Set(string(middleware.ContextKeyAPIKey), &clonedKey)
+	middleware.SetOpsFallbackAPIKey(c, &clonedKey)
+	c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), ctxkey.Group, &clonedGroup))
+	return true
 }
 
 // grokCustomVoiceEndpoint derives the upstream Voice endpoint for the

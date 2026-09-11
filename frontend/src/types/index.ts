@@ -681,6 +681,8 @@ export type CompositeRouteSource = 'route' | 'detector' | string
 export interface CompositeModelRoute {
   id: number
   group_id: number
+  /** Optional source group whose accounts and pricing should be inherited. */
+  source_group_id?: number | null
   public_model: string
   match_type: CompositeRouteMatchType
   target_platform: Exclude<GroupPlatform, 'composite'>
@@ -694,6 +696,8 @@ export interface CompositeModelRoute {
 }
 
 export interface CompositeModelRouteInput {
+  /** Null keeps the current Composite group's account and pricing configuration. */
+  source_group_id?: number | null
   public_model: string
   match_type: CompositeRouteMatchType
   target_platform: Exclude<GroupPlatform, 'composite'>
@@ -707,6 +711,8 @@ export interface CompositeModelRouteInput {
 export interface CompositeRoutePreviewRequest {
   model: string
   endpoint: CompositeRouteEndpoint
+  /** Optional source group to use while previewing route resolution. */
+  source_group_id?: number | null
 }
 
 export interface CompositeRouteDecision {

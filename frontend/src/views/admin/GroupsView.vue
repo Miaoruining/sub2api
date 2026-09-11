@@ -4085,6 +4085,13 @@
                       <div class="mt-1 break-all text-xs text-gray-500 dark:text-gray-400">
                         {{ route.upstream_model || route.public_model }}
                       </div>
+                      <div
+                        v-if="route.source_group_id != null"
+                        class="mt-1 break-all text-xs text-cyan-700 dark:text-cyan-400"
+                      >
+                        {{ t("admin.groups.compositeRoutes.sourceGroup") }}:
+                        {{ compositeSourceGroupLabel(route.source_group_id) }}
+                      </div>
                     </td>
                     <td class="px-3 py-2">
                       <div class="text-gray-700 dark:text-gray-300">
@@ -4201,6 +4208,23 @@
             </div>
 
             <div>
+              <label class="input-label">
+                {{ t("admin.groups.compositeRoutes.sourceGroup") }}
+              </label>
+              <Select
+                v-model="compositeRouteForm.source_group_id"
+                data-testid="composite-route-source-group"
+                :options="compositeSourceGroupOptions"
+                :loading="compositeSourceGroupsLoading"
+                :disabled="compositeSourceGroupsLoading"
+                :searchable="true"
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t("admin.groups.compositeRoutes.sourceGroupHint") }}
+              </p>
+            </div>
+
+            <div>
               <label class="input-label">{{
                 t("admin.groups.compositeRoutes.upstreamModel")
               }}</label>
@@ -4272,12 +4296,24 @@
                 <button
                   type="button"
                   class="btn btn-secondary"
+                  data-testid="composite-preview-run"
                   :disabled="compositePreviewLoading || !compositePreviewModel"
                   @click="previewCompositeRoute"
                 >
                   <Icon name="play" size="sm" />
                 </button>
               </div>
+              <label class="input-label">
+                {{ t("admin.groups.compositeRoutes.sourceGroup") }}
+              </label>
+              <Select
+                v-model="compositePreviewSourceGroupId"
+                data-testid="composite-preview-source-group"
+                :options="compositeSourceGroupOptions"
+                :loading="compositeSourceGroupsLoading"
+                :disabled="compositeSourceGroupsLoading"
+                :searchable="true"
+              />
 
               <div
                 v-if="compositePreviewDecision"
@@ -4720,6 +4756,34 @@ const compositeRoutePlatformOptions = computed(() => [
   ...CONCRETE_PLATFORM_OPTIONS,
 ]);
 
+const compositeSourceGroupOptions = computed(() => {
+  const currentGroupId = compositeRoutesGroup.value?.id;
+  const eligibleGroups = compositeSourceGroups.value
+    .filter(
+      (group) =>
+        group.id !== currentGroupId &&
+        group.status === "active" &&
+        group.subscription_type === "standard" &&
+        !group.is_exclusive,
+    )
+    .sort((a, b) => {
+      const nameOrder = a.name.localeCompare(b.name);
+      return nameOrder || a.id - b.id;
+    });
+
+  return [
+    {
+      value: null,
+      label: t("admin.groups.compositeRoutes.sourceGroupCurrent"),
+    },
+    ...eligibleGroups.map((group) => ({
+      value: group.id,
+      // Include the ID so groups with the same display name remain selectable.
+      label: `${group.name} (#${group.id})`,
+    })),
+  ];
+});
+
 const compositeRouteEndpointOptions = computed(() => [
   { value: "any", label: t("admin.groups.compositeRoutes.endpoints.any") },
   {
@@ -4939,6 +5003,7 @@ const rpmOverridesGroup = ref<AdminGroup | null>(null);
 const sortableGroups = ref<AdminGroup[]>([]);
 type ConcreteGroupPlatform = Exclude<GroupPlatform, "composite">;
 type CompositeRouteFormState = {
+  source_group_id: number | null;
   public_model: string;
   match_type: CompositeRouteMatchType;
   target_platform: ConcreteGroupPlatform;
@@ -4953,13 +5018,18 @@ const showCompositeRoutesModal = ref(false);
 const compositeRoutesGroup = ref<AdminGroup | null>(null);
 const compositeRoutes = ref<CompositeModelRoute[]>([]);
 const compositeRoutesLoading = ref(false);
+const compositeSourceGroups = ref<AdminGroup[]>([]);
+const compositeSourceGroupsLoading = ref(false);
 const compositeRouteSaving = ref(false);
 const compositeRouteEditingId = ref<number | null>(null);
 const compositePreviewModel = ref("");
 const compositePreviewEndpoint = ref<CompositeRouteEndpoint>("any");
+const compositePreviewSourceGroupId = ref<number | null>(null);
 const compositePreviewLoading = ref(false);
 const compositePreviewDecision = ref<CompositeRouteDecision | null>(null);
+let compositeSourceGroupsRequestId = 0;
 const compositeRouteForm = reactive<CompositeRouteFormState>({
+  source_group_id: null,
   public_model: "",
   match_type: "exact",
   target_platform: "openai",
@@ -6545,8 +6615,15 @@ const compositeRouteSourceLabel = (source: string) => {
   return source || "—";
 };
 
+const compositeSourceGroupLabel = (groupId: number | null | undefined) => {
+  if (groupId == null) return t("admin.groups.compositeRoutes.sourceGroupCurrent");
+  const group = compositeSourceGroups.value.find((item) => item.id === groupId);
+  return group ? `${group.name} (#${group.id})` : `#${groupId}`;
+};
+
 const resetCompositeRouteForm = () => {
   compositeRouteEditingId.value = null;
+  compositeRouteForm.source_group_id = null;
   compositeRouteForm.public_model = "";
   compositeRouteForm.match_type = "exact";
   compositeRouteForm.target_platform = "openai";
@@ -6558,6 +6635,7 @@ const resetCompositeRouteForm = () => {
 };
 
 const toCompositeRouteInput = (): CompositeModelRouteInput => ({
+  source_group_id: compositeRouteForm.source_group_id,
   public_model: compositeRouteForm.public_model.trim(),
   match_type: compositeRouteForm.match_type,
   target_platform: compositeRouteForm.target_platform,
@@ -6567,6 +6645,37 @@ const toCompositeRouteInput = (): CompositeModelRouteInput => ({
   enabled: compositeRouteForm.enabled,
   notes: compositeRouteForm.notes.trim(),
 });
+
+const loadCompositeSourceGroups = async (currentGroupId: number) => {
+  const requestId = ++compositeSourceGroupsRequestId;
+  compositeSourceGroupsLoading.value = true;
+  try {
+    const response = await adminAPI.groups.list(1, 1000, {
+      status: "active",
+      is_exclusive: false,
+    });
+    if (
+      requestId !== compositeSourceGroupsRequestId ||
+      compositeRoutesGroup.value?.id !== currentGroupId
+    ) {
+      return;
+    }
+    compositeSourceGroups.value = response.items;
+  } catch (error: any) {
+    if (requestId !== compositeSourceGroupsRequestId) return;
+    compositeSourceGroups.value = [];
+    appStore.showError(
+      error.response?.data?.detail ||
+        error.response?.data?.message ||
+        t("admin.groups.compositeRoutes.failedToLoadSourceGroups"),
+    );
+    console.error("Error loading Composite source groups:", error);
+  } finally {
+    if (requestId === compositeSourceGroupsRequestId) {
+      compositeSourceGroupsLoading.value = false;
+    }
+  }
+};
 
 const loadCompositeRoutes = async () => {
   if (!compositeRoutesGroup.value) return;
@@ -6593,24 +6702,34 @@ const loadCompositeRoutes = async () => {
 
 const handleCompositeRoutes = async (group: AdminGroup) => {
   compositeRoutesGroup.value = group;
+  compositeSourceGroups.value = [];
   compositePreviewModel.value = "";
   compositePreviewEndpoint.value = "any";
+  compositePreviewSourceGroupId.value = null;
   compositePreviewDecision.value = null;
   resetCompositeRouteForm();
   showCompositeRoutesModal.value = true;
-  await loadCompositeRoutes();
+  await Promise.all([
+    loadCompositeRoutes(),
+    loadCompositeSourceGroups(group.id),
+  ]);
 };
 
 const closeCompositeRoutesModal = () => {
   showCompositeRoutesModal.value = false;
   compositeRoutesGroup.value = null;
   compositeRoutes.value = [];
+  compositeSourceGroups.value = [];
+  compositeSourceGroupsRequestId += 1;
+  compositeSourceGroupsLoading.value = false;
+  compositePreviewSourceGroupId.value = null;
   compositePreviewDecision.value = null;
   resetCompositeRouteForm();
 };
 
 const editCompositeRoute = (route: CompositeModelRoute) => {
   compositeRouteEditingId.value = route.id;
+  compositeRouteForm.source_group_id = route.source_group_id ?? null;
   compositeRouteForm.public_model = route.public_model;
   compositeRouteForm.match_type = route.match_type;
   compositeRouteForm.target_platform = route.target_platform;
@@ -6692,6 +6811,7 @@ const previewCompositeRoute = async () => {
       {
         model: compositePreviewModel.value.trim(),
         endpoint: compositePreviewEndpoint.value,
+        source_group_id: compositePreviewSourceGroupId.value,
       },
     );
   } catch (error: any) {

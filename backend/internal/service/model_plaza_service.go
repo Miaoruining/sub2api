@@ -21,6 +21,8 @@ type PlazaOfficialPricing struct {
 
 // PlazaModel 模型广场中单个模型条目：按实收口径合成的展示定价 + 官方参考价。
 type PlazaModel struct {
+	// SourceGroup is internal pricing context for a source-route alias.
+	SourceGroup     *Group
 	Name            string
 	Platform        string
 	Pricing         *ChannelModelPricing
@@ -64,11 +66,12 @@ type PlazaGroup struct {
 // 模型枚举来自渠道配置；token 模型的展示单价与阶梯由 BillingService 的阶梯表
 // 查询给出（与扣费走同一条解析链与计费函数），图片/按次模型沿用渠道/分组档位价。
 type ModelPlazaService struct {
-	channelRepo    ChannelRepository
-	groupRepo      GroupRepository
-	pricingService *PricingService
-	billingService *BillingService
-	resolver       *ModelPricingResolver
+	channelRepo        ChannelRepository
+	groupRepo          GroupRepository
+	compositeRouteRepo CompositeModelRouteRepository
+	pricingService     *PricingService
+	billingService     *BillingService
+	resolver           *ModelPricingResolver
 }
 
 // NewModelPlazaService 创建模型广场服务。
@@ -78,13 +81,19 @@ func NewModelPlazaService(
 	pricingService *PricingService,
 	billingService *BillingService,
 	resolver *ModelPricingResolver,
+	compositeRouteRepos ...CompositeModelRouteRepository,
 ) *ModelPlazaService {
+	var compositeRouteRepo CompositeModelRouteRepository
+	if len(compositeRouteRepos) > 0 {
+		compositeRouteRepo = compositeRouteRepos[0]
+	}
 	return &ModelPlazaService{
-		channelRepo:    channelRepo,
-		groupRepo:      groupRepo,
-		pricingService: pricingService,
-		billingService: billingService,
-		resolver:       resolver,
+		channelRepo:        channelRepo,
+		groupRepo:          groupRepo,
+		compositeRouteRepo: compositeRouteRepo,
+		pricingService:     pricingService,
+		billingService:     billingService,
+		resolver:           resolver,
 	}
 }
 
@@ -110,6 +119,10 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 	groups, err := s.groupRepo.ListActive(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list active groups: %w", err)
+	}
+	compositeCatalog, err := buildCompositeSourceCatalog(ctx, s.compositeRouteRepo, groups, channels, s.pricingService)
+	if err != nil {
+		return nil, fmt.Errorf("build composite source catalog: %w", err)
 	}
 
 	sort.SliceStable(channels, func(i, j int) bool {
@@ -148,6 +161,11 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 	}
 	// modelIdx[groupID][platform+modelName] = index into byGroup[groupID].Models
 	modelIdx := make(map[int64]map[modelKey]int, len(groups))
+	type sourcePricingContext struct {
+		group *Group
+		model string
+	}
+	sourceContexts := make(map[int64]map[modelKey]sourcePricingContext)
 	for i := range channels {
 		ch := &channels[i]
 		if ch.Status != StatusActive {
@@ -170,6 +188,12 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 			for j := range supported {
 				m := supported[j]
 				if pg.Platform == PlatformComposite {
+					if compositeCatalog.RouteDriven[gid] {
+						// An explicit source-route catalog is authoritative for
+						// this Composite group; do not expand all models from a
+						// channel attached to it.
+						continue
+					}
 					if !isConcreteRequestPlatform(m.Platform) {
 						continue
 					}
@@ -197,6 +221,41 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 		}
 	}
 
+	// Add explicit aliases after the legacy channel pass. A route alias with
+	// the same public name replaces the accidental channel entry and carries
+	// the terminal source group's pricing context.
+	for gid, routeModels := range compositeCatalog.ModelsByGroup {
+		pg, ok := byGroup[gid]
+		if !ok {
+			continue
+		}
+		idx := modelIdx[gid]
+		if idx == nil {
+			idx = make(map[modelKey]int, len(routeModels))
+			modelIdx[gid] = idx
+		}
+		contexts := sourceContexts[gid]
+		if contexts == nil {
+			contexts = make(map[modelKey]sourcePricingContext, len(routeModels))
+			sourceContexts[gid] = contexts
+		}
+		for _, routeModel := range routeModels {
+			key := modelKey{platform: routeModel.Platform, name: routeModel.PublicModel}
+			if at, seen := idx[key]; seen {
+				pg.Models[at] = PlazaModel{Name: routeModel.PublicModel, Platform: routeModel.Platform, Pricing: routeModel.Pricing}
+				contexts[key] = sourcePricingContext{group: routeModel.SourceGroup, model: routeModel.UpstreamModel}
+				continue
+			}
+			idx[key] = len(pg.Models)
+			pg.Models = append(pg.Models, PlazaModel{
+				Name:     routeModel.PublicModel,
+				Platform: routeModel.Platform,
+				Pricing:  routeModel.Pricing,
+			})
+			contexts[key] = sourcePricingContext{group: routeModel.SourceGroup, model: routeModel.UpstreamModel}
+		}
+	}
+
 	officialMemo := make(map[string]*PlazaOfficialPricing)
 	out := make([]PlazaGroup, 0, len(order))
 	for _, gid := range order {
@@ -212,6 +271,13 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 		})
 		g := groupEnt[gid]
 		for j := range pg.Models {
+			key := modelKey{platform: pg.Models[j].Platform, name: pg.Models[j].Name}
+			if sourceContext, ok := sourceContexts[gid][key]; ok && sourceContext.group != nil {
+				pg.Models[j].SourceGroup = sourceContext.group
+				s.fillDisplayPricingForModel(ctx, &pg.Models[j], sourceContext.group, sourceContext.model, pg.Models[j].Platform)
+				pg.Models[j].OfficialPricing = s.lookupOfficialPricing(ctx, sourceContext.model, officialMemo)
+				continue
+			}
 			s.fillDisplayPricing(ctx, &pg.Models[j], g)
 			pg.Models[j].OfficialPricing = s.lookupOfficialPricing(ctx, pg.Models[j].Name, officialMemo)
 		}
@@ -249,6 +315,28 @@ func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaMode
 	m.Pricing = withDefaultMaxReasoningEffortMultiplier(plazaImageDisplayPricing(m.Pricing, g), m.Name)
 }
 
+// fillDisplayPricingForModel is the source-route variant of
+// fillDisplayPricing. The response keeps the public alias, while schedule and
+// image-tier probes use the actual model and terminal source group.
+func (s *ModelPlazaService) fillDisplayPricingForModel(ctx context.Context, m *PlazaModel, g *Group, model, platform string) {
+	if s.billingService != nil && s.resolver != nil {
+		sched, err := s.billingService.ResolveContextPricingSchedule(ctx, s.resolver, ContextPricingScheduleInput{
+			Model:    model,
+			Group:    g,
+			Platform: platform,
+		})
+		if err == nil && sched != nil && len(sched.Tiers) > 0 {
+			m.Pricing = withDefaultMaxReasoningEffortMultiplier(plazaPricingFromSchedule(m.Pricing, sched), model)
+			if len(sched.Tiers) > 1 {
+				m.LongContextBasis = sched.Basis
+			}
+			m.TimePricing = sched.TimePricing
+			return
+		}
+	}
+	m.Pricing = withDefaultMaxReasoningEffortMultiplier(plazaImageDisplayPricing(m.Pricing, g), model)
+}
+
 func withDefaultMaxReasoningEffortMultiplier(pricing *ChannelModelPricing, model string) *ChannelModelPricing {
 	if pricing == nil || pricing.MaxReasoningEffortMultiplier != nil {
 		return pricing
@@ -270,7 +358,10 @@ func plazaPricingFromSchedule(raw *ChannelModelPricing, sched *ContextPricingSch
 		out.ImageInputPrice = raw.ImageInputPrice
 		out.ImageOutputPrice = raw.ImageOutputPrice
 		out.PerRequestPrice = raw.PerRequestPrice
+		out.FastMultiplier = raw.FastMultiplier
+		out.FlexMultiplier = raw.FlexMultiplier
 		out.MaxReasoningEffortMultiplier = raw.MaxReasoningEffortMultiplier
+		out.TimePricing = raw.TimePricing
 	}
 	first := sched.Tiers[0]
 	out.InputPrice = first.Input

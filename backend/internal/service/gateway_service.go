@@ -1377,6 +1377,11 @@ func (s *GatewayService) DoGrokNativeResponsesJSON(ctx context.Context, account 
 }
 
 func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64, platform string) []string {
+	if strings.TrimSpace(platform) == PlatformComposite && groupID != nil {
+		if models, routeDriven := s.GetCompositeAvailableModels(ctx, *groupID); routeDriven {
+			return models
+		}
+	}
 	cacheKey := modelsListCacheKey(groupID, platform)
 	if s.modelsListCache != nil {
 		if cached, found := s.modelsListCache.Get(cacheKey); found {
@@ -1462,6 +1467,42 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 		modelsListCacheStoreTotal.Add(1)
 	}
 	return cloneStringSlice(models)
+}
+
+// GetCompositeAvailableModels returns the public aliases defined by enabled
+// exact source routes for a Composite group. The second result distinguishes
+// an authoritative empty route catalog from the legacy account-discovery
+// fallback, so callers can avoid exposing default Composite models when a
+// source route is stale or ineligible.
+func (s *GatewayService) GetCompositeAvailableModels(ctx context.Context, groupID int64) ([]string, bool) {
+	if s == nil || groupID <= 0 || s.groupRepo == nil || s.compositeResolver == nil || s.compositeResolver.repo == nil {
+		return nil, false
+	}
+	groups, err := s.groupRepo.ListActive(ctx)
+	if err != nil {
+		return nil, false
+	}
+	catalog, err := buildCompositeSourceCatalog(ctx, s.compositeResolver.repo, groups, nil, nil)
+	if err != nil || !catalog.RouteDriven[groupID] {
+		return nil, false
+	}
+	models := catalog.ModelsByGroup[groupID]
+	out := make([]string, 0, len(models))
+	seen := make(map[string]struct{}, len(models))
+	for _, model := range models {
+		name := strings.TrimSpace(model.PublicModel)
+		if name == "" {
+			continue
+		}
+		key := strings.ToLower(name)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out, true
 }
 
 func (s *GatewayService) resolveCompositeModelOwnership(ctx context.Context, groupID int64, model string) (CompositeModelOwnership, error) {

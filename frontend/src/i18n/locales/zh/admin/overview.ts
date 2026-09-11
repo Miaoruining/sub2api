@@ -1115,6 +1115,9 @@ export default {
         matchType: '匹配方式',
         endpoint: '端点',
         targetPlatform: '目标平台',
+        sourceGroup: '来源分组',
+        sourceGroupCurrent: '沿用当前 Composite 分组',
+        sourceGroupHint: '选择后继承该分组的账号、倍率和定价配置；留空则沿用当前 Composite 分组。',
         upstreamModel: '上游模型',
         upstreamModelHint: '留空表示透传原始请求模型：前缀匹配下每个命中模型各自原样转发（如 deepseek-v4-flash、deepseek-v4-pro 分别转发）；填写则所有命中请求都固定转发该模型。',
         notes: '备注',
@@ -1130,6 +1133,7 @@ export default {
         failedToSave: '保存 Composite 路由失败',
         failedToDelete: '删除 Composite 路由失败',
         failedToPreview: '预览 Composite 路由失败',
+        failedToLoadSourceGroups: '加载来源分组失败',
         deleteConfirm: '确定删除此 Composite 路由？',
         endpoints: {
           any: '任意',

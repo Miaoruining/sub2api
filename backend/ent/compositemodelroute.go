@@ -26,6 +26,8 @@ type CompositeModelRoute struct {
 	DeletedAt *time.Time `json:"deleted_at,omitempty"`
 	// GroupID holds the value of the "group_id" field.
 	GroupID int64 `json:"group_id,omitempty"`
+	// Optional standard balance group whose accounts, scheduling, and pricing are used.
+	SourceGroupID *int64 `json:"source_group_id,omitempty"`
 	// Client-facing model identifier or prefix.
 	PublicModel string `json:"public_model,omitempty"`
 	// exact or prefix.
@@ -75,7 +77,7 @@ func (*CompositeModelRoute) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case compositemodelroute.FieldEnabled:
 			values[i] = new(sql.NullBool)
-		case compositemodelroute.FieldID, compositemodelroute.FieldGroupID, compositemodelroute.FieldPriority:
+		case compositemodelroute.FieldID, compositemodelroute.FieldGroupID, compositemodelroute.FieldSourceGroupID, compositemodelroute.FieldPriority:
 			values[i] = new(sql.NullInt64)
 		case compositemodelroute.FieldPublicModel, compositemodelroute.FieldMatchType, compositemodelroute.FieldTargetPlatform, compositemodelroute.FieldUpstreamModel, compositemodelroute.FieldEndpoint, compositemodelroute.FieldNotes:
 			values[i] = new(sql.NullString)
@@ -126,6 +128,13 @@ func (_m *CompositeModelRoute) assignValues(columns []string, values []any) erro
 				return fmt.Errorf("unexpected type %T for field group_id", values[i])
 			} else if value.Valid {
 				_m.GroupID = value.Int64
+			}
+		case compositemodelroute.FieldSourceGroupID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field source_group_id", values[i])
+			} else if value.Valid {
+				_m.SourceGroupID = new(int64)
+				*_m.SourceGroupID = value.Int64
 			}
 		case compositemodelroute.FieldPublicModel:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -230,6 +239,11 @@ func (_m *CompositeModelRoute) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("group_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.GroupID))
+	builder.WriteString(", ")
+	if v := _m.SourceGroupID; v != nil {
+		builder.WriteString("source_group_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("public_model=")
 	builder.WriteString(_m.PublicModel)
