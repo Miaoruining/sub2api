@@ -139,6 +139,11 @@ export default defineConfig(({ mode }) => {
               return 'vendor-i18n'
             }
 
+            // Airwallex SDK 及其 scoped 依赖仅在支付流程中按需加载，避免进入首页公共依赖。
+            if (id.includes('/@airwallex/')) {
+              return 'vendor-airwallex'
+            }
+
             // Stripe 仅在支付流程中按需加载，避免进入首页公共依赖。
             if (id.includes('/@stripe/stripe-js/')) {
               return 'vendor-stripe'
