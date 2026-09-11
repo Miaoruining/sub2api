@@ -20,6 +20,23 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ROUTES = ROOT / "docs" / "composite-source-routes.example.json"
 MAX_BODY = 8 * 1024 * 1024
 NORMAL_STOPS = {"end_turn", "stop_sequence", "max_tokens"}
+TOOL_NAME = "echo_probe"
+TOOL_ARGUMENTS = {"status": "ok"}
+
+
+def echo_tool(protocol: str) -> dict:
+    schema = {"type": "object", "properties": {"status": {"type": "string", "enum": ["ok"]}},
+              "required": ["status"], "additionalProperties": False}
+    if protocol == "messages":
+        return {"name": TOOL_NAME, "description": "Return the probe status.", "input_schema": schema}
+    return {"type": "function", "name": TOOL_NAME, "description": "Return the probe status.",
+            "parameters": schema, "strict": True}
+
+
+def tool_arguments() -> str:
+    return json.dumps(TOOL_ARGUMENTS, separators=(",", ":"))
+
+
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, request, *args, **kwargs):
         return None
@@ -143,6 +160,50 @@ def parse_messages(body: bytes) -> tuple[bool, str, dict]:
     return True, stop, usage
 
 
+def parse_messages_tool_call(body: bytes) -> tuple[bool, str, dict, dict]:
+    stop, stopped, usage = None, False, {}
+    call = {"id": "", "name": "", "arguments": ""}
+    try:
+        for event in sse_events(body):
+            if not isinstance(event, dict):
+                return False, "invalid_sse_event", usage, call
+            kind = event.get("type")
+            if kind == "error":
+                return False, "error_event", usage, call
+            if kind == "message_start":
+                usage.update(safe_usage((event.get("message") or {}).get("usage") or {}))
+            elif kind == "content_block_start":
+                block = event.get("content_block") or {}
+                if block.get("type") == "tool_use":
+                    call["id"] = block.get("id") or ""
+                    call["name"] = block.get("name") or ""
+                    if isinstance(block.get("input"), dict) and block["input"]:
+                        call["arguments"] = json.dumps(block["input"], separators=(",", ":"))
+            elif kind == "content_block_delta":
+                delta = event.get("delta") or {}
+                if delta.get("type") == "input_json_delta":
+                    call["arguments"] += delta.get("partial_json") or ""
+            elif kind == "message_delta":
+                stop = (event.get("delta") or {}).get("stop_reason") or stop
+                usage.update(safe_usage(event.get("usage") or {}))
+            elif kind == "message_stop":
+                stopped = True
+    except (TypeError, UnicodeDecodeError, ValueError, json.JSONDecodeError):
+        return False, "invalid_sse", usage, call
+    if not stopped:
+        return False, "missing_message_stop", usage, call
+    if stop != "tool_use":
+        return False, f"unexpected_tool_stop:{stop or 'missing'}", usage, call
+    if not call["id"] or not call["name"] or call["name"] != TOOL_NAME:
+        return False, "unexpected_tool_call", usage, call
+    try:
+        if json.loads(call["arguments"] or "{}") != TOOL_ARGUMENTS:
+            return False, "tool_arguments_mismatch", usage, call
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return False, "invalid_tool_arguments", usage, call
+    return True, stop, usage, call
+
+
 def parse_responses(body: bytes) -> tuple[bool, str, dict]:
     terminal, usage = None, {}
     try:
@@ -161,6 +222,60 @@ def parse_responses(body: bytes) -> tuple[bool, str, dict]:
     if terminal != "completed":
         return False, "missing_response_completed", usage
     return True, terminal, usage
+
+
+def parse_responses_tool_call(body: bytes) -> tuple[bool, str, dict, dict]:
+    terminal, usage, output_index = None, {}, None
+    call = {"id": "", "call_id": "", "name": "", "arguments": ""}
+    try:
+        for event in sse_events(body):
+            if not isinstance(event, dict):
+                return False, "invalid_sse_event", usage, call
+            kind = event.get("type")
+            item = event.get("item") or {}
+            if kind in {"response.output_item.added", "response.output_item.done"} and item.get("type") == "function_call":
+                output_index = event.get("output_index", output_index)
+                for field in ("id", "call_id", "name"):
+                    if item.get(field):
+                        call[field] = item[field]
+                if item.get("arguments"):
+                    call["arguments"] = item["arguments"]
+            elif kind in {"response.function_call_arguments.delta", "response.function_call_arguments.done"}:
+                if output_index is None or event.get("output_index") == output_index:
+                    for field in ("call_id", "name"):
+                        if event.get(field):
+                            call[field] = event[field]
+                    if kind.endswith(".delta"):
+                        call["arguments"] += event.get("delta") or ""
+                    elif event.get("arguments") is not None:
+                        call["arguments"] = event["arguments"]
+            elif kind == "response.completed":
+                terminal = "completed"
+                response = event.get("response") or {}
+                usage.update(safe_usage(response.get("usage") or {}))
+                if not call["name"]:
+                    for output in response.get("output") or []:
+                        if output.get("type") == "function_call":
+                            for field in ("id", "call_id", "name", "arguments"):
+                                if output.get(field):
+                                    call[field] = output[field]
+                            break
+            elif kind in {"response.failed", "response.incomplete", "response.cancelled", "response.canceled"}:
+                return False, kind, usage, call
+    except (TypeError, UnicodeDecodeError, ValueError, json.JSONDecodeError):
+        return False, "invalid_sse", usage, call
+    if terminal != "completed":
+        return False, "missing_response_completed", usage, call
+    if not call["id"] and not call["call_id"]:
+        return False, "missing_tool_call_id", usage, call
+    if not call["name"] or call["name"] != TOOL_NAME:
+        return False, "unexpected_tool_call", usage, call
+    try:
+        if json.loads(call["arguments"] or "{}") != TOOL_ARGUMENTS:
+            return False, "tool_arguments_mismatch", usage, call
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return False, "invalid_tool_arguments", usage, call
+    return True, terminal, usage, call
 
 
 def usage_rows(key_id: int, model: str, since: datetime) -> list[dict]:
@@ -212,6 +327,52 @@ def request_payload(model: str, protocol: str) -> dict | None:
     return None
 
 
+def run_tool_roundtrip(base: str, key: str, model: str, protocol: str, timeout: float) -> tuple[str, dict, dict]:
+    prompt = 'Call echo_probe exactly once with the JSON arguments {"status":"ok"}.'
+    args_json = tool_arguments()
+    if protocol == "messages":
+        original = {"role": "user", "content": prompt}
+        first = {"model": model, "max_tokens": 128, "stream": True, "messages": [original],
+                 "tools": [echo_tool(protocol)], "tool_choice": {"type": "tool", "name": TOOL_NAME}}
+        parser_fn = parse_messages_tool_call
+    elif protocol == "responses":
+        original = {"role": "user", "content": [{"type": "input_text", "text": prompt}]}
+        first = {"model": model, "max_output_tokens": 128, "stream": True, "store": False,
+                 "instructions": "Use the declared echo_probe tool once.", "input": [original],
+                 "tools": [echo_tool(protocol)], "tool_choice": {"type": "function", "name": TOOL_NAME}}
+        parser_fn = parse_responses_tool_call
+    else:
+        fail(f"--tool-roundtrip only supports messages/responses (protocol={protocol})")
+    code, body = http_call(base, "/v1/" + protocol, key, first, timeout, "text/event-stream")
+    parsed = parser_fn(body) if code == 200 else (False, "http_error", {}, {})
+    ok, terminal, usage, call = parsed
+    if not ok:
+        fail(f"model={model} protocol={protocol} tool_call HTTP={code if code is not None else 'connection_error'} terminal={terminal}")
+    call_id = call.get("id") or call.get("call_id")
+    if protocol == "messages":
+        second = {"model": model, "max_tokens": 128, "stream": True,
+                  "messages": [original, {"role": "assistant", "content": [{"type": "tool_use", "id": call_id,
+                  "name": call["name"], "input": TOOL_ARGUMENTS}]}, {"role": "user", "content": [{
+                  "type": "tool_result", "tool_use_id": call_id, "content": args_json}]}],
+                  "tools": [echo_tool(protocol)]}
+        second_parser = parse_messages
+    else:
+        function_call = {"type": "function_call", "call_id": call.get("call_id") or call_id,
+                         "name": call["name"], "arguments": args_json}
+        if call.get("id"):
+            function_call["id"] = call["id"]
+        second = {"model": model, "max_output_tokens": 128, "stream": True, "store": False,
+                  "instructions": "Reply briefly after the tool result.", "input": [original, function_call,
+                  {"type": "function_call_output", "call_id": call.get("call_id") or call_id,
+                   "output": args_json}], "tools": [echo_tool(protocol)], "tool_choice": "none"}
+        second_parser = parse_responses
+    code, body = http_call(base, "/v1/" + protocol, key, second, timeout, "text/event-stream")
+    final = second_parser(body) if code == 200 else (False, "http_error", {})
+    if not final[0]:
+        fail(f"model={model} protocol={protocol} tool_result HTTP={code if code is not None else 'connection_error'} terminal={final[1]}")
+    return final[1], final[2], call
+
+
 def image_count(body: bytes) -> int | None:
     try:
         if len(body) > MAX_BODY:
@@ -230,14 +391,14 @@ def main() -> None:
     parser.add_argument("--routes-file", default=str(DEFAULT_ROUTES))
     parser.add_argument("--model", action="append", default=[])
     parser.add_argument("--protocol", action="append", choices=["messages", "responses", "images"], default=[])
-    parser.add_argument("--tool-roundtrip", action="store_true", help="当前最小探针暂不支持")
+    parser.add_argument("--tool-roundtrip", action="store_true", help="执行 echo_probe 工具调用与结果续接往返")
     parser.add_argument("--timeout", type=float, default=120.0)
     parser.add_argument("--log-wait", type=float, default=10.0)
     args = parser.parse_args()
     if args.group_id <= 0 or len(args.model) != len(args.protocol):
         parser.error("--group-id 必须为正数，且每个 --model 必须对应同序 --protocol")
-    if args.tool_roundtrip:
-        fail("tool roundtrip unsupported by this minimal probe; no success is reported")
+    if args.tool_roundtrip and any(protocol == "images" for protocol in args.protocol):
+        parser.error("--tool-roundtrip 仅支持 messages/responses")
     parts = urlsplit(args.base_url)
     if parts.scheme not in {"http", "https"} or parts.hostname not in {"localhost", "127.0.0.1", "::1"}:
         parser.error("--base-url 仅允许 localhost/127.0.0.1/::1，避免凭据随重定向或代理外发")
@@ -260,6 +421,16 @@ def main() -> None:
     paths = {"messages": "/v1/messages", "responses": "/v1/responses", "images": "/v1/images/generations"}
     for model, protocol in zip(args.model, args.protocol):
         started = datetime.now(timezone.utc)
+        if args.tool_roundtrip:
+            terminal, usage, call = run_tool_roundtrip(args.base_url, key, model, protocol, args.timeout)
+            print(f"model={model} protocol={protocol} tool_roundtrip=ok tool_id={call.get('id') or call.get('call_id')} "
+                  f"tool_name={call['name']} tool_arguments={json.dumps(TOOL_ARGUMENTS, sort_keys=True)} terminal={terminal} "
+                  f"usage={json.dumps(usage, sort_keys=True)}")
+            rows = wait_usage(key_id, model, started, args.log_wait)
+            if not rows:
+                fail(f"model={model} protocol={protocol} usage_log=missing")
+            print(f"usage api_key_id={key_id} model={model} rows={json.dumps(rows, sort_keys=True, separators=(',', ':'))}")
+            continue
         body_payload = request_payload(model, protocol)
         if body_payload is None:
             fail(f"unsupported protocol={protocol}")
