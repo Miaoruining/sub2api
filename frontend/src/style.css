@@ -21,6 +21,11 @@
     @apply min-h-screen;
   }
 
+  /* 挂载前为首屏留位，避免下方公开简介先顶到页首、随后被应用推走。 */
+  #app:empty {
+    min-height: 100vh;
+  }
+
   /* 自定义滚动条 - 仅针对 Firefox，避免 Chrome 取消 webkit 的全局定制 */
   @supports (-moz-appearance:none) {
     * {
