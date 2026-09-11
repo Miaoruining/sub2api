@@ -1,6 +1,6 @@
 # Composite 来源分组配置与接入说明
 
-本文记录本轮 Composite 路由可选 `source_group_id` 的行为、模型组合建议和待发布操作。**当前功能尚未部署到生产环境。** 文中的接入片段只供用户按需复制，不会自动修改用户配置。
+本文记录 Composite 路由可选 `source_group_id` 的行为、模型组合和接入方式。**2026-09-11 已部署生产，复合子代理分组 ID 为 27，已启用 29 条模型路由；真实调用验收记录见发布记录。** 文中的接入片段只供用户按需复制，不会自动修改用户配置。
 
 ## 来源分组行为
 
@@ -31,15 +31,19 @@
 
 生产验收前应锁定最终模型名单，至少逐项确认公开别名、上游模型、endpoint、来源组和实际计费归因；本文件中的模型名称只表达组合示例，不替代生产验收名单。
 
-## 待发布操作
+## 发布核对流程
 
-本轮尚未部署。发布前由主控确认以下事项：
+本轮已完成应用发布和分组配置。后续发布沿用以下核对流程：
 
 1. 当前代码、数据库迁移和镜像均为同一冻结提交，并取得不可变的 `linux/amd64` 镜像 digest。
 2. 目标来源组满足 `standard`、active、公开、非自身，并确认不存在多层 source route。
 3. GPT `-016`、`-023`、国产 11 款和 Gemini 最终模型名单已与后台来源组配置逐项对照；已删除 DeepSeek 不得出现。
 4. 候选实例先验证健康、版本、别名解析、上游模型、来源组计费和 usage 归因，再进行候选切流。
 5. 生产切流沿用 `deploy/modelport-release.py` 的候选、Caddy 切换、连接排空、正式晋升和 finalize 流程；数据库与 Redis 不因本次应用发布重启。
+
+## 当前验收状态
+
+已验证 GPT 稳定线路与 GLM 的 Messages/Responses 工具往返，以及 DeepSeek、Kimi、MiniMax 和 image-2 的代表调用及扣费。Luna 专用线路上游返回 403；Gemini 3.8/3.7 探针超时，尚未通过实时验收。GPT 0.16 线路测试中遇到过上游排队错误。完整证据见 [发布记录](release-modelport-20260911-composite-source.md)。
 
 ## Codex 接入模板
 
@@ -103,9 +107,9 @@ model: glm-5.3
 
 参考官方文档：[Claude LLM gateway](https://code.claude.com/docs/en/llm-gateway)、[Claude 子代理](https://code.claude.com/docs/en/subagents)。
 
-## 本轮待上架清单
+## 本轮上架清单
 
-2026-09-11 已通过后台与模型广场只读核对，共 29 条公开模型路由，见 [路由清单](composite-source-routes.example.json)。此文件尚未写入生产。
+2026-09-11 已通过后台与模型广场只读核对，共 29 条公开模型路由，见 [路由清单](composite-source-routes.example.json)。该清单已写入生产分组 #27。
 
 | 来源组 | 路由数量 | 公开名称规则 |
 | --- | ---: | --- |
@@ -126,7 +130,7 @@ model: glm-5.3
 - 后端 Composite、模型广场、Gemini Responses 定向测试通过；路由、handler、admin handler、repository 定向测试通过。
 - 新增迁移的结构约束测试通过。
 - 覆盖来源组停用拒绝、自引用/订阅/专属组拒绝、源白名单、同名线路别名改写、源倍率继承、缓存/分时/阶梯价卡目录、Gemini JSON/SSE 工具调用往返和上游 HTTP 错误。
-- 本地测试使用模拟上游；生产真实调用、实际扣费对账和上架仍待服务器登录后执行。
+- 本地测试使用模拟上游；生产真实调用与实际扣费对账见 [发布记录](release-modelport-20260911-composite-source.md)。
 
 ## 回退边界
 
