@@ -117,15 +117,19 @@ onBeforeUnmount(() => {
 onMounted(async () => {
   window.addEventListener('admin-compliance-required', onAdminComplianceRequired)
 
-  // Check if setup is needed
-  try {
-    const status = await getSetupStatus()
-    if (status.needs_setup && route.path !== '/setup') {
-      router.replace('/setup')
-      return
+  // A healthy server-rendered shell already has public settings injected. In
+  // normal mode the setup probe is redundant; keep it for setup mode and for
+  // shells served without an injected settings snapshot.
+  if (!window.__APP_CONFIG__) {
+    try {
+      const status = await getSetupStatus()
+      if (status.needs_setup && route.path !== '/setup') {
+        router.replace('/setup')
+        return
+      }
+    } catch {
+      // If setup status cannot be determined, assume normal mode and continue
     }
-  } catch {
-    // If setup endpoint fails, assume normal mode and continue
   }
 
   // Load public settings into appStore (will be cached for other components)
