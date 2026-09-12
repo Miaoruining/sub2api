@@ -94,6 +94,20 @@ describe('拼单席位和个人额度', () => {
   const mode=w.findAll('select').find(s=>s.find('option[value="dynamic"]').exists())!
   expect((mode.element as HTMLSelectElement).value).toBe('credits');expect(w.text()).toContain('整车周期额度（$）');w.unmount()
  })
+ it('管理卡片可直接下架和重新上架商品', async()=>{
+  const active={id:8,title:'在售商品',description:'',quota_mode:'credits',plan_type:'plus',total_credit:100,credit_5h:10,credit_7d:50,seats:2,price:10,duration_days:30,formation_days:2,total_tokens:0,total_requests:0,concurrency:1,status:'active' as const,version:3}
+  const disabled={...active,id:9,title:'已下架商品',status:'disabled' as const,version:4}
+  api.products.mockResolvedValue([active,disabled]);api.saveProduct.mockResolvedValue(undefined)
+  const w=render(true);await flushPromises()
+  await w.findAll('button').find(b=>b.text()==='下架')!.trigger('click');await flushPromises()
+  expect(api.saveProduct).toHaveBeenNthCalledWith(1,expect.objectContaining({id:8,status:'disabled',version:3}))
+  expect(w.text()).toContain('商品已下架，拼单大厅将不再展示该商品。')
+  await w.findAll('button').find(b=>b.text()==='重新上架')!.trigger('click');await flushPromises()
+  expect(api.saveProduct).toHaveBeenNthCalledWith(2,expect.objectContaining({id:9,status:'active',version:4}));w.unmount()
+ })
+ it('内容区标题只在顶部栏不显示标题的移动端保留',async()=>{
+  const w=render();await flushPromises();expect(w.get('[data-test="content-page-title"]').classes()).toContain('lg:hidden');w.unmount()
+ })
  it('动态窗口明确使用整号百分点，缺失或过期不会显示零额度', async()=>{
   api.list.mockResolvedValue([order({status:'active',quota_mode:'dynamic',plan_type:'plus',mine:{id:2,status:'joined',key_id:8,paid:10,refunded:0,tokens_used:0,requests_used:0,reserved_tokens:0,inflight:0,dynamic_quota:{status:'stale',shadow:false,windows:[{key:'5h',account_remaining_percent:null,used_percent:null,reserved_percent:null,remaining_percent:null,entitlement_percent:null,reset_at:null,observed_at:null,status:'stale'}]}}})])
   const w=render(false, true);await flushPromises();expect(w.text()).toContain('占整号窗口的百分点');expect(w.text()).toContain('数据过期');expect(w.text()).not.toContain('0 pp');w.unmount()

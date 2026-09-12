@@ -4,7 +4,7 @@
       <header class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
         <div>
           <p v-if="admin" class="mb-2 text-sm font-medium text-primary-600">MODELPORT / {{ t('pool.equalShare') }}</p>
-          <h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">{{ t(admin ? 'pool.adminTitle' : 'pool.title') }}</h1>
+          <h1 data-test="content-page-title" class="text-2xl font-semibold tracking-tight sm:text-3xl lg:hidden">{{ t(admin ? 'pool.adminTitle' : 'pool.title') }}</h1>
           <template v-if="admin">
             <p class="mt-2 max-w-3xl text-sm leading-6 text-gray-500">{{ t('pool.description') }}</p>
           </template>
@@ -63,7 +63,13 @@
  <p v-if="p.quota_mode === 'credits' || isDynamicMode(p.quota_mode)" class="text-sm text-gray-500">{{ p.duration_days }} {{ t('pool.days') }} · {{ t('pool.formation_days') }} {{ p.formation_days }} {{ t('pool.days') }}</p>
  <dl v-else class="grid grid-cols-2 gap-3 rounded-lg bg-gray-50 p-4 text-sm dark:bg-dark-800"><div><dt class="text-gray-500">{{ t('pool.duration_days') }}</dt><dd class="mt-1 font-medium">{{ p.duration_days }} {{ t('pool.days') }}</dd></div><div><dt class="text-gray-500">{{ t('pool.formation_days') }}</dt><dd class="mt-1 font-medium">{{ p.formation_days }} {{ t('pool.days') }}</dd></div><div><dt class="text-gray-500">{{ t('pool.shareTokens') }}</dt><dd class="mt-1 font-medium">{{ n(Math.floor(p.total_tokens / p.seats)) }}</dd></div><div><dt class="text-gray-500">{{ t('pool.shareRequests') }}</dt><dd class="mt-1 font-medium">{{ n(Math.floor(p.total_requests / p.seats)) }}</dd></div></dl>
             <p class="text-xs text-gray-500">{{ t('pool.concurrency') }}: {{ p.concurrency }} · {{ t('pool.deliveryPromise') }}</p>
-            <div v-if="admin" class="mt-auto flex items-center justify-between gap-2"><span class="text-sm" :class="p.status === 'active' ? 'text-emerald-600' : 'text-gray-500'">{{ t(p.status === 'active' ? 'pool.onSale' : 'pool.offSale') }}</span><button class="btn btn-secondary" :disabled="busy" @click="editProduct(p)">{{ t('pool.editProduct') }}</button></div>
+            <div v-if="admin" class="mt-auto flex flex-wrap items-center justify-between gap-2">
+              <span class="text-sm" :class="p.status === 'active' ? 'text-emerald-600' : 'text-gray-500'">{{ t(p.status === 'active' ? 'pool.onSale' : 'pool.offSale') }}</span>
+              <div class="flex gap-2">
+                <button class="btn btn-secondary" :disabled="busy" @click="toggleProductStatus(p)">{{ t(p.status === 'active' ? 'pool.takeOffSale' : 'pool.putOnSale') }}</button>
+                <button class="btn btn-secondary" :disabled="busy" @click="editProduct(p)">{{ t('pool.editProduct') }}</button>
+              </div>
+            </div>
             <button v-else class="btn btn-primary mt-auto w-full" :disabled="busy" @click="selected = {item: p, action: 'purchase', requestId: newRequestId()}">{{ t('pool.startGroup') }}</button>
           </article>
         </div>
@@ -165,6 +171,12 @@ function editProduct(p:PoolProduct){form.value={...p};window.scrollTo({top:0,beh
 async function fetchData(){[orders.value,products.value]=await Promise.all([poolAPI.list(props.admin),poolAPI.products(props.admin)])}
 async function load(){if(busy.value)return;busy.value=true;error.value='';try{await fetchData()}catch(e){error.value=poolError(e,t('pool.failed'))}finally{busy.value=false;loading.value=false}}
 async function saveProduct(){if(busy.value)return;busy.value=true;error.value='';success.value='';try{await poolAPI.saveProduct(form.value);form.value=newProduct();success.value=t('pool.productSaved');await fetchData()}catch(e){error.value=poolError(e,t('pool.failed'))}finally{busy.value=false}}
+async function toggleProductStatus(product:PoolProduct){
+ if(busy.value)return
+ busy.value=true;error.value='';success.value=''
+ const status=product.status==='active'?'disabled':'active'
+ try{await poolAPI.saveProduct({...product,status});success.value=t(status==='active'?'pool.productPutOnSale':'pool.productTakenOff');await fetchData()}catch(e){error.value=poolError(e,t('pool.failed'))}finally{busy.value=false}
+}
 async function act(){if(busy.value||!selected.value)return;busy.value=true;error.value='';success.value='';try{const s=selected.value;if(s.action==='purchase'){const result=await poolAPI.purchase(s.item,s.requestId);success.value=t('pool.groupStarted',{id:result.order_id})}else{await poolAPI.act(s.item.id,s.action);success.value=t('pool.saved')}selected.value=null;await Promise.all([fetchData(),auth.refreshUser()])}catch(e){error.value=poolError(e,t('pool.failed'))}finally{busy.value=false}}
 let timer:ReturnType<typeof setInterval>|undefined
 onMounted(()=>{void load();timer=setInterval(()=>{if(!busy.value&&!selected.value&&!document.hidden)void load()},30000)})
