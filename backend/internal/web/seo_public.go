@@ -57,6 +57,8 @@ type publicSEOTemplateData struct {
 	JSONLD      template.JS
 	Nonce       string
 	Breadcrumbs []publicSEOBreadcrumb
+	Modified    string
+	Guides      []publicSEOPage
 }
 
 type publicSEOBreadcrumb struct {
@@ -409,7 +411,19 @@ func publicRobotsText() string {
 }
 
 type sitemapURL struct {
-	Loc string `xml:"loc"`
+	Loc     string `xml:"loc"`
+	LastMod string `xml:"lastmod,omitempty"`
+}
+
+// Editorial dates, never request/build time: only substantive content changes
+// should advance these dates. The homepage has dynamic content, so omit its date.
+func publicSEOUpdated(path string) string {
+	switch path {
+	case "/learn/codex", "/learn/pricing", "/learn/troubleshooting":
+		return "2026-09-12"
+	default:
+		return "2026-09-10"
+	}
 }
 
 type sitemapURLSet struct {
@@ -430,7 +444,7 @@ func renderPublicSitemap() ([]byte, error) {
 			continue
 		}
 		seen[path] = struct{}{}
-		urls = append(urls, sitemapURL{Loc: canonicalSEOURL(path)})
+		urls = append(urls, sitemapURL{Loc: canonicalSEOURL(path), LastMod: publicSEOUpdated(path)})
 	}
 	result, err := xml.MarshalIndent(sitemapURLSet{
 		XMLNS: "http://www.sitemaps.org/schemas/sitemap/0.9",
@@ -458,14 +472,15 @@ func renderPublicSEOPage(page publicSEOPage, nonce string) ([]byte, error) {
 		items = append(items, map[string]any{"@type": "ListItem", "position": i + 1, "name": crumb.Name, "item": crumb.URL})
 	}
 	jsonLD, err := json.Marshal(map[string]any{
-		"@context":    "https://schema.org",
-		"@type":       "WebPage",
-		"@id":         canonicalSEOURL(path) + "#webpage",
-		"inLanguage":  "zh-CN",
-		"name":        page.Title,
-		"description": page.Description,
-		"url":         canonicalSEOURL(path),
-		"breadcrumb":  map[string]any{"@type": "BreadcrumbList", "itemListElement": items},
+		"@context":     "https://schema.org",
+		"@type":        "WebPage",
+		"@id":          canonicalSEOURL(path) + "#webpage",
+		"inLanguage":   "zh-CN",
+		"name":         page.Title,
+		"description":  page.Description,
+		"dateModified": publicSEOUpdated(path),
+		"url":          canonicalSEOURL(path),
+		"breadcrumb":   map[string]any{"@type": "BreadcrumbList", "itemListElement": items},
 		"isPartOf": map[string]string{
 			"@type": "WebSite",
 			"name":  "ModelPort",
@@ -486,6 +501,8 @@ func renderPublicSEOPage(page publicSEOPage, nonce string) ([]byte, error) {
 		JSONLD:      template.JS(jsonLD), // json.Marshal output, not arbitrary input
 		Nonce:       nonce,
 		Breadcrumbs: crumbs,
+		Modified:    publicSEOUpdated(path),
+		Guides:      publicSEOPages,
 	}
 	var rendered bytes.Buffer
 	if err := publicSEOTemplate.Execute(&rendered, data); err != nil {

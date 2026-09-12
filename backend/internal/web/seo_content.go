@@ -1,8 +1,55 @@
 package web
 
+const publicSEOCodexMinimumNote = `<p>这段只展示 provider、API 地址、认证变量和主模型等最小键，不包含模型目录文件、review/辅助模型或其他按客户端版本变化的选项；需要这些能力时请使用站内“使用密钥”生成的完整文件，再对照<a href="https://learn.chatgpt.com/docs/config-file/config-advanced">Codex 官方高级配置文档</a>核对，不能从本文示例推断未列出的参数。</p>`
+
 // Public editorial content: never include account-specific prices or credentials.
 type publicSEOPage struct {
 	Path, Title, Description, Body string
+}
+
+// The following additions are deliberately kept in the public editorial layer:
+// they teach a safe, copyable setup without embedding a user's key or claiming
+// that a directory response proves endpoint compatibility.
+const publicSEOCodexEnrichment = `<h2>可复制的用户级配置（TOML）</h2><p>下面是自定义 provider 的最小示例，保存位置是用户级 <code>~/.codex/config.toml</code>（Windows 可在 <code>%USERPROFILE%\.codex\config.toml</code> 使用对应路径）。当前仓库公开教程约定的 API 基础地址是 <code>https://api.modelport.top/v1</code>；若登录后的“使用密钥”弹窗显示不同地址，请以弹窗和站点当时的接入指南为准，不要自行重复追加 <code>/v1</code>。</p><pre><code># ~/.codex/config.toml（用户级）
+model_provider = "modelport"
+model = "&lt;MODELPORT_MODEL_ID&gt;"
+
+[model_providers.modelport]
+name = "ModelPort"
+base_url = "https://api.modelport.top/v1"
+env_key = "MODELPORT_API_KEY"
+wire_api = "responses"
+</code></pre><p><code>&lt;MODELPORT_MODEL_ID&gt;</code> 只是占位符：请从“使用密钥”弹窗或当前密钥可见的模型目录复制精确 ID 后再替换，本文不把未经核对的模型名写进配置。<code>env_key</code> 只引用环境变量名称，不把密钥值写入 TOML、仓库、截图、工单或 Git 历史。</p><h3>备份后合并，不覆盖原配置</h3><p>已有配置时先备份，再把上述键合并进原文件；不要用整段示例覆盖原有 profiles、权限或其他 provider。确认没有重复的 <code>[model_providers.modelport]</code> 表后再保存。</p><pre><code>mkdir -p ~/.codex
+if [ -f ~/.codex/config.toml ]; then
+  cp ~/.codex/config.toml ~/.codex/config.toml.bak.$(date +%Y%m%d%H%M%S)
+fi
+read -r -s MODELPORT_API_KEY
+export MODELPORT_API_KEY
+</code></pre><p>密钥值应由当前终端、系统密钥管理器或 CI Secret 注入；不要把上面的 <code>export</code> 行连同真实值提交 Git，也不要将真实值放入项目级 <code>.codex/config.toml</code>。Windows PowerShell 可在启动 Codex 的同一窗口设置 <code>$env:MODELPORT_API_KEY = '&lt;你的密钥&gt;'</code>。</p><h2>先看目录，再做兼容性验证</h2><p>用同一密钥请求 <code>GET /v1/models</code>（这里即 <code>https://api.modelport.top/v1/models</code>）只能帮助确认当前目录中的模型 ID；目录响应不保证 Responses 协议、工具调用、上下文压缩、额度或具体分组一定兼容。看到模型后仍需用小请求验证，并以实际错误与站内用量记录为准。</p><pre><code>curl -fsS --max-time 20 https://api.modelport.top/v1/models \
+  -H "Authorization: Bearer $MODELPORT_API_KEY"
+</code></pre><h2>上下文压缩的边界</h2><p>长会话的上下文压缩可能产生独立请求。若压缩阶段失败，请记录实际请求模型、时间、状态码和请求标识，核对当前客户端版本、Responses 能力与站内分组说明；不要把目录中的任意模型名当成压缩模型，也不要臆造未经当前 Codex 官方文档或站内指南确认的压缩配置项。调整配置前先恢复到已知可用的精确模型和 provider，避免用反复充值掩盖兼容性问题。</p>`
+
+const publicSEOPricingEnrichment = `<h2>复核扣费的假设算例（非当前报价）</h2><p>只为演示公式，假设某次请求的输入单价为每百万 token 2 个计价单位、输出单价为每百万 token 8 个计价单位；输入 15,000 token、输出 2,500 token，且没有缓存或其他收费项，则示意金额为 15,000 ÷ 1,000,000 × 2 + 2,500 ÷ 1,000,000 × 8 = 0.05 个计价单位。这里的单价、数量和结果都是假设，绝不是 ModelPort 当前价格或个人应付金额；实际值必须以登录后的模型广场、最终分组和用量明细为准。</p><h2>拿到账单怎样验算？</h2><ol><li>记录请求模型、实际分组、输入/输出/缓存分类和计费单位。</li><li>按每类 token 数乘以对应单价，再加上该请求的其他收费项。</li><li>核对用户适用倍率、折后单价和站内额度换算；页面已给出折后价时不要重复乘折扣。</li></ol>`
+
+const publicSEOTroubleshootingEnrichment = `<h2>可操作的最小诊断</h2><p>先在启动 Codex 的同一终端确认密钥变量存在，但不要打印密钥值：</p><pre><code>if [ -n "${MODELPORT_API_KEY:-}" ]; then
+  curl -i --max-time 20 https://api.modelport.top/v1/models \
+    -H "Authorization: Bearer $MODELPORT_API_KEY"
+else
+  echo "MODELPORT_API_KEY 未设置" &gt;&amp;2
+fi
+</code></pre><ol><li>响应为 401 时，确认环境变量、<code>env_key</code> 名称和生效的用户级 <code>~/.codex/config.toml</code> 一致；不要把密钥改放进项目文件。</li><li>响应为 403 时，检查密钥所属用户、分组授权、余额和 IP 限制；授权问题不会因重复请求或充值自动变成兼容。</li><li>若 <code>/v1/models</code> 端点本身返回 404，先核对 <code>base_url</code> 和路径；若目录请求成功但模型调用返回 404，再复制目录中的精确 ID（大小写也要一致）并检查当前分组能力。目录只是目录，不是调用保证。</li><li>响应为 429 时，降低并发并尊重 <code>Retry-After</code>；没有该响应头时也不要紧密循环重试，先查看额度和用量窗口。</li><li>响应为 5xx 或压缩阶段失败时，保存时间、模型、端点、状态码和请求标识，先做一次不含敏感数据的小请求；不要自行添加未经核对的模型/压缩参数，也不要公开日志中的密钥和提示词。</li></ol><p>如果配置刚合并，完全退出并重新启动 Codex，让它重新读取用户级配置；仍失败时附上脱敏后的配置键名和诊断响应，保留原始密钥在本地。若使用命令行注入密钥可能进入 shell history，请改用交互式读取或系统 Secret 管理器。</p>`
+
+func init() {
+	for i := range publicSEOPages {
+		switch publicSEOPages[i].Path {
+		case "/learn/codex":
+			publicSEOPages[i].Body += publicSEOCodexEnrichment + publicSEOCodexMinimumNote
+		case "/learn/pricing":
+			publicSEOPages[i].Body += publicSEOPricingEnrichment
+		case "/learn/troubleshooting":
+			publicSEOPages[i].Body += publicSEOTroubleshootingEnrichment
+		}
+	}
 }
 
 const publicSEOIntro = `<section id="modelport-public-intro" aria-labelledby="modelport-public-heading" style="max-width:960px;margin:48px auto;padding:32px 24px;line-height:1.8;border-top:1px solid #eaeaea"><h2 id="modelport-public-heading">ModelPort AI API 中转站</h2><p>通过统一入口接入已授权的 AI 模型，了解模型分组、实际用量计费和客户端配置。模型可用性与价格以账户内当前展示为准。</p><nav aria-label="公开使用指南"><a href="/learn">产品与使用指南</a> · <a href="/learn/api-relay">什么是 API 中转站</a> · <a href="/learn/model-routing">模型路由与授权</a> · <a href="/learn/troubleshooting">错误排查</a> · <a href="/learn/pricing">计费说明</a> · <a href="/learn/codex">Codex 接入</a> · <a href="/learn/claude-code">Claude Code 接入</a> · <a href="/learn/group-buy">拼团订阅</a> · <a href="/learn/lottery">每日抽奖</a></nav></section>`
