@@ -2,39 +2,43 @@ package service
 
 import (
 	"encoding/json"
-	"fmt"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/stretchr/testify/require"
 )
 
-func TestApplyAnthropicCompatFullReplayGuard_TrimsOldMessages(t *testing.T) {
+func TestApplyAnthropicCompatFullReplayGuard_PreservesFullConversation(t *testing.T) {
 	t.Parallel()
 
-	req := &apicompat.AnthropicRequest{Messages: make([]apicompat.AnthropicMessage, 0, openAICompatAnthropicReplayMaxTailMessages+3)}
-	for i := 0; i < openAICompatAnthropicReplayMaxTailMessages+3; i++ {
+	req := &apicompat.AnthropicRequest{Messages: make([]apicompat.AnthropicMessage, 0, 15)}
+	for i := 0; i < 15; i++ {
 		req.Messages = append(req.Messages, apicompat.AnthropicMessage{
 			Role:    "user",
-			Content: json.RawMessage(fmt.Sprintf(`"message-%02d"`, i)),
+			Content: json.RawMessage(`"message"`),
 		})
 	}
+	req.Messages[0].Content = json.RawMessage(`"initial task context"`)
+	before, err := json.Marshal(req.Messages)
+	require.NoError(t, err)
 
 	trimmed := applyAnthropicCompatFullReplayGuard(req)
+	after, err := json.Marshal(req.Messages)
+	require.NoError(t, err)
 
-	require.True(t, trimmed)
-	require.Len(t, req.Messages, openAICompatAnthropicReplayMaxTailMessages)
-	require.JSONEq(t, `"message-03"`, string(req.Messages[0].Content))
-	require.JSONEq(t, `"message-14"`, string(req.Messages[len(req.Messages)-1].Content))
+	require.False(t, trimmed)
+	require.JSONEq(t, string(before), string(after))
+	require.JSONEq(t, `"initial task context"`, string(req.Messages[0].Content))
+	require.Len(t, req.Messages, 15)
 }
 
-func TestApplyAnthropicCompatFullReplayGuard_KeepsToolBoundaryIntact(t *testing.T) {
+func TestApplyAnthropicCompatFullReplayGuard_PreservesToolCallResultSequence(t *testing.T) {
 	t.Parallel()
 
-	req := &apicompat.AnthropicRequest{Messages: make([]apicompat.AnthropicMessage, 0, openAICompatAnthropicReplayMaxTailMessages+3)}
-	for i := 0; i < openAICompatAnthropicReplayMaxTailMessages+3; i++ {
+	req := &apicompat.AnthropicRequest{Messages: make([]apicompat.AnthropicMessage, 0, 15)}
+	for i := 0; i < 15; i++ {
 		role := "user"
-		content := json.RawMessage(fmt.Sprintf(`"message-%02d"`, i))
+		content := json.RawMessage(`"message"`)
 		if i == 1 {
 			role = "assistant"
 			content = json.RawMessage(`[{"type":"tool_use","id":"toolu_keep","name":"Read","input":{"file_path":"main.go"}}]`)
@@ -47,12 +51,38 @@ func TestApplyAnthropicCompatFullReplayGuard_KeepsToolBoundaryIntact(t *testing.
 			Content: content,
 		})
 	}
+	before, err := json.Marshal(req.Messages)
+	require.NoError(t, err)
 
 	trimmed := applyAnthropicCompatFullReplayGuard(req)
+	after, err := json.Marshal(req.Messages)
+	require.NoError(t, err)
 
-	require.True(t, trimmed)
-	require.Len(t, req.Messages, openAICompatAnthropicReplayMaxTailMessages+2)
-	require.Equal(t, "assistant", req.Messages[0].Role)
-	require.Contains(t, string(req.Messages[0].Content), `"toolu_keep"`)
-	require.Contains(t, string(req.Messages[2].Content), `"tool_result"`)
+	require.False(t, trimmed)
+	require.JSONEq(t, string(before), string(after))
+	require.Len(t, req.Messages, 15)
+	require.Equal(t, "user", req.Messages[0].Role)
+	require.Equal(t, "assistant", req.Messages[1].Role)
+	require.Contains(t, string(req.Messages[1].Content), `"toolu_keep"`)
+	require.Equal(t, "user", req.Messages[2].Role)
+	require.Equal(t, "user", req.Messages[3].Role)
+	require.Contains(t, string(req.Messages[3].Content), `"tool_result"`)
+}
+
+func TestApplyAnthropicCompatFullReplayGuard_NilAndShortHistoryUnchanged(t *testing.T) {
+	t.Parallel()
+
+	require.False(t, applyAnthropicCompatFullReplayGuard(nil))
+
+	req := &apicompat.AnthropicRequest{Messages: []apicompat.AnthropicMessage{
+		{Role: "user", Content: json.RawMessage(`"initial task"`)},
+		{Role: "assistant", Content: json.RawMessage(`"answer"`)},
+	}}
+	before, err := json.Marshal(req.Messages)
+	require.NoError(t, err)
+
+	require.False(t, applyAnthropicCompatFullReplayGuard(req))
+	after, err := json.Marshal(req.Messages)
+	require.NoError(t, err)
+	require.JSONEq(t, string(before), string(after))
 }
