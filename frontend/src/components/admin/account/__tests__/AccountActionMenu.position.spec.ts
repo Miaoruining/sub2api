@@ -28,9 +28,9 @@ function setViewport(width: number, height: number) {
   window.dispatchEvent(new Event('resize'))
 }
 
-async function mountMenu(anchorRect = new DOMRect(950, 720, 32, 24)) {
+async function mountMenu(anchorRect = new DOMRect(950, 720, 32, 24), targetAccount = account) {
   const wrapper = mount(AccountActionMenu, {
-    props: { show: true, account, anchorRect },
+    props: { show: true, account: targetAccount, anchorRect },
     global: { stubs: { Icon: true } }
   })
   await flushPromises()
@@ -74,6 +74,16 @@ describe('AccountActionMenu viewport positioning', () => {
 
     expect(getTop()).toBe(128)
     expect(getLeft()).toBe(324)
+  })
+
+  it('keeps recovery available for a healthy OpenAI account with an invisible runtime block', async () => {
+    await mountMenu(new DOMRect(500, 100, 32, 24), {
+      ...account,
+      status: 'active',
+      rate_limit_reset_at: null
+    } as Account)
+
+    expect(getMenu().textContent).toContain('admin.accounts.recoverState')
   })
 
   it('centers a mobile menu on its trigger and flips above the last row', async () => {

@@ -138,6 +138,19 @@ func (s *openAIAccountModelTransientState) recordSuccess(accountID int64, model 
 	s.mu.Unlock()
 }
 
+func (s *openAIAccountModelTransientState) clearAccount(accountID int64) {
+	if s == nil || accountID <= 0 {
+		return
+	}
+	s.mu.Lock()
+	for key := range s.entries {
+		if key.AccountID == accountID {
+			delete(s.entries, key)
+		}
+	}
+	s.mu.Unlock()
+}
+
 func (s *openAIAccountModelTransientState) isBlocked(accountID int64, model string, now time.Time) bool {
 	key, ok := openAIAccountModelTransientKey(accountID, model)
 	if s == nil || !ok {

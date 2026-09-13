@@ -239,7 +239,7 @@ func TestRateLimitService_RecoverAccountAfterSuccessfulTest_ClearsErrorAndRateLi
 	require.Equal(t, []int64{42}, blocker.clearedIDs)
 }
 
-func TestRateLimitService_RecoverAccountAfterSuccessfulTest_NoRecoverableStateIsNoop(t *testing.T) {
+func TestRateLimitService_RecoverAccountAfterSuccessfulTest_NoPersistedStateStillClearsRuntimeBlock(t *testing.T) {
 	repo := &rateLimitClearRepoStub{
 		getByIDAccount: &Account{
 			ID:          7,
@@ -249,7 +249,9 @@ func TestRateLimitService_RecoverAccountAfterSuccessfulTest_NoRecoverableStateIs
 		},
 	}
 	cache := &tempUnschedCacheRecorder{}
+	blocker := &runtimeBlockRecorder{}
 	svc := NewRateLimitService(repo, nil, &config.Config{}, nil, cache)
+	svc.SetAccountRuntimeBlocker(blocker)
 
 	result, err := svc.RecoverAccountAfterSuccessfulTest(context.Background(), 7)
 	require.NoError(t, err)
@@ -264,6 +266,7 @@ func TestRateLimitService_RecoverAccountAfterSuccessfulTest_NoRecoverableStateIs
 	require.Equal(t, 0, repo.clearModelRateLimitCalls)
 	require.Equal(t, 0, repo.clearTempUnschedCalls)
 	require.Empty(t, cache.deletedIDs)
+	require.Equal(t, []int64{7}, blocker.clearedIDs)
 }
 
 func TestRateLimitService_RecoverAccountAfterSuccessfulTest_ClearErrorFailed(t *testing.T) {

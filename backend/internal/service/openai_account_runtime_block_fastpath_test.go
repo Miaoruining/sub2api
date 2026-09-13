@@ -760,10 +760,20 @@ func TestOpenAIRuntimeBlock_ClearAccountSchedulingBlock(t *testing.T) {
 	account := &Account{ID: 47, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 
 	svc.BlockAccountScheduling(account, time.Now().Add(time.Minute), "429")
+	state := svc.getOpenAIAccountModelTransientState()
+	now := time.Now()
+	state.recordFailure(account.ID, "gpt-5.6-luna", now)
+	state.recordFailure(account.ID, "gpt-5.6-luna", now)
+	state.recordFailure(48, "gpt-5.6-luna", now)
+	state.recordFailure(48, "gpt-5.6-luna", now)
 	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.True(t, state.isBlocked(account.ID, "gpt-5.6-luna", now))
+	require.True(t, state.isBlocked(48, "gpt-5.6-luna", now))
 
 	svc.ClearAccountSchedulingBlock(account.ID)
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.False(t, state.isBlocked(account.ID, "gpt-5.6-luna", now))
+	require.True(t, state.isBlocked(48, "gpt-5.6-luna", now))
 }
 
 func TestRuntimeBlockHonorsClearedPersistedCooldown(t *testing.T) {

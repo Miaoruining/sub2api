@@ -2126,9 +2126,13 @@ func (s *RateLimitService) RecoverAccountState(ctx context.Context, accountID in
 	}
 	if result.ClearedError || result.ClearedRateLimit {
 		s.ResetOpenAI403Counter(ctx, accountID)
-		if result.ClearedError && !result.ClearedRateLimit {
-			s.notifyAccountSchedulingBlockCleared(accountID)
-		}
+	}
+	// Runtime blocks are intentionally kept outside the persisted account state.
+	// A healthy account can therefore look completely normal while the scheduler
+	// still excludes it. Both an explicit admin recovery and a successful direct
+	// test are authoritative evidence that the account should re-enter the pool.
+	if !result.ClearedRateLimit {
+		s.notifyAccountSchedulingBlockCleared(accountID)
 	}
 
 	return result, nil
