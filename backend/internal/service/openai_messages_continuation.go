@@ -20,11 +20,14 @@ type openAICompatSessionResponseBinding struct {
 	ExpiresAt            time.Time
 }
 
-func openAICompatContinuationEnabled(account *Account, model string) bool {
-	if account == nil || account.Type != AccountTypeAPIKey {
-		return false
-	}
-	return shouldAutoInjectPromptCacheKeyForCompat(model)
+func openAICompatContinuationEnabled(_ *Account, _ string) bool {
+	// Messages requests already carry the caller's conversation history. An
+	// API-key account must not silently replace that history with a server-side
+	// previous_response_id chain merely because the mapped model looks like a
+	// GPT/Codex compatibility model. That behavior is specific to the native
+	// Responses path; keeping it disabled here also prevents latest-turn input
+	// trimming in ForwardAsAnthropic.
+	return false
 }
 
 func trimAnthropicCompatResponsesInputToLatestTurn(req *apicompat.ResponsesRequest) {
